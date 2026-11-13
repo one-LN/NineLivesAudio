@@ -63,12 +63,42 @@
 
   <!--
     SatelliteResourceLanguages (above) only trims managed *.resources.dll satellites. A
-    self-contained WinUI 3 publish still carries one folder per culture for the Windows App
-    SDK's native MUI resources, which is what fills the install directory with cs/ de/ fr/
-    ja/ ... Build/trim-cultures.ps1 deletes those, keeping en* and zh*.
+    self-contained WinUI 3 publish still copies one folder per culture for the Windows App
+    SDK's native MUI files (Microsoft.ui.xaml.dll.mui, ...), which is what leaves cs/ de/
+    fr/ ja/ ... in the install directory. This inline task drops them after publish and
+    keeps the two cultures the UI actually ships.
   -->
+  <UsingTask TaskName="TrimCultureFolders" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <PublishDirectory ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+        var root = new DirectoryInfo(PublishDirectory);
+        if (!root.Exists) return;
+        var culturePattern = new Regex("^[a-z]{2,3}(-[a-z]{2,4})?$", RegexOptions.IgnoreCase);
+        var removed = 0;
+        foreach (var dir in root.GetDirectories())
+        {
+            if (!culturePattern.IsMatch(dir.Name)) continue;
+            var language = dir.Name.Split('-')[0].ToLowerInvariant();
+            if (language == "en" || language == "zh") continue;
+            try { dir.Delete(true); removed++; }
+            catch (Exception ex) { Log.LogWarning("Could not remove culture folder " + dir.Name + ": " + ex.Message); }
+        }
+        Log.LogMessage(MessageImportance.High, "Trimmed " + removed + " culture folder(s) from the publish output.");
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
   <Target Name="TrimLocalizedResourceFolders" AfterTargets="Publish"
-          Condition="'$(OS)' == 'Windows_NT' and Exists('$(MSBuildProjectDirectory)\build\trim-cultures.ps1')">
-    <Exec Command="pwsh -NoProfile -NonInteractive -File &quot;$(MSBuildProjectDirectory)\build\trim-cultures.ps1&quot; -PublishDir &quot;$(PublishDir)&quot;" />
+          Condition="'$(WindowsAppSDKSelfContained)' == 'true'">
+    <TrimCultureFolders PublishDirectory="$(PublishDir)" />
   </Target>
 </Project>
