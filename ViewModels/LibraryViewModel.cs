@@ -105,8 +105,11 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
     private bool _showDownloadedOnly;
 
     public ObservableCollection<Library> Libraries { get; } = new();
-    public ObservableCollection<AudioBook> AudioBooks { get; } = new();
-    public ObservableCollection<AudioBook> FilteredAudioBooks { get; } = new();
+
+    // Bulk-replaceable: a refresh swaps hundreds of books with one Reset notification
+    // instead of one CollectionChanged per book (the ItemsRepeater re-lays out once).
+    public RangeObservableCollection<AudioBook> AudioBooks { get; } = new();
+    public RangeObservableCollection<AudioBook> FilteredAudioBooks { get; } = new();
     public ObservableCollection<string> AvailableGroups { get; } = new();
 
     public LibraryViewModel(
@@ -384,11 +387,7 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             var localBooks = await _database.GetAudioBooksByLibraryAsync(SelectedLibrary.Id);
             _logger.Log($"Loaded {localBooks.Count} audiobooks from database");
 
-            AudioBooks.Clear();
-            foreach (var book in localBooks)
-            {
-                AudioBooks.Add(book);
-            }
+            AudioBooks.ReplaceRange(localBooks);
 
             // If online, delegate to SyncService for server refresh + merge.
             // SyncService handles LocalPath preservation with robust matching.
@@ -401,9 +400,7 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
 
                     // Reload from DB after sync (SyncService saved the merged data)
                     var refreshedBooks = await _database.GetAudioBooksByLibraryAsync(SelectedLibrary.Id);
-                    AudioBooks.Clear();
-                    foreach (var book in refreshedBooks)
-                        AudioBooks.Add(book);
+                    AudioBooks.ReplaceRange(refreshedBooks);
                     _logger.Log($"Reloaded {AudioBooks.Count} audiobooks from database after sync");
 
                     // The server answered: drop the offline-only filter again (unless the
@@ -662,11 +659,7 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             if (same) return;
         }
 
-        FilteredAudioBooks.Clear();
-        foreach (var book in newItems)
-        {
-            FilteredAudioBooks.Add(book);
-        }
+        FilteredAudioBooks.ReplaceRange(newItems);
     }
 
     /// <summary>Re-renders computed strings after the UI language changed.</summary>

@@ -24,8 +24,10 @@ public class SyncService : ISyncService, IDisposable
 
     // Progress coordinator state
     private string? _activeItemId;
+    private string? _lastSyncedItemId;
     private double _lastSyncedTime;
     private DateTime _lastSyncTimestamp = DateTime.MinValue;
+    private DateTime _lastProgressPullTimestamp = DateTime.MinValue;
     private static readonly TimeSpan MinSyncInterval = TimeSpan.FromSeconds(30);
     private const double MinPositionDelta = 2.0;    // seconds
     private const double MinProgressDelta = 0.01;   // 1%
@@ -262,11 +264,27 @@ public class SyncService : ISyncService, IDisposable
         {
             var serverProgress = await _apiService.GetAllUserProgressAsync();
             int synced = 0;
+            int unchanged = 0;
+            int missing = 0;
 
             foreach (var progress in serverProgress)
             {
+                // Nothing the server knows has changed since the previous pull, so there
+                // is no reason to hit the database for this item (big libraries meant
+                // hundreds of needless queries on every timer tick).
+                if (progress.LastUpdate <= _lastProgressPullTimestamp)
+                {
+                    unchanged++;
+                    continue;
+                }
+
                 var audioBook = await _database.GetAudioBookAsync(progress.LibraryItemId);
-                if (audioBook == null) continue;
+                if (audioBook == null)
+                {
+                    // Library not imported yet — retry this entry on the next pull.
+                    missing++;
+                    continue;
+                }
 
                 // Skip if this is the actively-playing item — session owns progress
                 if (_activeItemId != null && progress.LibraryItemId == _activeItemId)
@@ -314,7 +332,12 @@ public class SyncService : ISyncService, IDisposable
                 synced++;
             }
 
-            _logger.Log($"[Sync] Progress synced for {synced} items (from {serverProgress.Count} server entries)");
+            // Only remember the watermark when every entry was applied: an entry that was
+            // skipped because its book is not imported yet must be retried next time.
+            if (missing == 0)
+                _lastProgressPullTimestamp = DateTime.UtcNow;
+            _logger.Log($"[Sync] Progress synced for {synced} of {serverProgress.Count} server entries " +
+                        $"({unchanged} unchanged, {missing} awaiting library import)");
         }
         catch (Exception ex)
         {
@@ -363,6 +386,15 @@ public class SyncService : ISyncService, IDisposable
         // Skip network call if offline — no 30s hang
         if (!_connectivity.IsServerReachable) return;
 
+        // Throttling is per book: switching books must not inherit the previous
+        // book's timestamp (that delayed the first push of a new book by up to 30s).
+        if (!string.Equals(_lastSyncedItemId, itemId, StringComparison.Ordinal))
+        {
+            _lastSyncedItemId = itemId;
+            _lastSyncedTime = 0;
+            _lastSyncTimestamp = DateTime.MinValue;
+        }
+
         var now = DateTime.UtcNow;
         var timeSinceLastSync = now - _lastSyncTimestamp;
         var positionDelta = Math.Abs(currentTime - _lastSyncedTime);
@@ -377,7 +409,7 @@ public class SyncService : ISyncService, IDisposable
 
         try
         {
-            await _apiService.UpdateProgressAsync(itemId, currentTime, isFinished);
+            await _apiService.UpdateProgressAsync(itemId, currentTime, isFinished, duration);
 
             _lastSyncedTime = currentTime;
             _lastSyncTimestamp = now;
@@ -424,7 +456,7 @@ public class SyncService : ISyncService, IDisposable
 
         try
         {
-            await _apiService.UpdateProgressAsync(itemId, currentTime, isFinished);
+            await _apiService.UpdateProgressAsync(itemId, currentTime, isFinished, duration);
             _logger.Log($"[Sync] Final progress flush: {itemId} @ {currentTime:F1}s (finished={isFinished})");
         }
         catch (Exception ex)

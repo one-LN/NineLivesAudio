@@ -76,7 +76,17 @@ public class OfflineProgressQueue : IOfflineProgressQueue
                         continue;
                     }
 
-                    await _apiService.UpdateProgressAsync(entry.ItemId, entry.CurrentTime, entry.IsFinished);
+                    // Pending entries only store the position; read the book so the
+                    // server receives a correct 0..1 ratio instead of guessing.
+                    double duration = 0;
+                    try
+                    {
+                        var book = await _database.GetAudioBookAsync(entry.ItemId);
+                        duration = book?.Duration.TotalSeconds ?? 0;
+                    }
+                    catch { /* duration is optional */ }
+
+                    await _apiService.UpdateProgressAsync(entry.ItemId, entry.CurrentTime, entry.IsFinished, duration);
                     synced++;
                     syncedItemIds.Add(entry.ItemId);
                 }

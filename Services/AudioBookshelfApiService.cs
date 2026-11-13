@@ -444,17 +444,25 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
     }
 
-    public async Task<bool> UpdateProgressAsync(string itemId, double currentTime, bool isFinished = false)
+    public async Task<bool> UpdateProgressAsync(string itemId, double currentTime, bool isFinished = false, double duration = 0)
     {
         EnsureAuthenticated();
 
         try
         {
+            // `progress` is a 0..1 ratio on the server. Sending the position in seconds
+            // used to look like "100% finished" for any book longer than a second, so a
+            // single progress push could flag the book as read — the server stores what
+            // it is given. null = omit the field and let the server derive it.
+            double? progress = isFinished
+                ? 1.0
+                : duration > 0 ? Math.Clamp(currentTime / duration, 0, 1) : null;
+
             var progressData = new
             {
                 currentTime,
                 isFinished,
-                progress = currentTime // This will be calculated on server based on duration
+                progress
             };
 
             var content = new StringContent(JsonSerializer.Serialize(progressData, JsonOptions), Encoding.UTF8, "application/json");
