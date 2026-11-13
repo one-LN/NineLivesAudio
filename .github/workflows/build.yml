@@ -34,6 +34,16 @@ jobs:
       - name: Publish (win-x64, self-contained)
         run: dotnet publish -p:PublishProfile=win-x64 -c Release --no-restore
 
+      # Shows up as a notice annotation on the run page: makes the publish layout
+      # (and any stray culture folders) reviewable without downloading the artifact.
+      - name: Publish layout summary
+        shell: pwsh
+        run: |
+          $dirs = Get-ChildItem binpublish -Directory | Select-Object -ExpandProperty Name
+          $files = (Get-ChildItem binpublish -Recurse -File).Count
+          $size = [math]::Round(((Get-ChildItem binpublish -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
+          "::notice title=Publish layout::$($dirs.Count) folder(s) [$($dirs -join ', ')] · $files files · $size MB"
+
       # Optional: the runner image ships Inno Setup 6, so a setup.exe is produced too.
       # A missing ISCC.exe must not fail the portable build.
       - name: Compile installer (Inno Setup)
