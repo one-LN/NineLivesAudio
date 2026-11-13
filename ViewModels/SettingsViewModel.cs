@@ -43,6 +43,12 @@ public partial class SettingsViewModel : ObservableObject
     private double _playbackSpeed;
 
     [ObservableProperty]
+    private double _skipIntroSeconds;
+
+    [ObservableProperty]
+    private double _skipOutroSeconds;
+
+    [ObservableProperty]
     private bool _autoSyncProgress;
 
     [ObservableProperty]
@@ -145,6 +151,8 @@ public partial class SettingsViewModel : ObservableObject
         DownloadPath = settings.DownloadPath ?? GetDefaultDownloadPath();
         AutoDownloadCovers = settings.AutoDownloadCovers;
         PlaybackSpeed = settings.PlaybackSpeed;
+        SkipIntroSeconds = settings.SkipIntroSeconds;
+        SkipOutroSeconds = settings.SkipOutroSeconds;
         AutoSyncProgress = settings.AutoSyncProgress;
         SyncIntervalMinutes = settings.SyncIntervalMinutes;
         StartMinimized = settings.StartMinimized;
@@ -173,6 +181,24 @@ public partial class SettingsViewModel : ObservableObject
         {
             ServerHost = _localization.GetString("NotConfigured");
         }
+    }
+
+    /// <summary>NumberBox can hand back NaN or negative values — clamp to 0..600 seconds.</summary>
+    public static int ToSeconds(double value)
+        => double.IsNaN(value) || value <= 0 ? 0 : (int)Math.Round(Math.Min(value, 600));
+
+    partial void OnSkipIntroSecondsChanged(double value)
+    {
+        var clamped = ToSeconds(value);
+        if (Math.Abs(value - clamped) > 0.001)
+            SkipIntroSeconds = clamped;
+    }
+
+    partial void OnSkipOutroSecondsChanged(double value)
+    {
+        var clamped = ToSeconds(value);
+        if (Math.Abs(value - clamped) > 0.001)
+            SkipOutroSeconds = clamped;
     }
 
     private static string GetDefaultDownloadPath()
@@ -311,6 +337,8 @@ public partial class SettingsViewModel : ObservableObject
             settings.DownloadPath = DownloadPath;
             settings.AutoDownloadCovers = AutoDownloadCovers;
             settings.PlaybackSpeed = PlaybackSpeed;
+            settings.SkipIntroSeconds = ToSeconds(SkipIntroSeconds);
+            settings.SkipOutroSeconds = ToSeconds(SkipOutroSeconds);
             settings.AutoSyncProgress = AutoSyncProgress;
             settings.SyncIntervalMinutes = SyncIntervalMinutes;
             settings.StartMinimized = StartMinimized;

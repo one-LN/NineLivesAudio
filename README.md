@@ -75,7 +75,8 @@ Your 9 most recently played audiobooks, front and center. Because cats have nine
 - **Connection indicator** - Always know if you're online or offline
 
 ### Player That Just Works
-- **Chapter navigation** - Jump ahead/back, or hop straight to the **start or end** of the current chapter (`Ctrl+←` / `Ctrl+→`); every chapter in the list can be entered at either boundary
+- **Chapter navigation** - Previous / next chapter buttons (`Ctrl+Shift+←` / `Ctrl+Shift+→`) and a chapter list that jumps to the clicked chapter
+- **Skip intro / skip outro** - Global settings (Settings → Playback): auto-skip the first N seconds on start, and when fewer than N seconds remain continue with the next chapter (the last chapter marks the book finished)
 - **Playback speed control** - 0.5x to 3.0x (because sometimes you need to speed through that boring chapter)
 - **Volume control** with mute detection
 - **Sleep timer** - 5, 10, 15, 30, 45, 60, 90, or 120 minutes

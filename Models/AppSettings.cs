@@ -8,6 +8,15 @@ public class AppSettings
     public bool AutoDownloadCovers { get; set; } = true;
     public double PlaybackSpeed { get; set; } = 1.0;
     public bool AutoSyncProgress { get; set; } = true;
+
+    /// <summary>Seconds skipped automatically when a book starts playing (0 = disabled).</summary>
+    public int SkipIntroSeconds { get; set; } = 0;
+
+    /// <summary>
+    /// When fewer than this many seconds remain, playback continues with the next
+    /// chapter (0 = disabled). On the last chapter the book is marked finished.
+    /// </summary>
+    public int SkipOutroSeconds { get; set; } = 0;
     public int SyncIntervalMinutes { get; set; } = 5;
     public bool StartMinimized { get; set; } = false;
     public bool MinimizeToTray { get; set; } = true;

@@ -110,6 +110,41 @@
                             <ComboBoxItem Content="1.75x" Tag="1.75"/>
                             <ComboBoxItem Content="2.0x" Tag="2.0"/>
                         </ComboBox>
+
+                        <!-- Skip intro / skip outro (global, applied to every book) -->
+                        <StackPanel>
+                            <NumberBox x:Name="SkipIntroBox"
+                                       Header="Skip intro"
+                                       Minimum="0"
+                                       Maximum="600"
+                                       SmallChange="15"
+                                       LargeChange="30"
+                                       SpinButtonPlacementMode="Compact"
+                                       Value="{x:Bind ViewModel.SkipIntroSeconds, Mode=TwoWay}"/>
+                            <TextBlock x:Name="SkipIntroHint"
+                                       Text="Seconds skipped automatically when a book starts playing (0 = off)."
+                                       FontSize="12"
+                                       Opacity="0.7"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <NumberBox x:Name="SkipOutroBox"
+                                       Header="Skip outro"
+                                       Minimum="0"
+                                       Maximum="600"
+                                       SmallChange="15"
+                                       LargeChange="30"
+                                       SpinButtonPlacementMode="Compact"
+                                       Value="{x:Bind ViewModel.SkipOutroSeconds, Mode=TwoWay}"/>
+                            <TextBlock x:Name="SkipOutroHint"
+                                       Text="When fewer than this many seconds remain, continue with the next chapter. On the last chapter the book is marked finished (0 = off)."
+                                       FontSize="12"
+                                       Opacity="0.7"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
             </StackPanel>

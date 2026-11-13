@@ -175,6 +175,10 @@ public sealed partial class SettingsPage : Page
         if (PlaybackTitle != null) PlaybackTitle.Text = _localization.GetString("Playback");
         if (DefaultVolumeLabel != null) DefaultVolumeLabel.Text = _localization.GetString("DefaultVolume");
         if (DefaultSpeedBox != null) DefaultSpeedBox.Header = _localization.GetString("DefaultSpeed");
+        if (SkipIntroBox != null) SkipIntroBox.Header = _localization.GetString("SkipIntro");
+        if (SkipIntroHint != null) SkipIntroHint.Text = _localization.GetString("SkipIntroHint");
+        if (SkipOutroBox != null) SkipOutroBox.Header = _localization.GetString("SkipOutro");
+        if (SkipOutroHint != null) SkipOutroHint.Text = _localization.GetString("SkipOutroHint");
         if (DownloadsTitle != null) DownloadsTitle.Text = _localization.GetString("DownloadsSection");
         if (DownloadLocationBox != null) DownloadLocationBox.Header = _localization.GetString("DownloadLocation");
         if (BrowseButton != null) BrowseButton.Content = _localization.GetString("Browse");

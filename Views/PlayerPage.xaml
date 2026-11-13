@@ -223,17 +223,6 @@
                         <FontIcon Glyph="&#xE892;" FontSize="16"/>
                     </Button>
 
-                    <!-- Jump to the start of the current chapter -->
-                    <Button x:Name="ChapterStartButton"
-                            Click="ChapterStart_Click"
-                            Style="{StaticResource CircularButtonStyle}"
-                            Width="40" Height="40" CornerRadius="20"
-                            ToolTipService.ToolTip="Start of this chapter"
-                            Visibility="Collapsed">
-                        <TextBlock loc:Loc.Text="ChapterStartShort" Text="Start"
-                                   FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                    </Button>
-
                     <!-- Skip Back 10s -->
                     <Button x:Name="SkipBackButton" Click="SkipBack_Click"
                             Style="{StaticResource CircularButtonStyle}"
@@ -260,17 +249,6 @@
                             <FontIcon Glyph="&#xE893;" FontSize="18"/>
                             <TextBlock Text="30" FontSize="10" HorizontalAlignment="Center" Opacity="0.7"/>
                         </StackPanel>
-                    </Button>
-
-                    <!-- Jump to the end of the current chapter -->
-                    <Button x:Name="ChapterEndButton"
-                            Click="ChapterEnd_Click"
-                            Style="{StaticResource CircularButtonStyle}"
-                            Width="40" Height="40" CornerRadius="20"
-                            ToolTipService.ToolTip="End of this chapter"
-                            Visibility="Collapsed">
-                        <TextBlock loc:Loc.Text="ChapterEndShort" Text="End"
-                                   FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                     </Button>
 
                     <!-- Next Chapter -->
