@@ -264,7 +264,10 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                     _logger.Log($"[Playback] Pipeline: LOCAL file {source.LocalFilePath}");
                     _isLocalFile = true;
                     BuildLocalTrackList(audioBook, source.LocalFilePath!);
+                    await NormalizeResumePositionAsync(audioBook);
+                    NormalizeChapterUnits();
                     DetermineStartingTrack(audioBook.CurrentTime);
+                    LogLoadSummary(audioBook);
                     var localLoaded = await LoadLocalFileAsync(_trackPaths[_currentTrackIndex], audioBook, ct);
                     if (localLoaded) SetupSmtc(audioBook);
                     return localLoaded;
@@ -276,7 +279,10 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                     {
                         _streamTracks = _currentSession.AudioTracks.OrderBy(t => t.Index).ToList();
                         BuildStreamTrackDurations();
+                        await NormalizeResumePositionAsync(audioBook);
+                        NormalizeChapterUnits();
                         DetermineStartingTrack(audioBook.CurrentTime);
+                        LogLoadSummary(audioBook);
 
                         var track = _streamTracks[_currentTrackIndex];
                         _logger.Log($"[Playback] Stream URL obtained, {_streamTracks.Count} tracks");
@@ -347,6 +353,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         _outputDevice.Volume = _volume;
         WireNAudioEvents();
 
+        RescaleTimelineIfNeeded(_currentTrackIndex, _audioFileReader.TotalTime);
         ReconcileTrackDuration(_currentTrackIndex, _audioFileReader.TotalTime);
 
         // Seek within the current track (not overall position)
@@ -447,7 +454,10 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
             // Same self-healing as local playback: the stream knows its own length.
             if (_trackDurations.Count > 1)
+            {
+                RescaleTimelineIfNeeded(_currentTrackIndex, _mediaPlayer.PlaybackSession.NaturalDuration);
                 ReconcileTrackDuration(_currentTrackIndex, _mediaPlayer.PlaybackSession.NaturalDuration);
+            }
 
             if (seekToPosition)
             {
@@ -1024,6 +1034,9 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     {
         if (chapterIndex < 0 || chapterIndex >= _chapters.Count) return;
         var chapter = _chapters[chapterIndex];
+        _logger.Log($"[Playback] Chapter jump #{chapterIndex + 1}/{_chapters.Count} '{chapter.Title}' " +
+                    $"-> {TimeSpan.FromSeconds(chapter.Start)} (raw start {chapter.Start:0.###}s, " +
+                    $"book duration {Duration})");
         await SeekAsync(TimeSpan.FromSeconds(chapter.Start));
         _currentChapterIndex = chapterIndex;
         WeakReferenceMessenger.Default.Send(new ChapterChangedMessage(chapter));
@@ -1154,6 +1167,142 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
         if (_currentSession != null)
             await CloseSessionAsync();
+    }
+
+    /// <summary>
+    /// A resume position can arrive in the wrong unit or be plain corrupt (a previous
+    /// build saved milliseconds, a third-party client wrote garbage). Trusting it makes
+    /// the book open at an impossible time, which also hides the current chapter.
+    /// Runs as soon as the real book duration is known.
+    /// </summary>
+    private async Task NormalizeResumePositionAsync(AudioBook audioBook)
+    {
+        var position = audioBook.CurrentTime.TotalSeconds;
+        if (position <= 0) return;
+
+        var duration = Duration.TotalSeconds;
+        if (duration <= 0)
+        {
+            _logger.LogDebug($"[Playback] Resume position {position:F0}s kept (book duration unknown)");
+            return;
+        }
+
+        // A little overshoot is metadata rounding, not a unit problem.
+        if (position <= duration * 1.02) return;
+
+        TimeSpan corrected;
+        if (position / 1000.0 <= duration * 1.02)
+        {
+            corrected = TimeSpan.FromSeconds(position / 1000.0);
+            _logger.LogWarning($"[Playback] Resume position looked like MILLISECONDS " +
+                               $"({position:F0}s vs book {duration:F0}s) -> using {corrected}");
+        }
+        else
+        {
+            corrected = TimeSpan.Zero;
+            _logger.LogWarning($"[Playback] Resume position {position:F0}s exceeds book duration " +
+                               $"{duration:F0}s -> restarting from the beginning");
+        }
+
+        audioBook.CurrentTime = corrected;
+        _notifications.ShowWarning(_localization.GetString("PositionCorrected"), _localization.GetString("Playback"));
+        try
+        {
+            await _database.SavePlaybackProgressAsync(audioBook.Id, corrected, isFinished: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug($"[Playback] Persisting corrected position failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Chapters are supposed to be whole-book seconds. Libraries touched by older
+    /// tooling can store them in milliseconds, which makes every jump land 1000x too
+    /// far. Detect it against the book duration and rescale once.
+    /// </summary>
+    private void NormalizeChapterUnits()
+    {
+        if (_chapters.Count == 0) return;
+
+        var duration = Duration.TotalSeconds;
+        if (duration <= 0) return;
+
+        var lastEnd = _chapters.Max(c => c.End > 0 ? c.End : c.Start);
+        if (lastEnd <= duration * 1.02) return;
+        if (lastEnd / 1000.0 > duration * 1.02) return; // genuinely inconsistent, leave it
+
+        foreach (var chapter in _chapters)
+        {
+            chapter.Start /= 1000.0;
+            chapter.End /= 1000.0;
+        }
+
+        _logger.LogWarning($"[Playback] Chapter times looked like milliseconds " +
+                           $"(last end {lastEnd:F0} vs book {duration:F0}s) — rescaled");
+    }
+
+    private void LogLoadSummary(AudioBook audioBook)
+    {
+        var firstChapter = _chapters.Count > 0 ? _chapters[0].Start.ToString("0") : "-";
+        var lastChapter = _chapters.Count > 0 ? _chapters[^1].Start.ToString("0") : "-";
+        _logger.Log($"[Playback] Loaded '{audioBook.Title}': book {Duration}, " +
+                    $"resume {audioBook.CurrentTime}, start track {_currentTrackIndex + 1}/{Math.Max(1, _trackDurations.Count)}, " +
+                    $"chapters {_chapters.Count} (first {firstChapter}s, last {lastChapter}s)");
+    }
+
+    /// <summary>
+    /// The saved track table (and the progress stitched to it) can be off by exactly
+    /// 1000x when older builds or another client wrote milliseconds. One decoded file
+    /// is enough to tell: if the expected length of this track is 1000x the real one,
+    /// rescale the whole timeline so resume, chapters and durations agree again.
+    /// </summary>
+    private void RescaleTimelineIfNeeded(int trackIndex, TimeSpan actualDuration)
+    {
+        var actualSeconds = actualDuration.TotalSeconds;
+        if (actualSeconds <= 0) return;
+        if (trackIndex < 0 || trackIndex >= _trackDurations.Count) return;
+
+        var previous = trackIndex == 0 ? 0 : _trackDurations[trackIndex - 1];
+        var expected = _trackDurations[trackIndex] - previous;
+        if (expected <= 0) return;
+
+        var ratio = expected / actualSeconds;
+        if (ratio < 100 || ratio > 10000) return; // not a unit mismatch
+
+        for (var i = 0; i < _trackDurations.Count; i++)
+            _trackDurations[i] /= 1000.0;
+
+        foreach (var chapter in _chapters)
+        {
+            chapter.Start /= 1000.0;
+            chapter.End /= 1000.0;
+        }
+
+        if (_currentAudioBook != null)
+        {
+            var fixedResume = TimeSpan.FromSeconds(_currentAudioBook.CurrentTime.TotalSeconds / 1000.0);
+            _logger.LogWarning($"[Playback] Timeline looked 1000x too long (expected {expected:F0}s for a " +
+                               $"{actualSeconds:F0}s track) — rescaled. Resume {_currentAudioBook.CurrentTime} -> {fixedResume}");
+            _currentAudioBook.CurrentTime = fixedResume;
+            _ = PersistCorrectedProgressAsync();
+        }
+
+        _logger.Log($"[Playback] Rescaled book duration: {Duration}");
+    }
+
+    /// <summary>Writes a self-healed resume position back so the book is not re-broken on next open.</summary>
+    private async Task PersistCorrectedProgressAsync()
+    {
+        try
+        {
+            if (_currentAudioBook == null) return;
+            await _database.SavePlaybackProgressAsync(_currentAudioBook.Id, _currentAudioBook.CurrentTime, isFinished: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug($"[Playback] Persisting corrected progress failed: {ex.Message}");
+        }
     }
 
     /// <summary>
