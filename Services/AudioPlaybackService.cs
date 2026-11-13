@@ -16,6 +16,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     private readonly ISyncService _syncService;
     private readonly Data.ILocalDatabase _database;
     private readonly ITrackManager _trackManager;
+    private readonly ILocalizationService _localization;
 
     // NAudio for local file playback
     private WaveOutEvent? _outputDevice;
@@ -123,7 +124,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         INotificationService notifications,
         ISyncService syncService,
         Data.ILocalDatabase database,
-        ITrackManager trackManager)
+        ITrackManager trackManager,
+        ILocalizationService localization)
     {
         _apiService = apiService;
         _settingsService = settingsService;
@@ -133,6 +135,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         _syncService = syncService;
         _database = database;
         _trackManager = trackManager;
+        _localization = localization;
 
         _positionTimer = new System.Timers.Timer(500);
         _positionTimer.Elapsed += OnPositionTimerElapsed;
@@ -284,8 +287,9 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                     if (_currentSession == null || _currentSession.AudioTracks.Count == 0)
                     {
                         _logger.LogWarning("[Playback] No playback session or tracks available");
-                        SetState(PlaybackState.Stopped, "No audio tracks available");
-                        _notifications.ShowError("No audio tracks available", "Playback Error");
+                        var noTracks = _localization.GetString("NoAudioTracks");
+                        SetState(PlaybackState.Stopped, noTracks);
+                        _notifications.ShowError(noTracks, _localization.GetString("PlaybackError"));
                         return false;
                     }
 
@@ -298,7 +302,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 default:
                     _logger.LogWarning($"[Playback] Source unavailable: {source.ErrorMessage}");
                     SetState(PlaybackState.Stopped, source.ErrorMessage);
-                    _notifications.ShowWarning(source.ErrorMessage ?? "Cannot play this book", "Playback");
+                    _notifications.ShowWarning(source.ErrorMessage ?? _localization.GetString("CannotPlayBook"), _localization.GetString("Playback"));
                     return false;
             }
         }
@@ -311,8 +315,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         catch (Exception ex)
         {
             _logger.LogError("[Playback] Load failed", ex);
-            SetState(PlaybackState.Stopped, $"Failed to load: {ex.Message}");
-            _notifications.ShowError(ex.Message, "Playback Error");
+            SetState(PlaybackState.Stopped, _localization.Format("FailedLoadDetail", ex.Message));
+            _notifications.ShowError(ex.Message, _localization.GetString("PlaybackError"));
             return false;
         }
     }
@@ -603,7 +607,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         // Dispose NAudio resources
         if (_outputDevice != null)
         {
-            try { _outputDevice.Stop(); } catch { }
+            try { _outputDevice.Stop(); } catch { /* best-effort: ignore */ }
             _outputDevice.Dispose();
             _outputDevice = null;
         }
@@ -619,7 +623,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 _smtcPlayer.Pause();
                 _smtcPlayer.Source = null;
             }
-            catch { }
+            catch { /* best-effort: ignore */ }
             finally
             {
                 _smtcPlayer.Dispose();
@@ -1249,7 +1253,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         // Dispose NAudio
         if (_outputDevice != null)
         {
-            try { _outputDevice.Stop(); } catch { }
+            try { _outputDevice.Stop(); } catch { /* best-effort: ignore */ }
             _outputDevice.Dispose();
             _outputDevice = null;
         }
@@ -1264,7 +1268,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 _mediaPlayer.Pause();
                 _mediaPlayer.Source = null;
             }
-            catch { }
+            catch { /* best-effort: ignore */ }
             _mediaPlayer.Dispose();
             _mediaPlayer = null;
         }
@@ -1276,7 +1280,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 _smtcPlayer.Pause();
                 _smtcPlayer.Source = null;
             }
-            catch { }
+            catch { /* best-effort: ignore */ }
             _smtcPlayer.Dispose();
             _smtcPlayer = null;
         }

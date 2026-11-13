@@ -44,7 +44,7 @@ public sealed partial class BookCard : UserControl
         TitleText.Text = _audioBook.Title;
         AuthorText.Text = _audioBook.Author;
 
-        CoverImage.Source = CoverImageService.LoadCover(_audioBook.CoverPath);
+        CoverImage.Source = CoverImageService.LoadCover(_audioBook.CoverPath, 300, 300);
 
         if (_audioBook.Progress > 0)
         {

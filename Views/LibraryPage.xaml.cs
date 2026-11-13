@@ -16,6 +16,7 @@ public sealed partial class LibraryPage : Page
     public LibraryViewModel ViewModel { get; }
     private readonly ILoggingService _logger;
     private readonly IAudioBookshelfApiService _apiService;
+    private readonly ILocalizationService _localization;
     private List<LibraryGroupItem> _currentGroups = new();
     private string? _selectedGroup;
 
@@ -26,6 +27,7 @@ public sealed partial class LibraryPage : Page
         ViewModel = App.Services.GetRequiredService<LibraryViewModel>();
         _logger = App.Services.GetRequiredService<ILoggingService>();
         _apiService = App.Services.GetRequiredService<IAudioBookshelfApiService>();
+        _localization = App.Services.GetRequiredService<ILocalizationService>();
         this.InitializeComponent();
         UpdateViewModeButtons();
         UpdateStatusPill();
@@ -33,6 +35,9 @@ public sealed partial class LibraryPage : Page
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
+        ApplyLocalization();
+        _localization.LanguageChanged -= ApplyLocalization;
+        _localization.LanguageChanged += ApplyLocalization;
         _logger.Log("LibraryPage loaded, initializing ViewModel");
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
         await ViewModel.InitializeAsync();
@@ -44,6 +49,7 @@ public sealed partial class LibraryPage : Page
 
     private void Page_Unloaded(object sender, RoutedEventArgs e)
     {
+        _localization.LanguageChanged -= ApplyLocalization;
         ViewModel.PropertyChanged -= ViewModel_PropertyChanged;
 
         if (ViewModel is IDisposable disposable)
@@ -73,7 +79,7 @@ public sealed partial class LibraryPage : Page
     private void UpdateStatusPill()
     {
         var isConnected = _apiService.IsAuthenticated;
-        StatusText.Text = isConnected ? "Connected" : "Offline";
+        StatusText.Text = isConnected ? _localization.GetString("Connected") : _localization.GetString("Offline");
 
         // Update pill color
         if (isConnected)
@@ -149,7 +155,7 @@ public sealed partial class LibraryPage : Page
 
         var viewItem = new MenuFlyoutItem
         {
-            Text = "View Details",
+            Text = _localization.GetString("ViewDetails"),
             Icon = new FontIcon { Glyph = "\uE8A5" }
         };
         viewItem.Click += (s, e) => NavigateToBookDetail(audioBook);
@@ -179,7 +185,7 @@ public sealed partial class LibraryPage : Page
         {
             var removeItem = new MenuFlyoutItem
             {
-                Text = "Remove Download",
+                Text = _localization.GetString("RemoveDownload"),
                 Icon = new FontIcon { Glyph = "\uE74D" }
             };
             removeItem.Click += (s, e) => _ = ViewModel.RemoveDownloadCommand.ExecuteAsync(audioBook);
@@ -510,6 +516,15 @@ public sealed partial class LibraryPage : Page
                 </Grid>
             </DataTemplate>");
         return template;
+    }
+
+    private void ApplyLocalization()
+    {
+        if (LibraryTitleText != null) LibraryTitleText.Text = _localization.GetString("LibraryTitle");
+        if (LoadingLibraryText != null) LoadingLibraryText.Text = _localization.GetString("LoadingLibrary");
+        if (LocalBadgeText != null) LocalBadgeText.Text = _localization.GetString("Local");
+        ViewModel.RefreshLocalizedStrings();
+        UpdateStatusPill();
     }
 
 }

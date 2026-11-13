@@ -12,6 +12,7 @@ namespace NineLivesAudio.Controls;
 public sealed partial class MiniPlayer : UserControl
 {
     private readonly IAudioPlaybackService _playbackService;
+    private readonly ILocalizationService _localization;
     private bool _isPlaying;
 
     public MiniPlayer()
@@ -19,6 +20,7 @@ public sealed partial class MiniPlayer : UserControl
         this.InitializeComponent();
 
         _playbackService = App.Services.GetRequiredService<IAudioPlaybackService>();
+        _localization = App.Services.GetRequiredService<ILocalizationService>();
 
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -78,11 +80,11 @@ public sealed partial class MiniPlayer : UserControl
             TitleText.Text = audioBook.Title;
             AuthorText.Text = audioBook.Author;
 
-            CoverImage.Source = CoverImageService.LoadCover(audioBook.CoverPath);
+            CoverImage.Source = CoverImageService.LoadCover(audioBook.CoverPath, 160, 160);
         }
         else
         {
-            TitleText.Text = "No book playing";
+            TitleText.Text = _localization.GetString("NoBookPlaying");
             AuthorText.Text = "";
             CoverImage.Source = null;
             ProgressBar.Value = 0;

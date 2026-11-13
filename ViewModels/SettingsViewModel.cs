@@ -13,6 +13,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly ILocalDatabase _database;
     private readonly ILoggingService _logger;
     private readonly ISyncService _syncService;
+    private readonly ILocalizationService _localization;
 
     [ObservableProperty]
     private string _serverUrl = string.Empty;
@@ -30,7 +31,7 @@ public partial class SettingsViewModel : ObservableObject
     private bool _isConnecting;
 
     [ObservableProperty]
-    private string _connectionStatus = "Not connected";
+    private string _connectionStatus = string.Empty; // set from localization in ctor
 
     [ObservableProperty]
     private string _downloadPath = string.Empty;
@@ -58,6 +59,9 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _theme = "System";
+
+    [ObservableProperty]
+    private string _language = "system";
 
     // Security
     [ObservableProperty]
@@ -104,13 +108,18 @@ public partial class SettingsViewModel : ObservableObject
         IAudioBookshelfApiService apiService,
         ILocalDatabase database,
         ILoggingService loggingService,
-        ISyncService syncService)
+        ISyncService syncService,
+        ILocalizationService localization)
     {
         _settingsService = settingsService;
         _apiService = apiService;
         _database = database;
         _logger = loggingService;
         _syncService = syncService;
+        _localization = localization;
+
+        // Seed localized defaults before the page is shown.
+        ConnectionStatus = _localization.GetString("NotConnectedStatus");
     }
 
     public async Task InitializeAsync()
@@ -123,7 +132,7 @@ public partial class SettingsViewModel : ObservableObject
         IsConnected = _apiService.IsAuthenticated;
         if (IsConnected)
         {
-            ConnectionStatus = $"Connected to {_apiService.ServerUrl}";
+            ConnectionStatus = _localization.Format("ConnectedTo", _apiService.ServerUrl);
         }
     }
 
@@ -142,6 +151,7 @@ public partial class SettingsViewModel : ObservableObject
         MinimizeToTray = settings.MinimizeToTray;
         Volume = settings.Volume;
         Theme = settings.Theme ?? "System";
+        Language = settings.Language ?? "system";
         AllowSelfSignedCertificates = settings.AllowSelfSignedCertificates;
         DiagnosticsMode = settings.DiagnosticsMode;
     }
@@ -151,7 +161,7 @@ public partial class SettingsViewModel : ObservableObject
         SettingsFilePath = _settingsService.SettingsFilePath;
         SettingsSource = _settingsService.SettingsSource;
         TokenSource = _settingsService.TokenSource;
-        LastLoadedAt = _settingsService.LastLoadedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "Never";
+        LastLoadedAt = _settingsService.LastLoadedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? _localization.GetString("Never");
         SessionId = _logger.SessionId;
 
         if (!string.IsNullOrEmpty(_settingsService.Settings.ServerUrl))
@@ -161,7 +171,7 @@ public partial class SettingsViewModel : ObservableObject
         }
         else
         {
-            ServerHost = "(not configured)";
+            ServerHost = _localization.GetString("NotConfigured");
         }
     }
 
@@ -177,14 +187,14 @@ public partial class SettingsViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(ServerUrl))
         {
-            ErrorMessage = "Please enter a server URL";
+            ErrorMessage = _localization.GetString("EnterServerUrl");
             HasError = true;
             return;
         }
 
         if (string.IsNullOrWhiteSpace(Username) || string.IsNullOrWhiteSpace(Password))
         {
-            ErrorMessage = "Please enter username and password";
+            ErrorMessage = _localization.GetString("EnterCredentials");
             HasError = true;
             return;
         }
@@ -194,15 +204,15 @@ public partial class SettingsViewModel : ObservableObject
             IsConnecting = true;
             HasError = false;
             HasSuccess = false;
-            ConnectionStatus = "Connecting...";
+            ConnectionStatus = _localization.GetString("Connecting");
 
             var success = await _apiService.LoginAsync(ServerUrl, Username, Password);
 
             if (success)
             {
                 IsConnected = true;
-                ConnectionStatus = $"Connected to {ServerUrl}";
-                SuccessMessage = "Successfully connected!";
+                ConnectionStatus = _localization.Format("ConnectedTo", ServerUrl);
+                SuccessMessage = _localization.GetString("ConnectedOk");
                 HasSuccess = true;
                 Password = string.Empty; // Clear password from UI
 
@@ -212,16 +222,16 @@ public partial class SettingsViewModel : ObservableObject
             else
             {
                 IsConnected = false;
-                ConnectionStatus = "Connection failed";
-                ErrorMessage = _apiService.LastError ?? "Login failed. Check your credentials and server URL.";
+                ConnectionStatus = _localization.GetString("ConnectionFailed");
+                ErrorMessage = _apiService.LastError ?? _localization.GetString("LoginFailed");
                 HasError = true;
             }
         }
         catch (Exception ex)
         {
             IsConnected = false;
-            ConnectionStatus = "Connection failed";
-            ErrorMessage = $"Connection error: {ex.Message}";
+            ConnectionStatus = _localization.GetString("ConnectionFailed");
+            ErrorMessage = _localization.Format("ConnectionError", ex.Message);
             HasError = true;
         }
         finally
@@ -237,14 +247,14 @@ public partial class SettingsViewModel : ObservableObject
         {
             await _apiService.LogoutAsync();
             IsConnected = false;
-            ConnectionStatus = "Not connected";
-            SuccessMessage = "Disconnected successfully";
+            ConnectionStatus = _localization.GetString("NotConnectedStatus");
+            SuccessMessage = _localization.GetString("DisconnectedOk");
             HasSuccess = true;
             LoadDoctorInfo();
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Error disconnecting: {ex.Message}";
+            ErrorMessage = _localization.Format("DisconnectError", ex.Message);
             HasError = true;
         }
     }
@@ -254,7 +264,7 @@ public partial class SettingsViewModel : ObservableObject
     {
         if (!IsConnected)
         {
-            ErrorMessage = "Not connected. Please connect first.";
+            ErrorMessage = _localization.GetString("NotConnectedFirst");
             HasError = true;
             return;
         }
@@ -268,20 +278,20 @@ public partial class SettingsViewModel : ObservableObject
 
             if (valid)
             {
-                SuccessMessage = "Connection test successful!";
+                SuccessMessage = _localization.GetString("TestOk");
                 HasSuccess = true;
             }
             else
             {
-                ErrorMessage = "Connection test failed. Token may be expired.";
+                ErrorMessage = _localization.GetString("TestFailed");
                 HasError = true;
                 IsConnected = false;
-                ConnectionStatus = "Disconnected (token expired)";
+                ConnectionStatus = _localization.GetString("TokenExpired");
             }
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Connection test error: {ex.Message}";
+            ErrorMessage = _localization.Format("TestError", ex.Message);
             HasError = true;
         }
     }
@@ -309,17 +319,18 @@ public partial class SettingsViewModel : ObservableObject
             settings.Theme = Theme;
             settings.AllowSelfSignedCertificates = AllowSelfSignedCertificates;
             settings.DiagnosticsMode = DiagnosticsMode;
+            settings.Language = Language;
 
             await _settingsService.SaveSettingsAsync();
 
-            SuccessMessage = "Settings saved successfully";
+            SuccessMessage = _localization.GetString("SettingsSaved");
             HasSuccess = true;
 
             LoadDoctorInfo();
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to save settings: {ex.Message}";
+            ErrorMessage = _localization.Format("SettingsSaveFailed", ex.Message);
             HasError = true;
         }
     }
@@ -333,13 +344,15 @@ public partial class SettingsViewModel : ObservableObject
             HasSuccess = false;
 
             await _database.ClearAllDataAsync();
+            // Drop decoded cover art too, otherwise memory keeps the old bitmaps.
+            CoverImageService.ClearCache();
 
-            SuccessMessage = "Cache cleared successfully";
+            SuccessMessage = _localization.GetString("CacheCleared");
             HasSuccess = true;
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to clear cache: {ex.Message}";
+            ErrorMessage = _localization.Format("CacheClearFailed", ex.Message);
             HasError = true;
         }
     }
@@ -354,22 +367,22 @@ public partial class SettingsViewModel : ObservableObject
 
             if (!_apiService.IsAuthenticated)
             {
-                ErrorMessage = "Not connected to server. Connect first.";
+                ErrorMessage = _localization.GetString("ConnectFirst");
                 HasError = true;
                 return;
             }
 
-            SuccessMessage = "Syncing...";
+            SuccessMessage = _localization.GetString("Syncing");
             HasSuccess = true;
 
             await _syncService.SyncNowAsync();
 
-            SuccessMessage = "Sync completed successfully";
+            SuccessMessage = _localization.GetString("SyncDone");
             HasSuccess = true;
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Sync failed: {ex.Message}";
+            ErrorMessage = _localization.Format("SyncFailed", ex.Message);
             HasError = true;
         }
     }
@@ -386,15 +399,15 @@ public partial class SettingsViewModel : ObservableObject
             await _settingsService.ClearAuthTokenAsync();
 
             IsConnected = false;
-            ConnectionStatus = "Not connected";
-            SuccessMessage = "Connection reset. Token cleared.";
+            ConnectionStatus = _localization.GetString("NotConnectedStatus");
+            SuccessMessage = _localization.GetString("ResetDone");
             HasSuccess = true;
 
             LoadDoctorInfo();
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Reset failed: {ex.Message}";
+            ErrorMessage = _localization.Format("ResetFailed", ex.Message);
             HasError = true;
         }
     }
@@ -407,7 +420,7 @@ public partial class SettingsViewModel : ObservableObject
             HasError = false;
             HasSuccess = false;
             var zipPath = await _logger.ExportLogsAsync();
-            SuccessMessage = $"Logs exported to: {zipPath}";
+            SuccessMessage = _localization.Format("LogsExported", zipPath);
             HasSuccess = true;
 
             // Open the containing folder
@@ -423,7 +436,7 @@ public partial class SettingsViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to export logs: {ex.Message}";
+            ErrorMessage = _localization.Format("ExportFailed", ex.Message);
             HasError = true;
         }
     }
@@ -445,7 +458,7 @@ public partial class SettingsViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Could not open log folder: {ex.Message}";
+            ErrorMessage = _localization.Format("OpenLogFailed", ex.Message);
             HasError = true;
         }
     }
@@ -468,9 +481,20 @@ public partial class SettingsViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Could not open settings folder: {ex.Message}";
+            ErrorMessage = _localization.Format("OpenSettingsFailed", ex.Message);
             HasError = true;
         }
+    }
+
+    [RelayCommand]
+    private async Task ApplyLanguageAsync()
+    {
+        await _localization.SetLanguageAsync(Language);
+        // Refresh status text in the new language
+        if (IsConnected)
+            ConnectionStatus = _localization.Format("ConnectedTo", _apiService.ServerUrl);
+        else
+            ConnectionStatus = _localization.GetString("NotConnectedStatus");
     }
 
     [RelayCommand]

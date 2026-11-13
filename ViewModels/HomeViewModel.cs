@@ -17,6 +17,7 @@ public partial class HomeViewModel : ObservableObject, IDisposable
     private readonly ISyncService _syncService;
     private readonly ILoggingService _logger;
     private readonly IMetadataNormalizer _normalizer;
+    private readonly ILocalizationService _localization;
     private Microsoft.UI.Dispatching.DispatcherQueue? _dispatcherQueue;
 
     [ObservableProperty]
@@ -35,13 +36,15 @@ public partial class HomeViewModel : ObservableObject, IDisposable
         IAudioPlaybackService playbackService,
         ISyncService syncService,
         ILoggingService loggingService,
-        IMetadataNormalizer normalizer)
+        IMetadataNormalizer normalizer,
+        ILocalizationService localization)
     {
         _database = database;
         _playbackService = playbackService;
         _syncService = syncService;
         _logger = loggingService;
         _normalizer = normalizer;
+        _localization = localization;
 
         // Reload Nine Lives whenever a sync completes (progress data may have changed)
         WeakReferenceMessenger.Default.Register<SyncCompletedMessage>(this, (r, m) =>
@@ -85,7 +88,7 @@ public partial class HomeViewModel : ObservableObject, IDisposable
                     IsDownloaded = book.IsDownloaded,
                     CoverPath = book.CoverPath,
                     LifeIndex = idx,
-                    LifeLabel = $"LIFE {ToRoman(idx + 1)}",
+                    LifeLabel = _localization.Format("LifeLabel", ToRoman(idx + 1)),
                     Weight = book.Duration.TotalHours < 4 ? "LIGHT"
                            : book.Duration.TotalHours < 15 ? "MEDIUM" : "HEAVY",
                     TimeGiven = CosmicCatHelper.FormatListeningTime(book.CurrentTime),
@@ -124,17 +127,17 @@ public partial class HomeViewModel : ObservableObject, IDisposable
             ? RomanNumerals[number - 1]
             : number.ToString();
 
-    private static string FormatRelativeTime(DateTime timestamp)
+    private string FormatRelativeTime(DateTime timestamp)
     {
         if (timestamp == DateTime.MinValue) return "";
         var elapsed = DateTime.Now - timestamp;
-        if (elapsed.TotalMinutes < 1) return "Just now";
-        if (elapsed.TotalMinutes < 60) return $"{(int)elapsed.TotalMinutes}m ago";
-        if (elapsed.TotalHours < 24) return $"{(int)elapsed.TotalHours}h ago";
-        if (elapsed.TotalDays < 2) return "Yesterday";
-        if (elapsed.TotalDays < 7) return $"{(int)elapsed.TotalDays}d ago";
-        if (elapsed.TotalDays < 30) return $"{(int)(elapsed.TotalDays / 7)}w ago";
-        return timestamp.ToString("MMM d");
+        if (elapsed.TotalMinutes < 1) return _localization.GetString("JustNow");
+        if (elapsed.TotalMinutes < 60) return _localization.Format("MinutesAgo", (int)elapsed.TotalMinutes);
+        if (elapsed.TotalHours < 24) return _localization.Format("HoursAgo", (int)elapsed.TotalHours);
+        if (elapsed.TotalDays < 2) return _localization.GetString("Yesterday");
+        if (elapsed.TotalDays < 7) return _localization.Format("DaysAgo", (int)elapsed.TotalDays);
+        if (elapsed.TotalDays < 30) return _localization.Format("WeeksAgo", (int)(elapsed.TotalDays / 7));
+        return AppLanguage.FormatShortDate(timestamp);
     }
 
     [RelayCommand]

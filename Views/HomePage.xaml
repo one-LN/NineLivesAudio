@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:loc="using:NineLivesAudio.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     NavigationCacheMode="Enabled">
@@ -61,7 +62,7 @@
                    Width="80" Height="80"
                    HorizontalAlignment="Center"
                    Margin="0,0,0,4"/>
-            <TextBlock Text="NINE LIVES"
+            <TextBlock x:Name="HomeTitleText" Text="NINE LIVES"
                        Style="{StaticResource RitualLabelStyle}"
                        HorizontalAlignment="Center"
                        Foreground="{StaticResource SigilGoldDimBrush}"/>
@@ -84,15 +85,15 @@
         <StackPanel Grid.Row="1"
                     Visibility="{x:Bind ViewModel.ShowEmptyState, Mode=OneWay}"
                     VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
-            <TextBlock Text="NINE LIVES AWAIT"
+            <TextBlock x:Name="HomeEmptyTitleText" Text="NINE LIVES AWAIT"
                        Style="{StaticResource RitualTitleStyle}"
                        HorizontalAlignment="Center"/>
-            <TextBlock Text="Begin listening to summon your nine lives."
+            <TextBlock x:Name="HomeEmptySubtitleText" Text="Begin listening to summon your nine lives."
                        Style="{StaticResource SubtitleStyle}"
                        Foreground="{StaticResource MistBrush}"
                        HorizontalAlignment="Center"
                        TextAlignment="Center"/>
-            <Button Content="Go to Library"
+            <Button loc:Loc.Content="GoToLibrary" Content="Go to Library"
                     Style="{ThemeResource AccentButtonStyle}"
                     Background="{StaticResource SigilGoldBrush}"
                     Foreground="{StaticResource VoidDeepBrush}"

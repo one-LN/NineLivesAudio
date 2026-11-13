@@ -14,6 +14,9 @@ public class AppSettings
     public double Volume { get; set; } = 0.8;
     public string Theme { get; set; } = "System"; // System, Light, Dark
 
+    /// <summary>UI language: "system" | "en-US" | "zh-CN".</summary>
+    public string Language { get; set; } = "system";
+
     // Security
     public bool AllowSelfSignedCertificates { get; set; } = false;
 

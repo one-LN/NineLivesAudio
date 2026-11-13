@@ -61,7 +61,7 @@ public class SettingsService : ISettingsService
                 {
                     // Corrupt or empty JSON — back up and reset
                     var backupPath = _settingsPath + ".bak";
-                    try { File.Copy(_settingsPath, backupPath, overwrite: true); } catch { }
+                    try { File.Copy(_settingsPath, backupPath, overwrite: true); } catch { /* best-effort: ignore */ }
                     SettingsSource = "reset_corrupt";
                 }
             }
@@ -69,7 +69,7 @@ public class SettingsService : ISettingsService
             {
                 // Corrupt JSON — backup and reset
                 var backupPath = _settingsPath + ".bak";
-                try { File.Copy(_settingsPath, backupPath, overwrite: true); } catch { }
+                try { File.Copy(_settingsPath, backupPath, overwrite: true); } catch { /* best-effort: ignore */ }
                 SettingsSource = "reset_corrupt";
             }
             catch (Exception)
@@ -100,7 +100,7 @@ public class SettingsService : ISettingsService
             catch { /* ApplicationData not available for unpackaged */ }
 
             // Write migration flag so we never try again
-            try { await File.WriteAllTextAsync(_migratedPath, DateTime.Now.ToString("o")); } catch { }
+            try { await File.WriteAllTextAsync(_migratedPath, DateTime.Now.ToString("o")); } catch { /* best-effort: ignore */ }
         }
 
         // 3. Defaults if nothing loaded
@@ -174,12 +174,12 @@ public class SettingsService : ISettingsService
                     TokenSource = "legacy_file";
                     // Migrate to secure storage
                     _ = SaveAuthTokenAsync(token);
-                    try { File.Delete(legacyPath); } catch { }
+                    try { File.Delete(legacyPath); } catch { /* best-effort: ignore */ }
                     return Task.FromResult<string?>(token);
                 }
             }
         }
-        catch { }
+        catch { /* best-effort: ignore */ }
 
         TokenSource = "none";
         return Task.FromResult<string?>(null);
@@ -191,7 +191,7 @@ public class SettingsService : ISettingsService
         try
         {
             var vault = new PasswordVault();
-            try { vault.Remove(vault.Retrieve(VaultResource, VaultUser)); } catch { }
+            try { vault.Remove(vault.Retrieve(VaultResource, VaultUser)); } catch { /* best-effort: ignore */ }
             vault.Add(new PasswordCredential(VaultResource, VaultUser, token));
         }
         catch { /* Vault unavailable */ }
@@ -217,10 +217,10 @@ public class SettingsService : ISettingsService
             var cred = vault.Retrieve(VaultResource, VaultUser);
             vault.Remove(cred);
         }
-        catch { }
+        catch { /* best-effort: ignore */ }
 
         // Clear DPAPI file
-        try { if (File.Exists(_tokenPath)) File.Delete(_tokenPath); } catch { }
+        try { if (File.Exists(_tokenPath)) File.Delete(_tokenPath); } catch { /* best-effort: ignore */ }
 
         // Clear legacy file
         try
@@ -228,7 +228,7 @@ public class SettingsService : ISettingsService
             var legacyPath = Path.Combine(_appFolder, ".auth_token");
             if (File.Exists(legacyPath)) File.Delete(legacyPath);
         }
-        catch { }
+        catch { /* best-effort: ignore */ }
 
         TokenSource = "none";
         return Task.CompletedTask;

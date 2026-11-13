@@ -26,6 +26,7 @@ namespace NineLivesAudio
         private readonly IConnectivityService _connectivity;
         private readonly INavigationService _navigationService;
         private readonly MainViewModel _mainViewModel;
+        private readonly ILocalizationService _localization;
         private DateTime _lastMiniPlayerUpdate = DateTime.MinValue;
 
         // Window reference for preset sizing
@@ -88,6 +89,7 @@ namespace NineLivesAudio
             _connectivity = App.Services.GetRequiredService<IConnectivityService>();
             _navigationService = App.Services.GetRequiredService<INavigationService>();
             _mainViewModel = App.Services.GetRequiredService<MainViewModel>();
+            _localization = App.Services.GetRequiredService<ILocalizationService>();
             this.Closed += MainWindow_Closed;
 
             // Wire MiniPlayer to playback events via Messenger
@@ -127,7 +129,7 @@ namespace NineLivesAudio
                 InitOverlay.Visibility = Visibility.Visible;
                 InitErrorPanel.Visibility = Visibility.Collapsed;
                 AppContent.Visibility = Visibility.Collapsed;
-                InitStatusText.Text = "Initializing...";
+                InitStatusText.Text = _localization.GetString("Initializing");
 
                 await _initializer.InitializeAsync();
 
@@ -137,7 +139,7 @@ namespace NineLivesAudio
                 }
                 else
                 {
-                    ShowInitError(_initializer.ErrorMessage ?? "Unknown initialization error");
+                    ShowInitError(_initializer.ErrorMessage ?? _localization.GetString("UnknownInitError"));
                 }
             }
             catch (Exception ex)
@@ -149,6 +151,9 @@ namespace NineLivesAudio
 
         private void ShowApp()
         {
+            ApplyLocalization();
+            _localization.LanguageChanged -= ApplyLocalization;
+            _localization.LanguageChanged += ApplyLocalization;
             InitOverlay.Visibility = Visibility.Collapsed;
             InitErrorPanel.Visibility = Visibility.Collapsed;
             AppContent.Visibility = Visibility.Visible;
@@ -226,19 +231,19 @@ namespace NineLivesAudio
             if (!isOnline)
             {
                 ConnectivityIcon.Foreground = (Brush)Application.Current.Resources["RitualErrorBrush"];
-                ConnectivityText.Text = "Offline";
+                ConnectivityText.Text = _localization.GetString("Offline");
                 ConnectivityText.Foreground = (Brush)Application.Current.Resources["MistFaintBrush"];
             }
             else if (!isServerReachable)
             {
                 ConnectivityIcon.Foreground = (Brush)Application.Current.Resources["RitualWarningBrush"];
-                ConnectivityText.Text = "Server unreachable";
+                ConnectivityText.Text = _localization.GetString("ServerUnreachable");
                 ConnectivityText.Foreground = (Brush)Application.Current.Resources["MistFaintBrush"];
             }
             else
             {
                 ConnectivityIcon.Foreground = (Brush)Application.Current.Resources["RitualSuccessBrush"];
-                ConnectivityText.Text = "Connected";
+                ConnectivityText.Text = _localization.GetString("Connected");
                 ConnectivityText.Foreground = (Brush)Application.Current.Resources["StarlightBrush"];
             }
         }
@@ -486,5 +491,18 @@ namespace NineLivesAudio
                 disposable.Dispose();
             }
         }
+        private void ApplyLocalization()
+        {
+            if (NavHomeItem != null) NavHomeItem.Content = _localization.GetString("NavHome");
+            if (NavLibraryItem != null) NavLibraryItem.Content = _localization.GetString("NavLibrary");
+            if (NavPlayerItem != null) NavPlayerItem.Content = _localization.GetString("NavPlayer");
+            if (NavDownloadsItem != null) NavDownloadsItem.Content = _localization.GetString("NavDownloads");
+            if (RetryButton != null) RetryButton.Content = _localization.GetString("Retry");
+            if (OpenLogsButton != null) OpenLogsButton.Content = _localization.GetString("OpenLogs");
+            if (ResetButton != null) ResetButton.Content = _localization.GetString("ResetConnection");
+            // Re-render the status dot text in the new language.
+            UpdateConnectivityUI(_connectivity.IsOnline, _connectivity.IsServerReachable);
+        }
+
     }
 }

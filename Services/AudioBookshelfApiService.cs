@@ -11,6 +11,7 @@ namespace NineLivesAudio.Services;
 public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 {
     private readonly ISettingsService _settingsService;
+    private readonly ILocalizationService _localization;
     private readonly HttpClient _httpClient;
     private string? _authToken;
     private string? _serverUrl;
@@ -29,9 +30,10 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
     // Event migrated to WeakReferenceMessenger: ReconnectionAttemptedMessage
 
-    public AudioBookshelfApiService(ISettingsService settingsService)
+    public AudioBookshelfApiService(ISettingsService settingsService, ILocalizationService localization)
     {
         _settingsService = settingsService;
+        _localization = localization;
 
         var handler = new HttpClientHandler
         {
@@ -80,26 +82,23 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         {
             _serverUrl = serverUrl.TrimEnd('/');
 
-            // Configure HttpClient to handle potential SSL issues and set timeout
-            _httpClient.Timeout = TimeSpan.FromSeconds(30);
+            // Per-request timeout via CTS — never mutate the shared HttpClient.Timeout,
+            // which would break concurrent downloads/syncs that rely on the 5-minute default.
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
             var loginData = new { username, password };
             var jsonPayload = JsonSerializer.Serialize(loginData, JsonOptions);
             var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
-            System.Diagnostics.Debug.WriteLine($"Attempting login to: {_serverUrl}/login");
-            System.Diagnostics.Debug.WriteLine($"Request payload: {jsonPayload}");
+            // NOTE: never log the request payload (contains the password) or the
+            // response body (contains the auth token).
+            var response = await _httpClient.PostAsync($"{_serverUrl}/login", content, timeoutCts.Token);
 
-            var response = await _httpClient.PostAsync($"{_serverUrl}/login", content);
-
-            var responseContent = await response.Content.ReadAsStringAsync();
-            System.Diagnostics.Debug.WriteLine($"Response status: {response.StatusCode}");
-            System.Diagnostics.Debug.WriteLine($"Response content: {responseContent}");
+            var responseContent = await response.Content.ReadAsStringAsync(timeoutCts.Token);
 
             if (!response.IsSuccessStatusCode)
             {
-                System.Diagnostics.Debug.WriteLine($"Login failed: {response.StatusCode} - {responseContent}");
-                LastError = $"Login failed: {response.StatusCode} - {responseContent}";
+                LastError = _localization.Format("LoginFailedStatus", (int)response.StatusCode);
                 return false;
             }
 
@@ -107,8 +106,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
             if (loginResponse?.User?.Token == null)
             {
-                System.Diagnostics.Debug.WriteLine($"Login response missing token. Response: {responseContent}");
-                LastError = "Server response did not contain authentication token";
+                LastError = _localization.GetString("LoginNoToken");
                 return false;
             }
 
@@ -127,20 +125,17 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (HttpRequestException ex)
         {
-            System.Diagnostics.Debug.WriteLine($"HTTP Request error: {ex.Message}");
-            LastError = $"Connection failed: {ex.Message}";
+            LastError = _localization.Format("ConnectionFailedDetail", ex.Message);
             return false;
         }
-        catch (TaskCanceledException ex)
+        catch (TaskCanceledException)
         {
-            System.Diagnostics.Debug.WriteLine($"Request timeout: {ex.Message}");
-            LastError = "Connection timed out. Check server address and network.";
+            LastError = _localization.GetString("ConnectionTimeout");
             return false;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Login error: {ex.Message}");
-            LastError = $"Unexpected error: {ex.Message}";
+            LastError = _localization.Format("UnexpectedError", ex.Message);
             return false;
         }
     }
@@ -171,7 +166,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"ValidateTokenAsync error: {ex.Message}");
             return false;
         }
     }
@@ -205,7 +199,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"GetLibraries error: {ex.Message}");
             return new List<Library>();
         }
     }
@@ -244,7 +237,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"GetLibraryItems error: {ex.Message}");
             return new List<AudioBook>();
         }
     }
@@ -265,7 +257,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"GetAudioBook error: {ex.Message}");
             return null;
         }
     }
@@ -274,16 +265,13 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
     {
         EnsureAuthenticated();
 
-        System.Diagnostics.Debug.WriteLine($"GetAudioFileStream: itemId={itemId}, fileIno={fileIno}");
 
         var url = $"{_serverUrl}/api/items/{itemId}/file/{fileIno}";
-        System.Diagnostics.Debug.WriteLine($"Download URL: {url}");
 
         // Use the single shared HttpClient with ResponseHeadersRead for streaming
         var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
 
-        System.Diagnostics.Debug.WriteLine($"Download response: {response.StatusCode}, ContentLength: {response.Content.Headers.ContentLength}");
         var stream = await response.Content.ReadAsStreamAsync();
         return new ResponseStream(stream, response);
     }
@@ -349,7 +337,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"GetCoverImage error: {ex.Message}");
             return null;
         }
     }
@@ -408,7 +395,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"StartPlaybackSession error: {ex.Message}");
             return null;
         }
     }
@@ -433,7 +419,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"UpdateProgress error: {ex.Message}");
             return false;
         }
     }
@@ -458,7 +443,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"SyncSessionProgress error: {ex.Message}");
             return false;
         }
     }
@@ -474,7 +458,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"ClosePlaybackSession error: {ex.Message}");
         }
     }
 
@@ -504,7 +487,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"GetUserProgress error: {ex.Message}");
             return null;
         }
     }
@@ -538,7 +520,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"GetAllUserProgress error: {ex.Message}");
             return new List<UserProgress>();
         }
     }
@@ -571,7 +552,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"GetBookmarks error: {ex.Message}");
             return new List<Bookmark>();
         }
     }
@@ -595,7 +575,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"CreateBookmark error: {ex.Message}");
             return false;
         }
     }
@@ -613,7 +592,6 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"DeleteBookmark error: {ex.Message}");
             return false;
         }
     }
@@ -681,7 +659,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         WeakReferenceMessenger.Default.Send(new ReconnectionAttemptedMessage(new ReconnectionEventArgs
         {
             Success = false,
-            ErrorMessage = "All reconnection attempts exhausted"
+            ErrorMessage = _localization.GetString("ReconnectExhausted")
         }));
         return false;
     }
@@ -701,8 +679,8 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         return new AudioBook
         {
             Id = item.Id,
-            Title = metadata?.Title ?? "Unknown Title",
-            Author = metadata?.AuthorName ?? metadata?.Authors?.FirstOrDefault()?.Name ?? "Unknown Author",
+            Title = metadata?.Title ?? _localization.GetString("UnknownTitle"),
+            Author = metadata?.AuthorName ?? metadata?.Authors?.FirstOrDefault()?.Name ?? _localization.GetString("UnknownAuthor"),
             Narrator = metadata?.NarratorName ?? metadata?.Narrators?.FirstOrDefault(),
             Description = metadata?.Description,
             CoverPath = !string.IsNullOrEmpty(item.Media?.CoverPath)

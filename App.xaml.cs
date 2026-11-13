@@ -47,6 +47,9 @@ public partial class App : Application
                 // Services - Navigation
                 services.AddSingleton<INavigationService, NavigationService>();
 
+                // Localization (must be after SettingsService)
+                services.AddSingleton<ILocalizationService, LocalizationService>();
+
                 // Services - UI/UX Enhancements
                 services.AddSingleton<INotificationService, NotificationService>();
                 services.AddSingleton<IMetadataNormalizer, MetadataNormalizer>();
@@ -84,6 +87,11 @@ public partial class App : Application
             logger = Services.GetRequiredService<ILoggingService>();
             logger.Log("App.OnLaunched: activating main window (no async blocking)");
 
+            // Hook up localized XAML text (loc:Loc.*) before any page is created.
+            Loc.Initialize(
+                Services.GetRequiredService<ILocalizationService>(),
+                Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
+
             var mainWindow = Services.GetRequiredService<MainWindow>();
             mainWindow.Activate();
 
@@ -101,7 +109,7 @@ public partial class App : Application
     {
         var logger = Services.GetService<ILoggingService>();
         logger?.LogError("UNHANDLED XAML EXCEPTION", e.Exception);
-        logger?.FlushAsync().GetAwaiter().GetResult();
+        FlushLogsBestEffort(logger);
         e.Handled = true;
     }
 
@@ -109,15 +117,30 @@ public partial class App : Application
     {
         var logger = Services.GetService<ILoggingService>();
         logger?.LogError("UNHANDLED DOMAIN EXCEPTION", e.ExceptionObject as Exception);
-        logger?.FlushAsync().GetAwaiter().GetResult();
+        FlushLogsBestEffort(logger);
     }
 
     private void TaskScheduler_UnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
         var logger = Services.GetService<ILoggingService>();
         logger?.LogError("UNOBSERVED TASK EXCEPTION", e.Exception);
-        logger?.FlushAsync().GetAwaiter().GetResult();
+        FlushLogsBestEffort(logger);
         e.SetObserved();
+    }
+
+    private static void FlushLogsBestEffort(ILoggingService? logger)
+    {
+        // Best-effort synchronous flush with a hard timeout to avoid deadlocks
+        // in crash handlers. Never throws.
+        try
+        {
+            if (logger != null)
+            {
+                var flush = logger.FlushAsync();
+                flush.Wait(TimeSpan.FromSeconds(2));
+            }
+        }
+        catch { /* crash path — ignore */ }
     }
 
     // --- Mini Player Window Management ---

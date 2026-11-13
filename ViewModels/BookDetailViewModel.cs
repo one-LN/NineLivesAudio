@@ -19,6 +19,7 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
     private readonly IDownloadService _downloadService;
     private readonly ILocalDatabase _database;
     private readonly ILoggingService _logger;
+    private readonly ILocalizationService _localization;
 
     [ObservableProperty]
     private AudioBook? _audioBook;
@@ -39,10 +40,10 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
     private bool _isPlayLoading;
 
     [ObservableProperty]
-    private string _playButtonText = "Play";
+    private string _playButtonText = "Play"; // localized on init
 
     [ObservableProperty]
-    private string _downloadButtonText = "Download";
+    private string _downloadButtonText = "Download"; // localized on init
 
     [ObservableProperty]
     private bool _showChapterProgress;
@@ -53,12 +54,14 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
         IAudioPlaybackService playbackService,
         IDownloadService downloadService,
         ILocalDatabase database,
-        ILoggingService logger)
+        ILoggingService logger,
+        ILocalizationService localization)
     {
         _playbackService = playbackService;
         _downloadService = downloadService;
         _database = database;
         _logger = logger;
+        _localization = localization;
     }
 
     /// <summary>
@@ -69,7 +72,7 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
         AudioBook = audioBook;
         IsDownloaded = audioBook.IsDownloaded;
         UpdateDownloadButtonText();
-        PlayButtonText = audioBook.ProgressPercent > 0 ? "Continue" : "Play";
+        PlayButtonText = audioBook.ProgressPercent > 0 ? _localization.GetString("Continue") : _localization.GetString("Play");
     }
 
     /// <summary>
@@ -146,7 +149,7 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
     public (string progressText, double progressPercent, string? chapterInfo) GetProgressInfo()
     {
         if (AudioBook == null)
-            return ("Not started", 0, null);
+            return (_localization.GetString("NotStarted"), 0, null);
 
         var pct = AudioBook.ProgressPercent;
 
@@ -158,7 +161,7 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
 
             if (chapter != null && chIdx >= 0)
             {
-                var chapterDisplay = $"Chapter {chIdx + 1}/{AudioBook.Chapters.Count}: {chapter.Title}";
+                var chapterDisplay = _localization.Format("ChapterOf", chIdx + 1, AudioBook.Chapters.Count, chapter.Title);
                 var elapsed = TimeFormatHelper.FormatDuration(
                     TimeSpan.FromSeconds(AudioBook.CurrentTime.TotalSeconds - chapter.Start));
                 var chDur = TimeFormatHelper.FormatDuration(chapter.Duration);
@@ -174,7 +177,7 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
             return ($"{(int)pct}% complete ({currentPosition} / {totalDuration})", pct, null);
         }
 
-        return ("Not started", 0, null);
+        return (_localization.GetString("NotStarted"), 0, null);
     }
 
     [RelayCommand]
@@ -185,7 +188,7 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
         try
         {
             IsPlayLoading = true;
-            PlayButtonText = "Loading...";
+            PlayButtonText = _localization.GetString("Loading");
 
             // Refresh audiobook from DB to ensure IsDownloaded + AudioFile.LocalPath are current
             var freshBook = await _database.GetAudioBookAsync(AudioBook.Id);
@@ -201,20 +204,20 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
             else
             {
                 _logger.LogWarning("Failed to load audiobook for playback");
-                PlayButtonText = "Failed - try again";
+                PlayButtonText = _localization.GetString("FailedTryAgain");
                 await Task.Delay(3000);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError("Error playing audiobook", ex);
-            PlayButtonText = $"Error: {ex.Message}";
+            PlayButtonText = _localization.Format("ErrorLabel", ex.Message);
             await Task.Delay(3000);
         }
         finally
         {
             IsPlayLoading = false;
-            PlayButtonText = AudioBook?.ProgressPercent > 0 ? "Continue" : "Play";
+            PlayButtonText = AudioBook?.ProgressPercent > 0 ? _localization.GetString("Continue") : _localization.GetString("Play");
         }
     }
 
@@ -227,7 +230,7 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
         {
             if (IsDownloaded)
             {
-                DownloadButtonText = "Removing...";
+                DownloadButtonText = _localization.GetString("Downloading");
                 await _downloadService.DeleteDownloadAsync(AudioBook.Id);
                 AudioBook.IsDownloaded = false;
                 AudioBook.LocalPath = null;
@@ -237,14 +240,14 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
             }
             else
             {
-                DownloadButtonText = "Starting download...";
+                DownloadButtonText = _localization.GetString("Downloading");
                 _logger.Log($"Starting download for: {AudioBook.Title}, AudioFiles: {AudioBook.AudioFiles.Count}");
 
                 SubscribeToDownloadEvents();
 
                 var downloadItem = await _downloadService.QueueDownloadAsync(AudioBook);
                 IsDownloading = true;
-                DownloadButtonText = "Downloading...";
+                DownloadButtonText = _localization.GetString("Downloading");
                 _logger.Log($"Queued download for: {AudioBook.Title}, DownloadId: {downloadItem.Id}");
             }
 
@@ -253,7 +256,7 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             _logger.LogError("Error with download action", ex);
-            DownloadButtonText = $"Error: {ex.Message}";
+            DownloadButtonText = _localization.Format("ErrorLabel", ex.Message);
             await Task.Delay(3000);
             UpdateDownloadButtonText();
         }
@@ -281,7 +284,7 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
     private void OnDownloadProgress(DownloadProgressEventArgs e)
     {
         DownloadProgressPercent = Math.Min((int)e.Progress, 100);
-        DownloadStatusText = $"Downloading... {DownloadProgressPercent}%";
+        DownloadStatusText = _localization.Format("DownloadingProgress", DownloadProgressPercent);
         DownloadButtonText = DownloadStatusText;
     }
 
@@ -299,7 +302,7 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
     private void OnDownloadFailed(DownloadItem e)
     {
         _logger.LogWarning($"Download failed for: {e.Title} - {e.ErrorMessage}");
-        DownloadButtonText = $"Failed: {e.ErrorMessage}";
+        DownloadButtonText = _localization.Format("FailedLabel", e.ErrorMessage);
         IsDownloading = false;
         UnsubscribeFromDownloadEvents();
     }
@@ -307,7 +310,7 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
     private void UpdateDownloadButtonText()
     {
         if (!IsDownloading)
-            DownloadButtonText = IsDownloaded ? "Remove Download" : "Download";
+            DownloadButtonText = IsDownloaded ? _localization.GetString("RemoveDownload") : _localization.GetString("Download");
     }
 
     public void Dispose()

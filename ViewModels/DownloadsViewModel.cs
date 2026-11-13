@@ -16,6 +16,7 @@ public partial class DownloadsViewModel : ObservableObject, IDisposable
     private readonly IDownloadService _downloadService;
     private readonly ILocalDatabase _database;
     private readonly DispatcherQueue _dispatcherQueue;
+    private readonly ILocalizationService _localization;
 
     [ObservableProperty]
     private bool _isLoading;
@@ -31,10 +32,12 @@ public partial class DownloadsViewModel : ObservableObject, IDisposable
 
     public DownloadsViewModel(
         IDownloadService downloadService,
-        ILocalDatabase database)
+        ILocalDatabase database,
+        ILocalizationService localization)
     {
         _downloadService = downloadService;
         _database = database;
+        _localization = localization;
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
 
         WeakReferenceMessenger.Default.Register<DownloadProgressChangedMessage>(this, (r, m) =>
@@ -93,7 +96,7 @@ public partial class DownloadsViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to load downloads: {ex.Message}";
+            ErrorMessage = _localization.Format("FailedLoadDownloads", ex.Message);
             HasError = true;
         }
         finally
@@ -114,7 +117,7 @@ public partial class DownloadsViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to pause download: {ex.Message}";
+            ErrorMessage = _localization.Format("FailedPause", ex.Message);
             HasError = true;
         }
     }
@@ -130,7 +133,7 @@ public partial class DownloadsViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to resume download: {ex.Message}";
+            ErrorMessage = _localization.Format("FailedResume", ex.Message);
             HasError = true;
         }
     }
@@ -147,7 +150,7 @@ public partial class DownloadsViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to cancel download: {ex.Message}";
+            ErrorMessage = _localization.Format("FailedCancel", ex.Message);
             HasError = true;
         }
     }
@@ -165,7 +168,7 @@ public partial class DownloadsViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to delete download: {ex.Message}";
+            ErrorMessage = _localization.Format("FailedDelete", ex.Message);
             HasError = true;
         }
     }
@@ -184,7 +187,7 @@ public partial class DownloadsViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to clear completed downloads: {ex.Message}";
+            ErrorMessage = _localization.Format("FailedClearCompleted", ex.Message);
             HasError = true;
         }
     }

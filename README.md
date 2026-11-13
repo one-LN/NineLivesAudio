@@ -2,11 +2,11 @@
 
 > Because one life just isn't enough for your audiobook collection.
 
-A beautiful, native Windows desktop client for [Audiobookshelf](https://www.audiobookshelf.org/). Built with WinUI 3 and .NET 10, Nine Lives brings your audiobook library to life with a cosmic dark theme, offline downloads, and seamless sync across all your devices.
+A beautiful, native Windows desktop client for [Audiobookshelf](https://www.audiobookshelf.org/). Built with WinUI 3 and .NET 9, Nine Lives brings your audiobook library to life with a cosmic dark theme, offline downloads, and seamless sync across all your devices.
 
 [![Release](https://img.shields.io/github/v/release/StaticHumStudio/NineLivesAudio)](https://github.com/StaticHumStudio/NineLivesAudio/releases/latest)
 [![License](https://img.shields.io/badge/license-Private-blue.svg)](LICENSE)
-[![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/9.0)
 
 ![Nine Lives Audio Screenshot](Assets/nine-lives-logo.png)
 
@@ -51,6 +51,12 @@ A beautiful, native Windows desktop client for [Audiobookshelf](https://www.audi
 5. Once connected, your library will sync automatically
 
 ---
+
+## 🌐 Language / 语言
+
+Nine Lives Audio supports **English** and **简体中文**. The UI follows your system language by default, or you can switch anytime in **Settings → Appearance → Language** — no restart required.
+
+九命音频支持**英文**和**简体中文**。界面默认跟随系统语言，也可在**设置 → 外观 → 语言**中随时切换，无需重启。
 
 ## 🎵 Features
 
@@ -121,7 +127,7 @@ Your audiobook life, everywhere you need it.
 Built with modern Windows development tools:
 
 - **UI Framework**: WinUI 3 / Windows App SDK 1.6
-- **Runtime**: .NET 10
+- **Runtime**: .NET 9
 - **Architecture**: MVVM (CommunityToolkit.Mvvm)
 - **Local Audio**: NAudio 2.2
 - **Streaming**: Windows MediaPlayer
@@ -135,7 +141,7 @@ Built with modern Windows development tools:
 Want to hack on Nine Lives? Here's how:
 
 ### Prerequisites
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 - Windows 10 SDK (10.0.22621.0)
 - Windows App SDK 1.6
 
@@ -159,6 +165,32 @@ dotnet run -r win-x64
 # Build, sign (dev cert), and run in one command
 .\build-and-run.ps1
 ```
+
+### Self-check & Packaging
+```powershell
+# Offline static checks: localization key parity, XAML sanity, DI graph, packaging consistency
+python tools\verify.py
+
+# Full pipeline: self-check -> restore -> build -> publish (binpublish) -> optional installer
+powershell -ExecutionPolicy Bypass -File tools\package.ps1 -Installer
+```
+
+`tools/verify.py` is pure Python (no .NET needed) and also runs in CI on every pull request,
+so localization or XAML wiring mistakes fail fast without a Windows build agent.
+
+### Localization (i18n)
+All UI strings live in `Services/LocalizationService.cs` (`en-US` + `zh-CN`, identical key sets).
+Add a key to **both** dictionaries — `tools/verify.py` fails the build if they drift.
+
+Usage from code: `_localization.GetString("SaveSettings")`, `_localization.Format("DaysAgo", 3)`.
+
+Usage from XAML (no code-behind needed):
+```xml
+<Button loc:Loc.Content="SaveSettings"/>
+<ToggleSwitch loc:Loc.Header="HideFinished"/>
+<TextBox loc:Loc.Placeholder="EnterUsername"/>
+```
+The values refresh in place when the user changes the language in Settings.
 
 ---
 

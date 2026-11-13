@@ -53,7 +53,12 @@ public class SyncService : ISyncService, IDisposable
         var interval = TimeSpan.FromMinutes(intervalMinutes > 0 ? intervalMinutes : 5);
 
         _syncTimer = new Timer(
-            async _ => await SyncNowAsync(),
+            _ =>
+            {
+                // Timer callback is async-void by design; SyncNowAsync already
+                // guards re-entry via _syncLock and catches its own exceptions.
+                _ = SyncNowAsync();
+            },
             null,
             TimeSpan.FromSeconds(3), // Initial delay — fast first sync so Home page gets data quickly
             interval);

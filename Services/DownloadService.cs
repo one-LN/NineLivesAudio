@@ -13,6 +13,7 @@ public class DownloadService : IDownloadService, IDisposable
     private readonly ISettingsService _settingsService;
     private readonly ILocalDatabase _database;
     private readonly ILoggingService _logger;
+    private readonly ILocalizationService _localization;
     private readonly ConcurrentDictionary<string, DownloadItem> _activeDownloads = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _downloadCts = new();
     private readonly SemaphoreSlim _downloadSemaphore = new(2);
@@ -21,12 +22,14 @@ public class DownloadService : IDownloadService, IDisposable
         IAudioBookshelfApiService apiService,
         ISettingsService settingsService,
         ILocalDatabase database,
-        ILoggingService loggingService)
+        ILoggingService loggingService,
+        ILocalizationService localization)
     {
         _apiService = apiService;
         _settingsService = settingsService;
         _database = database;
         _logger = loggingService;
+        _localization = localization;
 
         _ = Task.Run(CleanupOrphanedPartsAsync);
     }
@@ -167,7 +170,7 @@ public class DownloadService : IDownloadService, IDisposable
                 {
                     _logger.LogWarning($"[Download] API returned no audio files for: {audioBook.Title}");
                     downloadItem.Status = DownloadStatus.Failed;
-                    downloadItem.ErrorMessage = "No audio files found for this book";
+                    downloadItem.ErrorMessage = _localization.GetString("NoAudioFiles");
                     await _database.UpdateDownloadItemAsync(downloadItem);
                     WeakReferenceMessenger.Default.Send(new DownloadFailedMessage(downloadItem));
                     return;
@@ -244,7 +247,7 @@ public class DownloadService : IDownloadService, IDisposable
                 catch (Exception ex)
                 {
                     _logger.LogError($"[Download] File failed: {fileName}", ex);
-                    try { if (File.Exists(partPath)) File.Delete(partPath); } catch { }
+                    try { if (File.Exists(partPath)) File.Delete(partPath); } catch { /* best-effort: ignore */ }
 
                     downloadItem.RetryCount++;
                     if (downloadItem.RetryCount < downloadItem.MaxRetries)
@@ -270,7 +273,7 @@ public class DownloadService : IDownloadService, IDisposable
             {
                 _logger.LogWarning($"[Download] No files on disk for: {audioBook.Title}");
                 downloadItem.Status = DownloadStatus.Failed;
-                downloadItem.ErrorMessage = "No audio files written to disk";
+                downloadItem.ErrorMessage = _localization.GetString("NoFilesWritten");
                 await _database.UpdateDownloadItemAsync(downloadItem);
                 WeakReferenceMessenger.Default.Send(new DownloadFailedMessage(downloadItem));
                 return;
@@ -353,10 +356,10 @@ public class DownloadService : IDownloadService, IDisposable
             foreach (var pf in partFiles)
             {
                 _logger.LogWarning($"[Download] Orphaned .part removed: {pf}");
-                try { File.Delete(pf); } catch { }
+                try { File.Delete(pf); } catch { /* best-effort: ignore */ }
             }
         }
-        catch { }
+        catch { /* best-effort: ignore */ }
     }
 
     private string GetDownloadPath(AudioBook audioBook)

@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:loc="using:NineLivesAudio.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
@@ -32,7 +33,7 @@
                     VerticalAlignment="Center"
                     Spacing="4">
             <TextBlock x:Name="TitleText"
-                       Text="No book playing"
+                       loc:Loc.Text="NoBookPlaying" Text="No book playing"
                        FontWeight="SemiBold"
                        TextTrimming="CharacterEllipsis"/>
             <TextBlock x:Name="AuthorText"

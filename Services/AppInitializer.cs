@@ -9,6 +9,7 @@ public class AppInitializer : IAppInitializer
     private readonly IAudioBookshelfApiService _apiService;
     private readonly ISyncService _syncService;
     private readonly ILoggingService _logger;
+    private readonly ILocalizationService _localization;
     private int _running; // 0 = idle, 1 = running
 
     public InitState State { get; private set; } = InitState.NotStarted;
@@ -20,13 +21,15 @@ public class AppInitializer : IAppInitializer
         ISettingsService settingsService,
         IAudioBookshelfApiService apiService,
         ISyncService syncService,
-        ILoggingService loggingService)
+        ILoggingService loggingService,
+        ILocalizationService localization)
     {
         _database = database;
         _settingsService = settingsService;
         _apiService = apiService;
         _syncService = syncService;
         _logger = loggingService;
+        _localization = localization;
     }
 
     public async Task InitializeAsync()
@@ -51,6 +54,8 @@ public class AppInitializer : IAppInitializer
             var dbTask = _database.InitializeAsync();
             var settingsTask = _settingsService.LoadSettingsAsync();
             await Task.WhenAll(dbTask, settingsTask);
+            // Apply persisted UI language now that settings are loaded.
+            _localization.RefreshFromSettings();
             _logger.Log($"AppInitializer: database + settings ready (server={_settingsService.Settings.ServerUrl})");
 
             // Stage 2: Validate token with timeout — transition to Ready quickly

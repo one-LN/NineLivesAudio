@@ -33,6 +33,7 @@ public class LoggingService : ILoggingService, IDisposable
     private readonly Task _consumer;
     private readonly CancellationTokenSource _cts = new();
     private readonly SemaphoreSlim _flushSignal = new(0, 1);
+    private volatile TaskCompletionSource<bool>? _flushAck;
     private bool _disposed;
 
     public string SessionId { get; } = Guid.NewGuid().ToString("N")[..8]; // short 8-char id
@@ -60,6 +61,22 @@ public class LoggingService : ILoggingService, IDisposable
 
         var timestamp = DateTime.Now.ToString("yyyy-MM-dd");
         _logPath = Path.Combine(logDir, $"app_{timestamp}.log");
+
+        // Retention: delete log files older than 14 days to bound disk usage.
+        try
+        {
+            var cutoff = DateTime.Now.AddDays(-14);
+            foreach (var old in Directory.GetFiles(logDir, "app_*.log"))
+            {
+                try
+                {
+                    if (File.GetLastWriteTime(old) < cutoff)
+                        File.Delete(old);
+                }
+                catch { /* best effort */ }
+            }
+        }
+        catch { /* best effort */ }
 
         // Start the single background consumer
         _consumer = Task.Run(ConsumeLogsAsync);
@@ -128,9 +145,23 @@ public class LoggingService : ILoggingService, IDisposable
     {
         if (_disposed) return;
 
-        // Signal the consumer to flush, then give it a moment
-        try { _flushSignal.Release(); } catch { /* already signaled */ }
-        await Task.Delay(200); // allow consumer to drain
+        // Ask the consumer to drain, then wait for its acknowledgement instead of
+        // guessing with a fixed delay. Bounded so a wedged consumer cannot hang us.
+        var ack = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _flushAck = ack;
+        try { _flushSignal.Release(); }
+        catch (ObjectDisposedException) { return; }     // shutting down
+        catch (SemaphoreFullException) { /* a flush is already pending — consumer will wake anyway */ }
+
+        await Task.WhenAny(ack.Task, Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(false);
+    }
+
+    private void AcknowledgeFlush()
+    {
+        var ack = _flushAck;
+        if (ack == null) return;
+        _flushAck = null;
+        ack.TrySetResult(true);
     }
 
     private async Task ConsumeLogsAsync()
@@ -176,6 +207,9 @@ public class LoggingService : ILoggingService, IDisposable
                     }
                 }
 
+                // Tell a waiting FlushAsync that pending lines are on disk.
+                AcknowledgeFlush();
+
                 // Small delay to batch more efficiently (unless flush was requested)
                 try
                 {
@@ -206,6 +240,9 @@ public class LoggingService : ILoggingService, IDisposable
         _disposed = true;
 
         Log($"=== Session {SessionId} ending ===");
+
+        // Release any waiter before tearing down the signal.
+        AcknowledgeFlush();
 
         // Signal shutdown and wait for consumer to finish
         _channel.Writer.TryComplete();

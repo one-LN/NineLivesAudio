@@ -70,7 +70,7 @@ public static class LegacyMigrationHelper
             if (!string.IsNullOrEmpty(oldCred.Password))
             {
                 // Remove any existing new-key credential before adding
-                try { vault.Remove(vault.Retrieve(NewVaultResource, VaultUser)); } catch { }
+                try { vault.Remove(vault.Retrieve(NewVaultResource, VaultUser)); } catch { /* best-effort: ignore */ }
                 vault.Add(new PasswordCredential(NewVaultResource, VaultUser, oldCred.Password));
                 vault.Remove(oldCred);
             }

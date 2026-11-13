@@ -21,6 +21,7 @@ public sealed partial class PlayerPage : Page
     private readonly IMetadataNormalizer _normalizer;
     private readonly IAudioPlaybackService _playbackService;
     private readonly IAudioBookshelfApiService _apiService;
+    private readonly ILocalizationService _localization;
     private bool _isUserSeeking = false;
     private bool _isChapterMode = false;
 
@@ -35,11 +36,15 @@ public sealed partial class PlayerPage : Page
         _normalizer = App.Services.GetRequiredService<IMetadataNormalizer>();
         _playbackService = App.Services.GetRequiredService<IAudioPlaybackService>();
         _apiService = App.Services.GetRequiredService<IAudioBookshelfApiService>();
+        _localization = App.Services.GetRequiredService<ILocalizationService>();
         this.InitializeComponent();
     }
 
     private void Page_Loaded(object sender, RoutedEventArgs e)
     {
+        ApplyLocalization();
+        _localization.LanguageChanged -= ApplyLocalization;
+        _localization.LanguageChanged += ApplyLocalization;
         _logger.Log("PlayerPage loaded");
         ViewModel.Initialize();
 
@@ -62,6 +67,7 @@ public sealed partial class PlayerPage : Page
 
     private void Page_Unloaded(object sender, RoutedEventArgs e)
     {
+        _localization.LanguageChanged -= ApplyLocalization;
         _logger.Log("PlayerPage unloaded, cleaning up event subscriptions");
 
         ViewModel.PropertyChanged -= ViewModel_PropertyChanged;
@@ -172,7 +178,7 @@ public sealed partial class PlayerPage : Page
         SpeedText.Text = $"{ViewModel.PlaybackSpeed:0.0}x";
 
         // Sleep timer
-        SleepButtonText.Text = ViewModel.SleepTimerMinutes.HasValue ? $"{ViewModel.SleepTimerMinutes}m" : "Off";
+        SleepButtonText.Text = ViewModel.SleepTimerMinutes.HasValue ? $"{ViewModel.SleepTimerMinutes}m" : _localization.GetString("Off");
         SleepTimerPanel.Visibility = ViewModel.SleepTimerMinutes.HasValue ? Visibility.Visible : Visibility.Collapsed;
         SleepTimerStatusText.Text = ViewModel.SleepTimerText;
 
@@ -220,7 +226,7 @@ public sealed partial class PlayerPage : Page
         if (coverPath != _lastCoverPath)
         {
             _lastCoverPath = coverPath;
-            _cachedCoverImage = CoverImageService.LoadCover(coverPath);
+            _cachedCoverImage = CoverImageService.LoadCover(coverPath, 800, 800);
             CoverImage.Source = _cachedCoverImage;
         }
     }
@@ -243,13 +249,13 @@ public sealed partial class PlayerPage : Page
         {
             SourceBadge.Background = (Brush)Application.Current.Resources["NebulaDarkBrush"];
             SourceBadgeIcon.Glyph = "\uE73E"; // Checkmark
-            SourceBadgeText.Text = "Playing from local file";
+            SourceBadgeText.Text = _localization.GetString("PlayingLocal");
         }
         else
         {
             SourceBadge.Background = (Brush)Application.Current.Resources["VoidElevatedBrush"];
             SourceBadgeIcon.Glyph = "\uE753"; // Cloud/wifi
-            SourceBadgeText.Text = "Streaming from server";
+            SourceBadgeText.Text = _localization.GetString("StreamingFromServer");
         }
     }
 
@@ -477,15 +483,15 @@ public sealed partial class PlayerPage : Page
 
         var options = new (int? minutes, string label)[]
         {
-            (null, "Off"),
-            (5, "5 minutes"),
-            (10, "10 minutes"),
-            (15, "15 minutes"),
-            (30, "30 minutes"),
-            (45, "45 minutes"),
-            (60, "1 hour"),
-            (90, "1.5 hours"),
-            (120, "2 hours")
+            (null, _localization.GetString("Off")),
+            (5, _localization.Format("MinutesCount", 5)),
+            (10, _localization.Format("MinutesCount", 10)),
+            (15, _localization.Format("MinutesCount", 15)),
+            (30, _localization.Format("MinutesCount", 30)),
+            (45, _localization.Format("MinutesCount", 45)),
+            (60, _localization.Format("HoursCount", 1)),
+            (90, _localization.Format("HoursCount", "1.5")),
+            (120, _localization.Format("HoursCount", 2))
         };
 
         foreach (var (minutes, label) in options)
@@ -560,7 +566,7 @@ public sealed partial class PlayerPage : Page
         // "Add bookmark here" item
         var addItem = new MenuFlyoutItem
         {
-            Text = "Add bookmark here",
+            Text = _localization.GetString("AddBookmarkHere"),
             Icon = new FontIcon { Glyph = "\uE710" }
         };
         addItem.Click += async (s, args) =>
@@ -580,7 +586,7 @@ public sealed partial class PlayerPage : Page
             {
                 var emptyItem = new MenuFlyoutItem
                 {
-                    Text = "No bookmarks yet",
+                    Text = _localization.GetString("NoBookmarks"),
                     IsEnabled = false
                 };
                 flyout.Items.Add(emptyItem);
@@ -600,7 +606,7 @@ public sealed partial class PlayerPage : Page
 
                     var goToItem = new MenuFlyoutItem
                     {
-                        Text = "Go to position",
+                        Text = _localization.GetString("GoToPosition"),
                         Icon = new FontIcon { Glyph = "\uE768" }
                     };
                     goToItem.Click += async (s, args) =>
@@ -611,7 +617,7 @@ public sealed partial class PlayerPage : Page
 
                     var deleteItem = new MenuFlyoutItem
                     {
-                        Text = "Delete",
+                        Text = _localization.GetString("Delete"),
                         Icon = new FontIcon { Glyph = "\uE74D" }
                     };
                     deleteItem.Click += async (s, args) =>
@@ -631,7 +637,7 @@ public sealed partial class PlayerPage : Page
             _logger.LogDebug($"Failed to load bookmarks: {ex.Message}");
             var errorItem = new MenuFlyoutItem
             {
-                Text = "Failed to load bookmarks",
+                Text = _localization.GetString("FailedLoadBookmarks"),
                 IsEnabled = false
             };
             flyout.Items.Add(errorItem);
@@ -658,15 +664,15 @@ public sealed partial class PlayerPage : Page
         }
         else
         {
-            defaultTitle = $"Bookmark at {TimeFormatHelper.FormatTimeSpan(_playbackService.Position)}";
+            defaultTitle = _localization.Format("BookmarkTitle", TimeFormatHelper.FormatTimeSpan(_playbackService.Position));
         }
 
         // Show a ContentDialog to let user edit the bookmark title
         var dialog = new ContentDialog
         {
-            Title = "Add Bookmark",
-            PrimaryButtonText = "Save",
-            CloseButtonText = "Cancel",
+            Title = _localization.GetString("AddBookmark"),
+            PrimaryButtonText = _localization.GetString("Save"),
+            CloseButtonText = _localization.GetString("Cancel"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = this.XamlRoot
         };
@@ -674,7 +680,7 @@ public sealed partial class PlayerPage : Page
         var titleInput = new TextBox
         {
             Text = defaultTitle,
-            PlaceholderText = "Bookmark title",
+            PlaceholderText = _localization.GetString("BookmarkName"),
             SelectionStart = 0,
             SelectionLength = defaultTitle.Length
         };
@@ -695,4 +701,19 @@ public sealed partial class PlayerPage : Page
             }
         }
     }
+
+    private void ApplyLocalization()
+    {
+        if (NoBookPlayingText != null) NoBookPlayingText.Text = _localization.GetString("NoBookPlaying");
+        if (NoBookPlayingSubtitleText != null) NoBookPlayingSubtitleText.Text = _localization.GetString("NoBookPlayingSubtitle");
+        if (BookLabelText != null) BookLabelText.Text = _localization.GetString("Book");
+        if (ChapterLabelText != null) ChapterLabelText.Text = _localization.GetString("Chapter");
+        if (SpeedLabelText != null) SpeedLabelText.Text = _localization.GetString("Speed");
+        if (SleepLabelText != null) SleepLabelText.Text = _localization.GetString("Sleep");
+        if (VolumeLabelText != null) VolumeLabelText.Text = _localization.GetString("Volume");
+        if (ChaptersLabelText != null) ChaptersLabelText.Text = _localization.GetString("Chapters");
+        if (BookmarksLabelText != null) BookmarksLabelText.Text = _localization.GetString("Bookmarks");
+        if (LoadingAudiobookText != null) LoadingAudiobookText.Text = _localization.GetString("LoadingAudiobook");
+    }
+
 }
