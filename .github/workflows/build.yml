@@ -2,9 +2,10 @@ name: Build
 
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, "arena/**"]
   pull_request:
     branches: [master, main]
+  workflow_dispatch:
 
 jobs:
   verify:
@@ -32,3 +33,35 @@ jobs:
 
       - name: Publish (win-x64, self-contained)
         run: dotnet publish -p:PublishProfile=win-x64 -c Release --no-restore
+
+      # Optional: the runner image ships Inno Setup 6, so a setup.exe is produced too.
+      # A missing ISCC.exe must not fail the portable build.
+      - name: Compile installer (Inno Setup)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($null -eq $iscc) {
+            Write-Host "Inno Setup not found — skipping installer" -ForegroundColor Yellow
+            exit 0
+          }
+          & $iscc "installer.iss"
+
+      - name: Upload portable build (binpublish)
+        uses: actions/upload-artifact@v4
+        with:
+          name: NineLivesAudio-win-x64-portable
+          path: binpublish/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: NineLivesAudio-win-x64-installer
+          path: installer_output/*.exe
+          if-no-files-found: warn
+          retention-days: 30

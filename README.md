@@ -179,6 +179,38 @@ powershell -ExecutionPolicy Bypass -File tools\package.ps1 -Installer
 `tools/verify.py` is pure Python (no .NET needed) and also runs in CI on every pull request,
 so localization or XAML wiring mistakes fail fast without a Windows build agent.
 
+### Getting a runnable .exe
+
+A WinUI 3 app cannot be cross-compiled — you need **Windows + .NET 9 SDK** (and Inno Setup 6
+only if you want the installer).
+
+**Option A — build locally**
+
+```powershell
+git clone https://github.com/one-LN/NineLivesAudio.git
+cd NineLivesAudio
+git checkout master                      # or the branch you want to package
+powershell -ExecutionPolicy Bypass -File tools\package.ps1 -Installer
+```
+
+| Output | What it is |
+| --- | --- |
+| `binpublish\NineLivesAudio.exe` | Portable, self-contained app — keep the whole `binpublish` folder together |
+| `installer_output\NineLivesAudioSetup.exe` | Installer (per-user, no admin rights needed) |
+
+Without `-Installer` you still get `binpublish` — just run the exe from that folder, no install required.
+
+**Option B — let GitHub Actions build it**
+
+Push a commit, open a pull request, or run the **Build** workflow manually
+(*Actions → Build → Run workflow*). When the run finishes, download these artifacts from the run page:
+
+- `NineLivesAudio-win-x64-portable` — the `binpublish` folder as a zip
+- `NineLivesAudio-win-x64-installer` — `NineLivesAudioSetup.exe`
+
+No local toolchain needed, and no Windows machine needed to *start* the build.
+(The Windows runner compiles it; you only download the result.)
+
 ### Localization (i18n)
 All UI strings live in `Services/LocalizationService.cs` (`en-US` + `zh-CN`, identical key sets).
 Add a key to **both** dictionaries — `tools/verify.py` fails the build if they drift.
