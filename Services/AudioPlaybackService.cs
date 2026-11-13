@@ -1039,7 +1039,11 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         _introSkipApplied = true;
 
         var skip = Math.Max(0, _settingsService.Settings.SkipIntroSeconds);
-        if (skip <= 0) return;
+        if (skip <= 0)
+        {
+            _logger.LogDebug("[Playback] Skip intro disabled (SkipIntroSeconds = 0)");
+            return;
+        }
 
         var duration = Duration.TotalSeconds;
         if (duration > 0 && duration <= skip * 2)
@@ -1048,7 +1052,11 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             return;
         }
 
-        if (Position.TotalSeconds >= skip - 1) return; // already past the intro
+        if (Position.TotalSeconds >= skip - 1)
+        {
+            _logger.LogDebug($"[Playback] Skip intro not needed: position {Position.TotalSeconds:F0}s >= {skip}s");
+            return;
+        }
 
         _logger.Log($"[Playback] Skipping intro: {Position.TotalSeconds:F0}s -> {skip}s");
         try
@@ -1070,9 +1078,15 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         if (_outroSkipInProgress || _state != PlaybackState.Playing) return;
 
         var skip = Math.Max(0, _settingsService.Settings.SkipOutroSeconds);
-        if (skip <= 0) return;
+        if (skip <= 0) return; // feature off
 
+        // The live duration can still be 0 (stream not opened yet, or a book whose
+        // per-file metadata has no length) — fall back to the book's own duration so a
+        // correctly configured outro is not silently ignored.
         var duration = Duration.TotalSeconds;
+        if (duration <= 0)
+            duration = _currentAudioBook?.Duration.TotalSeconds ?? 0;
+
         if (duration <= 0 || duration <= skip * 2) return; // misconfigured for a short book
 
         if (duration - Position.TotalSeconds > skip) return;

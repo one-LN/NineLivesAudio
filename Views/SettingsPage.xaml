@@ -369,6 +369,7 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Settings file:" Style="{StaticResource CaptionStyle}"/>
@@ -394,6 +395,11 @@
 
                             <TextBlock Grid.Row="5" Grid.Column="0" Text="Server host:" Style="{StaticResource CaptionStyle}"/>
                             <TextBlock Grid.Row="5" Grid.Column="1" Text="{x:Bind ViewModel.ServerHost, Mode=OneWay}" FontSize="12"
+                                       Foreground="{StaticResource StarlightDimBrush}"/>
+
+                            <!-- Shows what is actually persisted, so "did my setting save?" is answerable -->
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Playback saved:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="6" Grid.Column="1" Text="{x:Bind ViewModel.PlaybackFlags, Mode=OneWay}" FontSize="12"
                                        Foreground="{StaticResource StarlightDimBrush}"/>
                         </Grid>
 

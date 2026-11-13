@@ -100,6 +100,10 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _serverHost = string.Empty;
 
+    /// <summary>Effective playback values as actually stored in settings.json.</summary>
+    [ObservableProperty]
+    private string _playbackFlags = string.Empty;
+
     // Messages
     [ObservableProperty]
     private string _errorMessage = string.Empty;
@@ -189,6 +193,10 @@ public partial class SettingsViewModel : ObservableObject
         LastLoadedAt = _settingsService.LastLoadedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? _localization.GetString("Never");
         SessionId = _logger.SessionId;
 
+        var stored = _settingsService.Settings;
+        PlaybackFlags = $"skip intro {stored.SkipIntroSeconds}s · skip outro {stored.SkipOutroSeconds}s · " +
+                        $"progress {(stored.PlayerChapterMode ? "chapter" : "book")}";
+
         if (!string.IsNullOrEmpty(_settingsService.Settings.ServerUrl))
         {
             try { ServerHost = new Uri(_settingsService.Settings.ServerUrl).Host; }
@@ -247,6 +255,7 @@ public partial class SettingsViewModel : ObservableObject
             settings.SkipOutroSeconds = ToSeconds(SkipOutroSeconds);
 
             await _settingsService.SaveSettingsAsync();
+            LoadDoctorInfo();
             _logger.LogDebug($"[Settings] Skip settings auto-saved " +
                              $"(intro={settings.SkipIntroSeconds}s, outro={settings.SkipOutroSeconds}s)");
         }
