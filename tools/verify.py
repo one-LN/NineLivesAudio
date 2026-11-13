@@ -15,6 +15,10 @@ mistakes that are easy to introduce with bulk edits:
   8. every loc:Loc.* attached property matches a property the target element has
   9. every service constructor dependency is registered in App.xaml.cs
  10. all StaticResource/ThemeResource keys used by app XAML are defined
+ 11. XAML types that need an assembly reference are imported
+ 12. localization attaches only where the target type supports it
+ 13. distinctive WinRT/BE types have their `using`
+ 14. the empty-library bug cannot come back (401 handling + "no data" guards)
 
 Usage:  python3 tools/verify.py [-v]
 Exit code 0 = clean.
@@ -351,6 +355,64 @@ for f in cs_files():
         if f"using {type_ns};" in src or ns == type_ns or ns.startswith(type_ns + "."):
             continue
         fail(f"[using] {f.relative_to(ROOT)}: uses {type_name} but lacks 'using {type_ns};'")
+
+# ── 14. "connected but empty shelf" regression guards ─────────────────────
+# A swallowed HTTP 401 used to be indistinguishable from an empty server: the
+# library came back empty, no error surfaced, and the user saw a blank shelf.
+# These invariants keep that from silently returning.
+_APIFILE = ROOT / "Services" / "AudioBookshelfApiService.cs"
+_SYNCFILE = ROOT / "Services" / "SyncService.cs"
+_VMFILE = ROOT / "ViewModels" / "LibraryViewModel.cs"
+
+
+def method_body(path: Path, signature: str) -> str:
+    src = read(path)
+    start = src.find(signature)
+    if start == -1:
+        return ""
+    # cut at the next member declaration at the same indentation level
+    rest = src[start + len(signature):]
+    match = re.search(r"\n    (?:public|private|protected|internal)\s", rest)
+    return rest[: match.start()] if match else rest
+
+
+if _APIFILE.exists():
+    for sig in ("public async Task<List<Library>> GetLibrariesAsync()",
+                "public async Task<List<AudioBook>> GetLibraryItemsAsync("):
+        body = method_body(_APIFILE, sig)
+        if not body:
+            fail(f"[silent-fail] AudioBookshelfApiService: {sig.strip()} not found")
+        elif "HttpStatusCode.Unauthorized" not in body:
+            fail(f"[silent-fail] AudioBookshelfApiService: {sig.strip()} swallows HTTP 401 "
+                 "(must flag LastRequestUnauthorized, not return an empty list silently)")
+    if "LastRequestUnauthorized" not in read(_APIFILE):
+        fail("[silent-fail] AudioBookshelfApiService: missing LastRequestUnauthorized")
+
+if _SYNCFILE.exists():
+    body = method_body(_SYNCFILE, "public async Task SyncLibrariesAsync()")
+    if not body:
+        fail("[silent-fail] SyncService: SyncLibrariesAsync not found")
+    else:
+        guard = body.find("libraries.Count == 0")
+        if guard == -1:
+            fail("[silent-fail] SyncService.SyncLibrariesAsync must bail out when the server "
+                 "returns no libraries instead of overwriting cached data")
+        elif guard > body.find("SaveLibrariesAsync("):
+            fail("[silent-fail] SyncService.SyncLibrariesAsync guards libraries only after "
+                 "SaveLibrariesAsync — the empty-check has to come first")
+        items_guard = body.find("items.Count == 0")
+        if items_guard == -1:
+            fail("[silent-fail] SyncService.SyncLibrariesAsync must skip saving a library whose "
+                 "item request returned nothing (a failed request is not an empty library)")
+        elif items_guard > body.find("SaveAudioBooksAsync("):
+            fail("[silent-fail] SyncService.SyncLibrariesAsync saves a library before checking "
+                 "whether its item request returned nothing")
+
+if _VMFILE.exists():
+    src = read(_VMFILE)
+    if "ConnectivityChangedMessage" not in src:
+        fail("[silent-fail] LibraryViewModel must reload when the server becomes reachable "
+             "again (ConnectivityChangedMessage)")
 
 # ── report ────────────────────────────────────────────────────────────────
 print(f"scanned {len(cs_files())} C# files, {len(xaml_files())} XAML files, {len(en_keys)} localization keys")

@@ -28,6 +28,17 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
     public string? LastError { get; private set; }
 
+    public bool LastRequestUnauthorized { get; private set; }
+
+    /// <summary>Clears the token + header but keeps the saved token for the next login.</summary>
+    public void InvalidateSession()
+    {
+        if (string.IsNullOrEmpty(_authToken)) return;
+        _authToken = null;
+        _httpClient.DefaultRequestHeaders.Authorization = null;
+        LastRequestUnauthorized = true;
+    }
+
     // Event migrated to WeakReferenceMessenger: ReconnectionAttemptedMessage
 
     public AudioBookshelfApiService(ISettingsService settingsService, ILocalizationService localization)
@@ -121,6 +132,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
             await _settingsService.SaveSettingsAsync();
 
             LastError = null;
+            LastRequestUnauthorized = false;
             return true;
         }
         catch (HttpRequestException ex)
@@ -142,6 +154,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
     public async Task LogoutAsync()
     {
+        LastRequestUnauthorized = false;
         _authToken = null;
         _serverUrl = null;
         _httpClient.DefaultRequestHeaders.Authorization = null;
@@ -162,6 +175,18 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
                 return false;
 
             var response = await _httpClient.GetAsync($"{_serverUrl}/api/me");
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                LastRequestUnauthorized = true;
+                return false;
+            }
+
+            // The flag stays set until *some* request succeeds again, so a periodic
+            // ping cannot erase evidence of an expired session before the UI reads it.
+            if (response.IsSuccessStatusCode)
+                LastRequestUnauthorized = false;
+
             return response.IsSuccessStatusCode;
         }
         catch (Exception ex)
@@ -178,6 +203,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         {
             var response = await _httpClient.GetAsync($"{_serverUrl}/api/libraries");
             response.EnsureSuccessStatusCode();
+            LastRequestUnauthorized = false;
 
             var json = await response.Content.ReadAsStringAsync();
             var apiResponse = JsonSerializer.Deserialize<LibrariesResponse>(json, JsonOptions);
@@ -197,8 +223,14 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
                 }).ToList() ?? new List<Folder>()
             }).ToList() ?? new List<Library>();
         }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            LastRequestUnauthorized = true;
+            return new List<Library>();
+        }
         catch (Exception ex)
         {
+            LastError = ex.Message;
             return new List<Library>();
         }
     }
@@ -211,12 +243,14 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         {
             var allItems = new List<AudioBook>();
             int currentPage = page;
+            const int MaxPages = 200; // safety valve — never loop forever on a broken server
 
-            while (true)
+            while (currentPage - page < MaxPages)
             {
                 var response = await _httpClient.GetAsync(
                     $"{_serverUrl}/api/libraries/{libraryId}/items?limit={limit}&page={currentPage}&minified=0");
                 response.EnsureSuccessStatusCode();
+                LastRequestUnauthorized = false;
 
                 var json = await response.Content.ReadAsStringAsync();
                 var apiResponse = JsonSerializer.Deserialize<LibraryItemsResponse>(json, JsonOptions);
@@ -226,8 +260,13 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
                 allItems.AddRange(apiResponse.Results.Select(MapToAudioBook));
 
-                // Stop if we've fetched all items
-                if (allItems.Count >= apiResponse.Total)
+                // Termination: a short page means we hit the end. `total` is only
+                // trusted when it is a positive number — some server versions omit it
+                // (0), which used to stop the loop after the very first page.
+                if (apiResponse.Results.Count < limit)
+                    break;
+
+                if (apiResponse.Total > 0 && allItems.Count >= apiResponse.Total)
                     break;
 
                 currentPage++;
@@ -235,8 +274,14 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
             return allItems;
         }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            LastRequestUnauthorized = true;
+            return new List<AudioBook>();
+        }
         catch (Exception ex)
         {
+            LastError = ex.Message;
             return new List<AudioBook>();
         }
     }

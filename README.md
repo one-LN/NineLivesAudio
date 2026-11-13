@@ -168,7 +168,8 @@ dotnet run -r win-x64
 
 ### Self-check & Packaging
 ```powershell
-# Offline static checks: localization key parity, XAML sanity, DI graph, packaging consistency
+# Offline static checks (14 groups): localization parity, XAML sanity, DI graph,
+# packaging consistency, and regression guards for the "connected but empty library" bug
 python tools\verify.py
 
 # Full pipeline: self-check -> restore -> build -> publish (binpublish) -> optional installer

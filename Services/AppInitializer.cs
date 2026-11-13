@@ -61,11 +61,11 @@ public class AppInitializer : IAppInitializer
             // Stage 2: Validate token with timeout — transition to Ready quickly
             if (!string.IsNullOrEmpty(_settingsService.Settings.ServerUrl))
             {
-                _logger.Log("AppInitializer: validating auth token (3s timeout)...");
+                _logger.Log("AppInitializer: validating auth token (8s timeout)...");
                 bool valid = false;
                 try
                 {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
                     var validateTask = _apiService.ValidateTokenAsync();
                     var completed = await Task.WhenAny(validateTask, Task.Delay(Timeout.Infinite, cts.Token));
                     if (completed == validateTask)
@@ -75,7 +75,7 @@ public class AppInitializer : IAppInitializer
                     }
                     else
                     {
-                        _logger.LogWarning("AppInitializer: token validation timed out (3s), continuing startup");
+                        _logger.LogWarning("AppInitializer: token validation timed out (8s), continuing startup");
                     }
                 }
                 catch (OperationCanceledException)
@@ -83,8 +83,11 @@ public class AppInitializer : IAppInitializer
                     _logger.LogWarning("AppInitializer: token validation timed out, continuing startup");
                 }
 
-                // Stage 3: Fire-and-forget sync start — don't block Ready
-                if (valid && _settingsService.Settings.AutoSyncProgress)
+                // Stage 3: Fire-and-forget sync start — don't block Ready.
+                // Started even when validation timed out: SyncService skips work while
+                // unauthenticated, so a slow network can no longer disable syncing for
+                // the whole session (that used to leave the shelf empty until restart).
+                if (_settingsService.Settings.AutoSyncProgress)
                 {
                     _logger.Log("AppInitializer: starting sync service (background)");
                     _ = Task.Run(async () =>

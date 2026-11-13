@@ -44,6 +44,17 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _searchDebounceToken;
     private const int SearchDebounceMs = 300;
 
+    // Marshals background messages (connectivity pings) onto the UI thread.
+    private readonly Microsoft.UI.Dispatching.DispatcherQueue? _dispatcherQueue =
+        Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+
+    // True while "downloaded only" is active because the server was unreachable.
+    // The flag lets us switch the filter back off once the server answers again,
+    // without fighting a filter the user turned on by hand.
+    private bool _autoOfflineFallback;
+    private bool _settingOfflineFallback;
+    private bool _sessionExpiredNotified;
+
     // Cache for normalized metadata (avoid recomputing on every render)
     private readonly Dictionary<string, NormalizedMetadata> _normalizedCache = new();
     private const int NormalizedCacheMaxSize = 500;
@@ -130,6 +141,94 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             ((LibraryViewModel)r).OnDownloadCompleted(m.Value));
         WeakReferenceMessenger.Default.Register<DownloadFailedMessage>(this, (r, m) =>
             ((LibraryViewModel)r).OnDownloadFailed(m.Value));
+
+        // When the server becomes reachable again, reload instead of leaving the
+        // user staring at a cached/empty shelf until they hit refresh.
+        WeakReferenceMessenger.Default.Register<ConnectivityChangedMessage>(this, (r, m) =>
+            ((LibraryViewModel)r).OnConnectivityChanged(m.Value));
+    }
+
+    private void OnConnectivityChanged(ConnectivityChangedEventArgs e)
+    {
+        if (!e.IsOnline || !e.IsServerReachable) return;
+
+        var dispatcher = _dispatcherQueue;
+        if (dispatcher != null && !dispatcher.HasThreadAccess)
+        {
+            dispatcher.TryEnqueue(() => _ = ReloadAfterReconnectAsync());
+            return;
+        }
+
+        _ = ReloadAfterReconnectAsync();
+    }
+
+    private async Task ReloadAfterReconnectAsync()
+    {
+        if (IsLoading) return;
+
+        _logger.Log("[Library] Server reachable again — refreshing library");
+        try
+        {
+            await LoadLibrariesAsync();
+            if (SelectedLibrary != null)
+                await LoadAudioBooksAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("[Library] Reconnect refresh failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// Shows only downloaded books as a resilience fallback and remembers that we
+    /// (not the user) switched the filter, so it can be undone automatically.
+    /// </summary>
+    private void ApplyOfflineFallback()
+    {
+        if (!ShowDownloadedOnly)
+        {
+            _settingOfflineFallback = true;
+            try
+            {
+                ShowDownloadedOnly = true;
+            }
+            finally
+            {
+                _settingOfflineFallback = false;
+            }
+        }
+
+        _autoOfflineFallback = true;
+    }
+
+    private void ClearOfflineFallback()
+    {
+        if (!_autoOfflineFallback) return;
+        _autoOfflineFallback = false;
+
+        if (ShowDownloadedOnly)
+            ShowDownloadedOnly = false;
+    }
+
+    /// <summary>
+    /// Turns a silent 401 into an explicit "session expired" state: the in-memory
+    /// session is dropped, the empty state switches to "not connected" and the user
+    /// is told once to sign in again — instead of an empty library with no hint.
+    /// </summary>
+    private void HandleUnauthorizedIfNeeded()
+    {
+        if (!_apiService.LastRequestUnauthorized) return;
+
+        _apiService.InvalidateSession();
+
+        if (_sessionExpiredNotified) return;
+        _sessionExpiredNotified = true;
+
+        var message = _localization.GetString("SessionExpired");
+        ErrorMessage = message;
+        HasError = true;
+        _notifications.ShowWarning(message, _localization.GetString("NotConnected"));
+        _logger.LogWarning("[Library] Token rejected with 401 — session invalidated");
     }
 
     /// <summary>
@@ -216,6 +315,13 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
                         {
                             Libraries.Add(library);
                         }
+
+                        // A successful answer proves the session works again.
+                        _sessionExpiredNotified = false;
+                    }
+                    else
+                    {
+                        HandleUnauthorizedIfNeeded();
                     }
                 }
                 catch (Exception ex) when (ex is TaskCanceledException or HttpRequestException or OperationCanceledException)
@@ -250,9 +356,17 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task LoadAudioBooksAsync()
     {
+        // Never bail out silently: pick a library when one exists, otherwise show
+        // the empty state so the user sees *why* the shelf is blank.
+        if (SelectedLibrary == null && Libraries.Count > 0)
+            SelectedLibrary = Libraries[0];
+
         if (SelectedLibrary == null)
         {
-            _logger.LogWarning("LoadAudioBooksAsync called but no library selected");
+            _logger.LogWarning("LoadAudioBooksAsync called but no library is available");
+            UpdateAvailableGroups();
+            ApplyFilterInternal();
+            UpdateShowEmptyState();
             return;
         }
 
@@ -291,12 +405,23 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
                     foreach (var book in refreshedBooks)
                         AudioBooks.Add(book);
                     _logger.Log($"Reloaded {AudioBooks.Count} audiobooks from database after sync");
+
+                    // The server answered: drop the offline-only filter again (unless the
+                    // user picked it themselves) and refresh the empty state accordingly.
+                    var wasFallback = _autoOfflineFallback;
+                    ClearOfflineFallback();
+                    ApplyFilterInternal();
+
+                    if (wasFallback)
+                        _notifications.ShowSuccess(_localization.GetString("BackOnline"));
+
+                    HandleUnauthorizedIfNeeded();
                 }
                 catch (Exception ex) when (ex is TaskCanceledException or HttpRequestException or OperationCanceledException)
                 {
                     _logger.LogWarning($"[Library] Server unreachable, using cached books: {ex.Message}");
                     // Continue with locally cached books already loaded above
-                    ShowDownloadedOnly = true;
+                    ApplyOfflineFallback();
                     _notifications.ShowInfo(_localization.GetString("ShowingDownloadedOnly"));
                 }
             }
@@ -465,6 +590,10 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
 
     partial void OnShowDownloadedOnlyChanged(bool value)
     {
+        // A user-initiated toggle means the offline fallback is no longer ours to undo.
+        if (!_settingOfflineFallback)
+            _autoOfflineFallback = false;
+
         ApplyFilterInternal();
     }
 

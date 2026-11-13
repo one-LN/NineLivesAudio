@@ -8,6 +8,19 @@ public interface IAudioBookshelfApiService
     string? ServerUrl { get; }
     string? LastError { get; }
 
+    /// <summary>
+    /// True when the most recent request was rejected with HTTP 401, i.e. the stored
+    /// token is no longer accepted by the server. Lets the UI show "session expired"
+    /// instead of an empty library.
+    /// </summary>
+    bool LastRequestUnauthorized { get; }
+
+    /// <summary>
+    /// Drops the in-memory session (token + Authorization header) so callers stop
+    /// hammering the API with a dead token. The saved token is left untouched.
+    /// </summary>
+    void InvalidateSession();
+
     // Authentication
     Task<bool> LoginAsync(string serverUrl, string username, string password);
     Task LogoutAsync();

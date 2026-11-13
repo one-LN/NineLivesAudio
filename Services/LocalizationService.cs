@@ -220,6 +220,8 @@ public sealed class LocalizationService : ILocalizationService
             ["TryChangingFilters"] = "Try changing your filters.",
             ["LibraryRefreshed"] = "Library refreshed",
             ["ShowingDownloadedOnly"] = "Showing downloaded books only (server unreachable)",
+            ["SessionExpired"] = "Your session expired. Please sign in again in Settings.",
+            ["BackOnline"] = "Server is back online — showing all books",
             ["Local"] = "Local",
             // Book detail
             ["Details"] = "Details",
@@ -489,6 +491,8 @@ public sealed class LocalizationService : ILocalizationService
             ["TryChangingFilters"] = "试试调整筛选条件。",
             ["LibraryRefreshed"] = "书库已刷新",
             ["ShowingDownloadedOnly"] = "仅显示已下载书籍（服务器不可达）",
+            ["SessionExpired"] = "登录已过期，请在设置中重新登录。",
+            ["BackOnline"] = "服务器已恢复连接，已显示全部书籍",
             ["Local"] = "本地",
             // 详情
             ["Details"] = "详情",

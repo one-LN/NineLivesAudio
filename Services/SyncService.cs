@@ -18,6 +18,10 @@ public class SyncService : ISyncService, IDisposable
     private bool _isSyncing;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
+    // Guards the library pull so the startup sync and a page load cannot download
+    // the same libraries twice at the same time.
+    private readonly SemaphoreSlim _librariesLock = new(1, 1);
+
     // Progress coordinator state
     private string? _activeItemId;
     private double _lastSyncedTime;
@@ -120,9 +124,30 @@ public class SyncService : ISyncService, IDisposable
 
     public async Task SyncLibrariesAsync()
     {
+        // Coalesce concurrent callers: whoever arrives while a sync is running waits
+        // for it and then returns — the data is fresh already, no second download.
+        if (!await _librariesLock.WaitAsync(0))
+        {
+            _logger.LogDebug("[Sync] Library sync already running — joining instead of duplicating");
+            await _librariesLock.WaitAsync();
+            _librariesLock.Release();
+            return;
+        }
+
         try
         {
             var libraries = await _apiService.GetLibrariesAsync();
+
+            if (libraries.Count == 0)
+            {
+                // An empty answer is indistinguishable from a failed request at this level
+                // (401 / timeout / parse error all come back as an empty list), so never
+                // treat it as authoritative: keep whatever is cached locally.
+                _logger.LogWarning(
+                    $"[Sync] Server returned no libraries (unauthorized={_apiService.LastRequestUnauthorized}) — keeping cached data");
+                return;
+            }
+
             await _database.SaveLibrariesAsync(libraries);
 
             // Pre-load all existing books to avoid N+1 queries
@@ -132,6 +157,13 @@ public class SyncService : ISyncService, IDisposable
             foreach (var library in libraries)
             {
                 var items = await _apiService.GetLibraryItemsAsync(library.Id);
+
+                if (items.Count == 0)
+                {
+                    _logger.LogWarning(
+                        $"[Sync] No items for library '{library.Name}' (unauthorized={_apiService.LastRequestUnauthorized}) — keeping cached books");
+                    continue;
+                }
 
                 // Preserve local state (download info + progress) from existing DB records
                 foreach (var item in items)
@@ -217,6 +249,10 @@ public class SyncService : ISyncService, IDisposable
         {
             _logger.LogError("[Sync] Library sync error", ex);
             throw;
+        }
+        finally
+        {
+            _librariesLock.Release();
         }
     }
 
@@ -506,5 +542,6 @@ public class SyncService : ISyncService, IDisposable
     {
         _syncTimer?.Dispose();
         _syncLock.Dispose();
+        _librariesLock.Dispose();
     }
 }
