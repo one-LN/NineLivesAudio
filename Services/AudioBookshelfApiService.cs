@@ -189,7 +189,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
             return response.IsSuccessStatusCode;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return false;
         }
@@ -300,7 +300,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
             return item != null ? MapToAudioBook(item) : null;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return null;
         }
@@ -380,7 +380,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
             return await response.Content.ReadAsByteArrayAsync();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return null;
         }
@@ -438,7 +438,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
                 }).ToList() ?? new List<Chapter>()
             };
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return null;
         }
@@ -462,7 +462,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
             return response.IsSuccessStatusCode;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return false;
         }
@@ -486,7 +486,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
             return response.IsSuccessStatusCode;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return false;
         }
@@ -501,7 +501,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
             var content = new StringContent("{}", Encoding.UTF8, "application/json");
             await _httpClient.PostAsync($"{_serverUrl}/api/session/{sessionId}/close", content);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
         }
     }
@@ -530,7 +530,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
                 LastUpdate = DateTimeOffset.FromUnixTimeMilliseconds(progress.LastUpdate).DateTime
             };
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return null;
         }
@@ -563,7 +563,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
                         : DateTime.MinValue
                 }).ToList() ?? new List<UserProgress>();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return new List<UserProgress>();
         }
@@ -595,7 +595,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
                         : DateTime.MinValue
                 }).ToList() ?? new List<Bookmark>();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return new List<Bookmark>();
         }
@@ -618,7 +618,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
             return response.IsSuccessStatusCode;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return false;
         }
@@ -635,7 +635,7 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
             return response.IsSuccessStatusCode;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return false;
         }
