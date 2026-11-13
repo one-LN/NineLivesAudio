@@ -123,37 +123,8 @@ public sealed partial class PlayerPage : Page
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (!_isUserSeeking)
-            {
-                if (_isChapterMode)
-                {
-                    var chapter = _playbackService.CurrentChapter;
-                    if (chapter != null && chapter.Duration.TotalSeconds > 0)
-                    {
-                        var chapterElapsed = position.TotalSeconds - chapter.Start;
-                        if (chapterElapsed < 0) chapterElapsed = 0;
-                        ProgressSlider.Value = chapterElapsed / chapter.Duration.TotalSeconds * 100;
-
-                        CurrentTimeText.Text = TimeFormatHelper.FormatTimeSpan(TimeSpan.FromSeconds(chapterElapsed));
-                        var chapterRemaining = chapter.Duration - TimeSpan.FromSeconds(chapterElapsed);
-                        if (chapterRemaining < TimeSpan.Zero) chapterRemaining = TimeSpan.Zero;
-                        RemainingTimeText.Text = $"-{TimeFormatHelper.FormatTimeSpan(chapterRemaining)}";
-                    }
-                }
-                else
-                {
-                    var duration = ViewModel.Duration;
-                    if (duration.TotalSeconds > 0)
-                    {
-                        ProgressSlider.Value = position.TotalSeconds / duration.TotalSeconds * 100;
-                    }
-
-                    CurrentTimeText.Text = TimeFormatHelper.FormatTimeSpan(position);
-                    var remaining = duration - position;
-                    if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
-                    RemainingTimeText.Text = $"-{TimeFormatHelper.FormatTimeSpan(remaining)}";
-                }
-            }
+            if (_isUserSeeking) return;
+            RefreshProgressDisplay(position);
         });
     }
 
@@ -204,9 +175,11 @@ public sealed partial class PlayerPage : Page
         VolumeSlider.Value = ViewModel.Volume;
         UpdateVolumeIcon();
 
-        // Time texts
-        CurrentTimeText.Text = ViewModel.CurrentPositionText;
-        RemainingTimeText.Text = ViewModel.RemainingTimeText;
+        // Time texts — rendered through the mode-aware helper below. Writing the
+        // book-global ViewModel strings here used to clobber the chapter display as
+        // soon as the state changed (i.e. exactly when the next chapter started).
+        if (!_isUserSeeking)
+            RefreshProgressDisplay();
     }
 
     private void UpdateBookUI()
@@ -561,38 +534,39 @@ public sealed partial class PlayerPage : Page
         RefreshProgressDisplay();
     }
 
-    private void RefreshProgressDisplay()
+    private void RefreshProgressDisplay() => RefreshProgressDisplay(null);
+
+    /// <summary>
+    /// Single place that paints the slider and both time labels.
+    /// In chapter mode everything is chapter-relative; otherwise it is book-relative.
+    /// When the chapter is unknown (chapter list missing, or before the first chapter)
+    /// it falls back to book-relative instead of leaving stale text behind.
+    /// </summary>
+    private void RefreshProgressDisplay(TimeSpan? positionOverride)
     {
-        var position = _playbackService.Position;
+        var position = positionOverride ?? _playbackService.Position;
         var duration = ViewModel.Duration;
+        var chapter = _isChapterMode ? _playbackService.CurrentChapter : null;
 
-        if (_isChapterMode)
+        if (chapter != null && chapter.Duration.TotalSeconds > 0)
         {
-            var chapter = _playbackService.CurrentChapter;
-            if (chapter != null && chapter.Duration.TotalSeconds > 0)
-            {
-                var chapterElapsed = position.TotalSeconds - chapter.Start;
-                if (chapterElapsed < 0) chapterElapsed = 0;
-                ProgressSlider.Value = chapterElapsed / chapter.Duration.TotalSeconds * 100;
+            var chapterElapsed = Math.Clamp(
+                position.TotalSeconds - chapter.Start, 0, chapter.Duration.TotalSeconds);
 
-                CurrentTimeText.Text = TimeFormatHelper.FormatTimeSpan(TimeSpan.FromSeconds(chapterElapsed));
-                var chapterRemaining = chapter.Duration - TimeSpan.FromSeconds(chapterElapsed);
-                if (chapterRemaining < TimeSpan.Zero) chapterRemaining = TimeSpan.Zero;
-                RemainingTimeText.Text = $"-{TimeFormatHelper.FormatTimeSpan(chapterRemaining)}";
-            }
+            ProgressSlider.Value = chapterElapsed / chapter.Duration.TotalSeconds * 100;
+            CurrentTimeText.Text = TimeFormatHelper.FormatTimeSpan(TimeSpan.FromSeconds(chapterElapsed));
+            RemainingTimeText.Text =
+                $"-{TimeFormatHelper.FormatTimeSpan(TimeSpan.FromSeconds(chapter.Duration.TotalSeconds - chapterElapsed))}";
+            return;
         }
-        else
-        {
-            if (duration.TotalSeconds > 0)
-            {
-                ProgressSlider.Value = position.TotalSeconds / duration.TotalSeconds * 100;
-            }
 
-            CurrentTimeText.Text = TimeFormatHelper.FormatTimeSpan(position);
-            var remaining = duration - position;
-            if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
-            RemainingTimeText.Text = $"-{TimeFormatHelper.FormatTimeSpan(remaining)}";
-        }
+        if (duration.TotalSeconds > 0)
+            ProgressSlider.Value = Math.Clamp(position.TotalSeconds / duration.TotalSeconds * 100, 0, 100);
+
+        CurrentTimeText.Text = TimeFormatHelper.FormatTimeSpan(position);
+        var remaining = duration - position;
+        if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
+        RemainingTimeText.Text = $"-{TimeFormatHelper.FormatTimeSpan(remaining)}";
     }
 
     private async void BookmarkButton_Click(object sender, RoutedEventArgs e)

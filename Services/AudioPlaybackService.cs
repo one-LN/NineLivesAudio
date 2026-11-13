@@ -347,6 +347,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         _outputDevice.Volume = _volume;
         WireNAudioEvents();
 
+        ReconcileTrackDuration(_currentTrackIndex, _audioFileReader.TotalTime);
+
         // Seek within the current track (not overall position)
         var withinTrackOffset = GetWithinTrackOffset(audioBook.CurrentTime);
         if (withinTrackOffset.TotalSeconds > 0)
@@ -374,6 +376,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         _outputDevice.Init(_audioFileReader);
         _outputDevice.Volume = _volume;
         WireNAudioEvents();
+
+        ReconcileTrackDuration(_currentTrackIndex, _audioFileReader.TotalTime);
 
         if (autoPlay)
         {
@@ -440,6 +444,10 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             }
 
             WireMediaPlayerEvents();
+
+            // Same self-healing as local playback: the stream knows its own length.
+            if (_trackDurations.Count > 1)
+                ReconcileTrackDuration(_currentTrackIndex, _mediaPlayer.PlaybackSession.NaturalDuration);
 
             if (seekToPosition)
             {
@@ -670,11 +678,16 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
                 if (_isStreaming && _streamTracks.Count > targetTrack && _currentAudioBook != null)
                 {
-                    await LoadStreamAsync(_streamTracks[targetTrack].ContentUrl, _currentAudioBook, CancellationToken.None);
+                    // seekToPosition: false — we set the exact offset right below, so the
+                    // track must not first jump to the saved book progress.
+                    await LoadStreamAsync(_streamTracks[targetTrack].ContentUrl, _currentAudioBook,
+                        CancellationToken.None, seekToPosition: false);
                 }
                 else if (!_isStreaming && _trackPaths.Count > targetTrack)
                 {
-                    await LoadLocalTrackAsync(_trackPaths[targetTrack], CancellationToken.None, wasPlaying);
+                    // Never auto-play before the offset is applied: that produced an
+                    // audible blip from second 0 of the new file.
+                    await LoadLocalTrackAsync(_trackPaths[targetTrack], CancellationToken.None, autoPlay: false);
                 }
 
                 var withinTrack = GetWithinTrackOffset(position);
@@ -979,6 +992,12 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         // Slow path: binary search for the chapter containing this position
         int newIndex = BinarySearchChapter(posSeconds);
 
+        // Chapters do not always cover the whole timeline (intro/outro outside any
+        // chapter, or a gap between files). Keep showing the chapter that is still
+        // playing instead of dropping the whole chapter context mid-book.
+        if (newIndex < 0)
+            newIndex = FindPreviousChapterIndex(posSeconds);
+
         if (newIndex != _currentChapterIndex)
         {
             _currentChapterIndex = newIndex;
@@ -988,6 +1007,18 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
     private int BinarySearchChapter(double posSeconds)
         => _trackManager.FindChapterForPosition(_chapters, posSeconds);
+
+    /// <summary>Index of the last chapter whose start is at or before <paramref name="posSeconds"/>.</summary>
+    private int FindPreviousChapterIndex(double posSeconds)
+    {
+        var index = -1;
+        for (var i = 0; i < _chapters.Count; i++)
+        {
+            if (_chapters[i].Start > posSeconds) break;
+            index = i;
+        }
+        return index;
+    }
 
     public async Task SeekToChapterAsync(int chapterIndex)
     {
@@ -1111,6 +1142,30 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             await CloseSessionAsync();
     }
 
+    /// <summary>
+    /// The cumulative track table is built from DB metadata, which can be missing or
+    /// stale (many library endpoints omit per-file duration). The decoder knows the
+    /// truth for the file we just opened, so shift the remaining entries by the delta —
+    /// that keeps both the total duration and every chapter offset honest.
+    /// </summary>
+    private void ReconcileTrackDuration(int trackIndex, TimeSpan actualDuration)
+    {
+        if (actualDuration.TotalSeconds <= 0) return;
+        if (trackIndex < 0 || trackIndex >= _trackDurations.Count) return;
+
+        var previous = trackIndex == 0 ? 0 : _trackDurations[trackIndex - 1];
+        var expected = previous + actualDuration.TotalSeconds;
+        var delta = expected - _trackDurations[trackIndex];
+
+        if (Math.Abs(delta) < 1.0) return; // already right within a second
+
+        for (var i = trackIndex; i < _trackDurations.Count; i++)
+            _trackDurations[i] += delta;
+
+        _logger.Log($"[Playback] Track {trackIndex + 1} duration corrected by {delta:+0.0;-0.0}s " +
+                    $"(book total now {TimeSpan.FromSeconds(_trackDurations.Last())})");
+    }
+
     // Multi-track helpers — delegate to ITrackManager
     private void BuildLocalTrackList(AudioBook audioBook, string primaryPath)
     {
@@ -1121,7 +1176,52 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         _trackPaths.AddRange(result.Paths);
         _trackDurations.AddRange(result.CumulativeDurations);
 
-        _logger.Log($"[Playback] Built track list: {_trackPaths.Count} local files");
+        // Metadata from the server often omits per-file duration. A zero/duplicate step
+        // makes every offset (starting track, chapter seek, total duration) wrong, so
+        // probe the real durations from the files themselves before anything else runs.
+        if (_trackDurations.Count > 1 && HasBrokenDurations(_trackDurations))
+            RebuildDurationsFromFiles();
+
+        _logger.Log($"[Playback] Built track list: {_trackPaths.Count} local files, total {Duration}");
+    }
+
+    private static bool HasBrokenDurations(IReadOnlyList<double> cumulative)
+    {
+        var previous = 0.0;
+        foreach (var value in cumulative)
+        {
+            if (value <= previous) return true; // not strictly increasing
+            previous = value;
+        }
+        return false;
+    }
+
+    /// <summary>Reads real track lengths with the decoder and rebuilds the cumulative table.</summary>
+    private void RebuildDurationsFromFiles()
+    {
+        var rebuilt = new List<double>(_trackPaths.Count);
+        double cumulative = 0;
+
+        foreach (var path in _trackPaths)
+        {
+            double seconds = 0;
+            try
+            {
+                using var reader = new AudioFileReader(path);
+                seconds = reader.TotalTime.TotalSeconds;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug($"[Playback] Duration probe failed for {Path.GetFileName(path)}: {ex.Message}");
+            }
+
+            cumulative += Math.Max(0, seconds);
+            rebuilt.Add(cumulative);
+        }
+
+        _trackDurations.Clear();
+        _trackDurations.AddRange(rebuilt);
+        _logger.Log($"[Playback] Rebuilt {rebuilt.Count} track durations from disk (total {Duration})");
     }
 
     private void BuildStreamTrackDurations()
