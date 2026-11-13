@@ -273,6 +273,16 @@ publish_profile = ROOT / "Properties" / "PublishProfiles" / "win-x64.pubxml"
 if not publish_profile.exists():
     fail("[pack] Properties/PublishProfiles/win-x64.pubxml is missing")
 
+# Every publish profile must target a runtime identifier the project declares.
+declared_rids = set(re.findall(r"<RuntimeIdentifiers>([^<]+)</RuntimeIdentifiers>", csproj)[0].split(";"))
+for profile in (ROOT / "Properties" / "PublishProfiles").glob("*.pubxml"):
+    rid = re.search(r"<RuntimeIdentifier>([^<]+)</RuntimeIdentifier>", read(profile))
+    if rid and rid.group(1).strip() not in declared_rids:
+        fail(f"[pack] {profile.name} uses RID '{rid.group(1)}' not listed in RuntimeIdentifiers")
+    near = re.search(r"<AssemblyName>([^<]+)</AssemblyName>", read(profile))
+    if near:
+        fail(f"[pack] {profile.name} overrides AssemblyName, which breaks installer.iss")
+
 # TFM drift between project, scripts and docs
 for script in ("sign.ps1", "build-and-run.ps1"):
     path = ROOT / script
