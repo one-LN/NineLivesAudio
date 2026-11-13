@@ -9,6 +9,12 @@ public class AppSettings
     public double PlaybackSpeed { get; set; } = 1.0;
     public bool AutoSyncProgress { get; set; } = true;
 
+    /// <summary>
+    /// Player progress display: true = the slider/labels follow the current chapter,
+    /// false = they follow the whole book. Remembered across navigation and restarts.
+    /// </summary>
+    public bool PlayerChapterMode { get; set; } = false;
+
     /// <summary>Seconds skipped automatically when a book starts playing (0 = disabled).</summary>
     public int SkipIntroSeconds { get; set; } = 0;
 

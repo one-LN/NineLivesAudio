@@ -23,8 +23,13 @@ public sealed partial class PlayerPage : Page
     private readonly IAudioPlaybackService _playbackService;
     private readonly IAudioBookshelfApiService _apiService;
     private readonly ILocalizationService _localization;
+    private readonly ISettingsService _settingsService;
     private bool _isUserSeeking = false;
     private bool _isChapterMode = false;
+
+    // Set while the toggle is changed by code (restore / "this book has no chapters")
+    // so those changes never overwrite the user's saved preference.
+    private bool _suppressChapterModeSave;
 
     // Cover art cache to prevent flashing on frequent updates
     private string? _lastCoverPath;
@@ -38,6 +43,7 @@ public sealed partial class PlayerPage : Page
         _playbackService = App.Services.GetRequiredService<IAudioPlaybackService>();
         _apiService = App.Services.GetRequiredService<IAudioBookshelfApiService>();
         _localization = App.Services.GetRequiredService<ILocalizationService>();
+        _settingsService = App.Services.GetRequiredService<ISettingsService>();
         this.InitializeComponent();
         RegisterChapterAccelerators();
     }
@@ -65,6 +71,7 @@ public sealed partial class PlayerPage : Page
         _localization.LanguageChanged += ApplyLocalization;
         _logger.Log("PlayerPage loaded");
         ViewModel.Initialize();
+        RestoreChapterMode();
 
         // Subscribe to ViewModel property changes
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
@@ -290,11 +297,20 @@ public sealed partial class PlayerPage : Page
         // Show/hide chapter mode toggle
         ChapterModePanel.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
 
-        // If no chapters and chapter mode was on, turn it off
+        // If no chapters and chapter mode was on, turn it off for this book only —
+        // the saved preference must survive a book that simply has no chapters.
         if (!hasChapters && _isChapterMode)
         {
-            _isChapterMode = false;
-            ChapterModeToggle.IsOn = false;
+            _suppressChapterModeSave = true;
+            try
+            {
+                _isChapterMode = false;
+                ChapterModeToggle.IsOn = false;
+            }
+            finally
+            {
+                _suppressChapterModeSave = false;
+            }
         }
 
         var current = _playbackService.CurrentChapter;
@@ -532,6 +548,43 @@ public sealed partial class PlayerPage : Page
     {
         _isChapterMode = ChapterModeToggle.IsOn;
         RefreshProgressDisplay();
+
+        if (_suppressChapterModeSave) return;
+
+        // Remember the choice: every navigation creates a fresh page instance, so
+        // without this the switch silently snapped back to "Book" on returning.
+        _settingsService.Settings.PlayerChapterMode = _isChapterMode;
+        _ = PersistChapterModeAsync();
+    }
+
+    private void RestoreChapterMode()
+    {
+        var saved = _settingsService.Settings.PlayerChapterMode;
+
+        _suppressChapterModeSave = true;
+        try
+        {
+            _isChapterMode = saved;
+            ChapterModeToggle.IsOn = saved;
+        }
+        finally
+        {
+            _suppressChapterModeSave = false;
+        }
+
+        _logger.LogDebug($"[Player] Chapter mode restored: {saved}");
+    }
+
+    private async Task PersistChapterModeAsync()
+    {
+        try
+        {
+            await _settingsService.SaveSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug($"[Player] Saving chapter mode failed: {ex.Message}");
+        }
     }
 
     private void RefreshProgressDisplay() => RefreshProgressDisplay(null);
