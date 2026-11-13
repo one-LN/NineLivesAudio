@@ -10,6 +10,13 @@
     <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
     <UseWinUI>true</UseWinUI>
+    <!--
+      The app itself ships exactly two UI languages (en-US / zh-CN, see
+      Services/LocalizationService.cs), but every NuGet dependency drags along its own
+      satellite resource assemblies — that is where the dozens of cs/ de/ fr/ ja/ ...
+      folders in the publish output come from. Keep only the two we actually need.
+    -->
+    <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
     <EnableMsixTooling>true</EnableMsixTooling>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
