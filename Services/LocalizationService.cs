@@ -91,9 +91,9 @@ public sealed class LocalizationService : ILocalizationService
         {
             // Navigation
             ["SkipIntro"] = "Skip intro",
-            ["SkipIntroHint"] = "Seconds skipped automatically when a book starts playing (0 = off).",
+            ["SkipIntroHint"] = "Seconds skipped automatically when a book starts playing. Saved immediately — no need to press Save (0 = off).",
             ["SkipOutro"] = "Skip outro",
-            ["SkipOutroHint"] = "When fewer than this many seconds remain, continue with the next chapter. On the last chapter the book is marked finished (0 = off).",
+            ["SkipOutroHint"] = "When fewer than this many seconds remain, continue with the next chapter; on the last chapter the book is marked finished. Saved immediately (0 = off).",
             ["StartingUp"] = "Starting up...",
             ["Initializing"] = "Initializing...",
             ["StartupFailed"] = "Startup Failed",
@@ -360,9 +360,9 @@ public sealed class LocalizationService : ILocalizationService
         {
             // 导航
             ["SkipIntro"] = "跳过开头",
-            ["SkipIntroHint"] = "书籍开始播放时自动跳过的秒数（0 = 关闭）。",
+            ["SkipIntroHint"] = "书籍开始播放时自动跳过的秒数。修改即时生效，无需点保存（0 = 关闭）。",
             ["SkipOutro"] = "跳过结尾",
-            ["SkipOutroHint"] = "剩余不足这么多秒时自动跳到下一章；最后一章则直接标记为已听完（0 = 关闭）。",
+            ["SkipOutroHint"] = "剩余不足这么多秒时自动跳到下一章；最后一章则直接标记为已听完。修改即时生效（0 = 关闭）。",
             ["StartingUp"] = "正在启动...",
             ["Initializing"] = "正在初始化...",
             ["StartupFailed"] = "启动失败",

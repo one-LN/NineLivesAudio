@@ -42,6 +42,10 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private double _playbackSpeed;
 
+    // Debounces the "apply immediately" saves triggered by the skip boxes.
+    private bool _isLoadingSettings;
+    private CancellationTokenSource? _autoSaveCts;
+
     [ObservableProperty]
     private double _skipIntroSeconds;
 
@@ -144,6 +148,19 @@ public partial class SettingsViewModel : ObservableObject
 
     private void LoadSettingsToUI()
     {
+        _isLoadingSettings = true;
+        try
+        {
+            LoadSettingsToUIUnsafe();
+        }
+        finally
+        {
+            _isLoadingSettings = false;
+        }
+    }
+
+    private void LoadSettingsToUIUnsafe()
+    {
         var settings = _settingsService.Settings;
 
         ServerUrl = settings.ServerUrl ?? string.Empty;
@@ -192,6 +209,8 @@ public partial class SettingsViewModel : ObservableObject
         var clamped = ToSeconds(value);
         if (Math.Abs(value - clamped) > 0.001)
             SkipIntroSeconds = clamped;
+
+        ScheduleAutoSave();
     }
 
     partial void OnSkipOutroSecondsChanged(double value)
@@ -199,6 +218,46 @@ public partial class SettingsViewModel : ObservableObject
         var clamped = ToSeconds(value);
         if (Math.Abs(value - clamped) > 0.001)
             SkipOutroSeconds = clamped;
+
+        ScheduleAutoSave();
+    }
+
+    /// <summary>
+    /// Skip intro/outro change what happens during playback, so they must not wait for
+    /// the "Save settings" button — persist them as soon as the user stops typing.
+    /// </summary>
+    private void ScheduleAutoSave()
+    {
+        if (_isLoadingSettings) return;
+
+        _autoSaveCts?.Cancel();
+        _autoSaveCts?.Dispose();
+        _autoSaveCts = new CancellationTokenSource();
+        _ = AutoSaveSkipSettingsAsync(_autoSaveCts.Token);
+    }
+
+    private async Task AutoSaveSkipSettingsAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(400, token);
+
+            var settings = _settingsService.Settings;
+            settings.SkipIntroSeconds = ToSeconds(SkipIntroSeconds);
+            settings.SkipOutroSeconds = ToSeconds(SkipOutroSeconds);
+
+            await _settingsService.SaveSettingsAsync();
+            _logger.LogDebug($"[Settings] Skip settings auto-saved " +
+                             $"(intro={settings.SkipIntroSeconds}s, outro={settings.SkipOutroSeconds}s)");
+        }
+        catch (OperationCanceledException)
+        {
+            // user is still typing
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug($"[Settings] Skip settings auto-save failed: {ex.Message}");
+        }
     }
 
     private static string GetDefaultDownloadPath()

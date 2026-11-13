@@ -122,7 +122,7 @@
                                        SpinButtonPlacementMode="Compact"
                                        Value="{x:Bind ViewModel.SkipIntroSeconds, Mode=TwoWay}"/>
                             <TextBlock x:Name="SkipIntroHint"
-                                       Text="Seconds skipped automatically when a book starts playing (0 = off)."
+                                       Text="Seconds skipped automatically when a book starts playing. Saved immediately — no need to press Save (0 = off)."
                                        FontSize="12"
                                        Opacity="0.7"
                                        TextWrapping="Wrap"
@@ -139,7 +139,7 @@
                                        SpinButtonPlacementMode="Compact"
                                        Value="{x:Bind ViewModel.SkipOutroSeconds, Mode=TwoWay}"/>
                             <TextBlock x:Name="SkipOutroHint"
-                                       Text="When fewer than this many seconds remain, continue with the next chapter. On the last chapter the book is marked finished (0 = off)."
+                                       Text="When fewer than this many seconds remain, continue with the next chapter; on the last chapter the book is marked finished. Saved immediately (0 = off)."
                                        FontSize="12"
                                        Opacity="0.7"
                                        TextWrapping="Wrap"
