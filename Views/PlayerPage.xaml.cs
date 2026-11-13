@@ -9,6 +9,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 
@@ -38,6 +39,26 @@ public sealed partial class PlayerPage : Page
         _apiService = App.Services.GetRequiredService<IAudioBookshelfApiService>();
         _localization = App.Services.GetRequiredService<ILocalizationService>();
         this.InitializeComponent();
+        RegisterChapterAccelerators();
+    }
+
+    /// <summary>
+    /// Ctrl+Left / Ctrl+Right jump to the current chapter's start / end;
+    /// Ctrl+Shift+Left / Ctrl+Shift+Right jump to the previous / next chapter.
+    /// Registered in code so no XAML enum-flag parsing is involved.
+    /// </summary>
+    private void RegisterChapterAccelerators()
+    {
+        AddAccelerator(ChapterStartButton, Windows.System.VirtualKey.Left, Windows.System.VirtualKeyModifiers.Control);
+        AddAccelerator(ChapterEndButton, Windows.System.VirtualKey.Right, Windows.System.VirtualKeyModifiers.Control);
+        AddAccelerator(PrevChapterButton, Windows.System.VirtualKey.Left, Windows.System.VirtualKeyModifiers.Control | Windows.System.VirtualKeyModifiers.Shift);
+        AddAccelerator(NextChapterButton, Windows.System.VirtualKey.Right, Windows.System.VirtualKeyModifiers.Control | Windows.System.VirtualKeyModifiers.Shift);
+    }
+
+    private static void AddAccelerator(Button? button, Windows.System.VirtualKey key, Windows.System.VirtualKeyModifiers modifiers)
+    {
+        if (button == null) return;
+        button.KeyboardAccelerators.Add(new KeyboardAccelerator { Key = key, Modifiers = modifiers });
     }
 
     private void Page_Loaded(object sender, RoutedEventArgs e)
@@ -293,6 +314,8 @@ public sealed partial class PlayerPage : Page
         ChapterNameText.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
         PrevChapterButton.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
         NextChapterButton.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
+        ChapterStartButton.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
+        ChapterEndButton.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
         ChaptersButtonPanel.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
         ChaptersColumn.Width = hasChapters ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
 
@@ -313,25 +336,66 @@ public sealed partial class PlayerPage : Page
         }
         else if (hasChapters)
         {
-            ChapterNameText.Text = $"{chapters.Count} chapters";
+            ChapterNameText.Text = _localization.Format("ChapterCount", chapters.Count);
+        }
+    }
+
+    /// <summary>
+    /// Seeks to a chapter boundary (start or end) and refreshes the UI.
+    /// Never throws: failures are logged, so async-void event handlers stay safe.
+    /// </summary>
+    private async Task SeekToChapterBoundaryAsync(int chapterIndex, bool toEnd)
+    {
+        var chapters = _playbackService.Chapters;
+        if (chapterIndex < 0 || chapterIndex >= chapters.Count) return;
+
+        try
+        {
+            if (toEnd)
+                await _playbackService.SeekToChapterEndAsync(chapterIndex);
+            else
+                await _playbackService.SeekToChapterAsync(chapterIndex);
+
+            RefreshProgressDisplay();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[Player] Chapter seek failed (index={chapterIndex}, toEnd={toEnd})", ex);
         }
     }
 
     private async void PrevChapter_Click(object sender, RoutedEventArgs e)
     {
         var idx = _playbackService.CurrentChapterIndex;
-        if (idx > 0)
-            await _playbackService.SeekToChapterAsync(idx - 1);
-        else if (idx == 0)
-            await _playbackService.SeekToChapterAsync(0); // restart current chapter
+        // At the first chapter, restart it; otherwise go back one chapter.
+        await SeekToChapterBoundaryAsync(Math.Max(idx - 1, 0), toEnd: false);
     }
 
     private async void NextChapter_Click(object sender, RoutedEventArgs e)
     {
-        var idx = _playbackService.CurrentChapterIndex;
-        var chapters = _playbackService.Chapters;
-        if (idx + 1 < chapters.Count)
-            await _playbackService.SeekToChapterAsync(idx + 1);
+        var next = _playbackService.CurrentChapterIndex + 1;
+        if (next < _playbackService.Chapters.Count)
+            await SeekToChapterBoundaryAsync(next, toEnd: false);
+    }
+
+    private async void ChapterStart_Click(object sender, RoutedEventArgs e)
+    {
+        await SeekToChapterBoundaryAsync(CurrentChapterOrFirst, toEnd: false);
+    }
+
+    private async void ChapterEnd_Click(object sender, RoutedEventArgs e)
+    {
+        await SeekToChapterBoundaryAsync(CurrentChapterOrFirst, toEnd: true);
+    }
+
+    /// <summary>Current chapter, falling back to the first chapter before playback starts.</summary>
+    private int CurrentChapterOrFirst
+    {
+        get
+        {
+            var idx = _playbackService.CurrentChapterIndex;
+            return idx >= 0 || _playbackService.Chapters.Count == 0 ? idx : 0;
+        }
     }
 
     private void ChaptersButton_Click(object sender, RoutedEventArgs e)
@@ -340,22 +404,62 @@ public sealed partial class PlayerPage : Page
         var chapters = _playbackService.Chapters;
         var currentIdx = _playbackService.CurrentChapterIndex;
 
+        // Quick actions for the chapter that is playing right now.
+        if (currentIdx >= 0)
+        {
+            var goStart = new MenuFlyoutItem
+            {
+                Text = _localization.GetString("JumpToStart"),
+                Icon = new FontIcon { Glyph = "\uE892" }
+            };
+            goStart.Click += async (s, args) => await SeekToChapterBoundaryAsync(currentIdx, toEnd: false);
+            flyout.Items.Add(goStart);
+
+            var goEnd = new MenuFlyoutItem
+            {
+                Text = _localization.GetString("JumpToEnd"),
+                Icon = new FontIcon { Glyph = "\uE893" }
+            };
+            goEnd.Click += async (s, args) => await SeekToChapterBoundaryAsync(currentIdx, toEnd: true);
+            flyout.Items.Add(goEnd);
+
+            flyout.Items.Add(new MenuFlyoutSeparator());
+        }
+
         for (int i = 0; i < chapters.Count; i++)
         {
             var chapter = chapters[i];
-            var item = new MenuFlyoutItem
+            var item = new MenuFlyoutSubItem
             {
                 Text = $"{i + 1}. {chapter.Title}",
                 Icon = i == currentIdx ? new FontIcon { Glyph = "\uE768" } : null
             };
 
             var capturedIndex = i;
-            item.Click += async (s, args) =>
+
+            var toStart = new MenuFlyoutItem
             {
-                await _playbackService.SeekToChapterAsync(capturedIndex);
+                Text = _localization.GetString("JumpToStart"),
+                Icon = new FontIcon { Glyph = "\uE892" }
             };
+            toStart.Click += async (s, args) => await SeekToChapterBoundaryAsync(capturedIndex, toEnd: false);
+            item.Items.Add(toStart);
+
+            var toEnd = new MenuFlyoutItem
+            {
+                Text = _localization.GetString("JumpToEnd"),
+                Icon = new FontIcon { Glyph = "\uE893" }
+            };
+            toEnd.Click += async (s, args) => await SeekToChapterBoundaryAsync(capturedIndex, toEnd: true);
+            item.Items.Add(toEnd);
             flyout.Items.Add(item);
         }
+
+        // Books can have 100+ chapters; cap the menu height so it scrolls instead of overflowing.
+        flyout.MenuFlyoutPresenterStyle = new Style(typeof(MenuFlyoutPresenter))
+        {
+            Setters = { new Setter(FrameworkElement.MaxHeightProperty, 520.0) }
+        };
 
         flyout.ShowAt(ChaptersButton);
     }
@@ -714,6 +818,14 @@ public sealed partial class PlayerPage : Page
         if (ChaptersLabelText != null) ChaptersLabelText.Text = _localization.GetString("Chapters");
         if (BookmarksLabelText != null) BookmarksLabelText.Text = _localization.GetString("Bookmarks");
         if (LoadingAudiobookText != null) LoadingAudiobookText.Text = _localization.GetString("LoadingAudiobook");
+
+        // Tooltips are not bound, so keep them in sync with the language too.
+        ToolTipService.SetToolTip(PrevChapterButton, _localization.GetString("PrevChapterTip"));
+        ToolTipService.SetToolTip(NextChapterButton, _localization.GetString("NextChapterTip"));
+        ToolTipService.SetToolTip(ChapterStartButton, _localization.GetString("ChapterStartTip"));
+        ToolTipService.SetToolTip(ChapterEndButton, _localization.GetString("ChapterEndTip"));
+        ToolTipService.SetToolTip(SkipBackButton, _localization.GetString("SkipBackTip"));
+        ToolTipService.SetToolTip(SkipForwardButton, _localization.GetString("SkipForwardTip"));
     }
 
 }

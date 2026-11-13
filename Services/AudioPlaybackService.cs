@@ -990,6 +990,26 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         WeakReferenceMessenger.Default.Send(new ChapterChangedMessage(chapter));
     }
 
+    public async Task SeekToChapterEndAsync(int chapterIndex)
+    {
+        if (chapterIndex < 0 || chapterIndex >= _chapters.Count) return;
+        var chapter = _chapters[chapterIndex];
+
+        // Stop a fraction of a second before the boundary so the chapter tracker
+        // keeps this chapter current instead of instantly rolling into the next one.
+        var target = Math.Max(chapter.Start, chapter.End - EndMarginSeconds);
+        var total = Duration.TotalSeconds;
+        if (total > 0)
+            target = Math.Min(target, Math.Max(0, total - EndMarginSeconds));
+
+        await SeekAsync(TimeSpan.FromSeconds(target));
+        _currentChapterIndex = chapterIndex;
+        WeakReferenceMessenger.Default.Send(new ChapterChangedMessage(chapter));
+    }
+
+    /// <summary>Gap kept before a chapter boundary when jumping to a chapter end.</summary>
+    private const double EndMarginSeconds = 0.5;
+
     // Multi-track helpers — delegate to ITrackManager
     private void BuildLocalTrackList(AudioBook audioBook, string primaryPath)
     {

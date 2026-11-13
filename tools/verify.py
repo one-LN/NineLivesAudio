@@ -325,6 +325,33 @@ for x in xaml_files():
             if not ns_file_exists:
                 fail(f"[xaml] {x.relative_to(ROOT)}: xmlns:{prefix} points at missing namespace {target}")
 
+# ── 13. missing usings for distinctive WinRT/BE types ─────────────────────
+TYPE_HOME = {
+    "KeyboardAccelerator": "Microsoft.UI.Xaml.Input",
+    "KeyboardAcceleratorPlacementMode": "Microsoft.UI.Xaml.Input",
+    "MenuFlyout": "Microsoft.UI.Xaml.Controls",
+    "MenuFlyoutItem": "Microsoft.UI.Xaml.Controls",
+    "MenuFlyoutSubItem": "Microsoft.UI.Xaml.Controls",
+    "MenuFlyoutSeparator": "Microsoft.UI.Xaml.Controls",
+    "MenuFlyoutPresenter": "Microsoft.UI.Xaml.Controls",
+    "ContentDialog": "Microsoft.UI.Xaml.Controls",
+    "ToolTipService": "Microsoft.UI.Xaml.Controls",
+    "PasswordVault": "Windows.Security.Credentials",
+    "ZipFile": "System.IO.Compression",
+    "ZipArchive": "System.IO.Compression",
+}
+for f in cs_files():
+    src = read(f)
+    ns = re.search(r"^namespace\s+([\w\.]+)", src, re.M)
+    ns = ns.group(1) if ns else ""
+    for type_name, type_ns in TYPE_HOME.items():
+        # unqualified usage only (fully-qualified uses are fine)
+        if not re.search(rf"(?<![\w.]){type_name}\b", src):
+            continue
+        if f"using {type_ns};" in src or ns == type_ns or ns.startswith(type_ns + "."):
+            continue
+        fail(f"[using] {f.relative_to(ROOT)}: uses {type_name} but lacks 'using {type_ns};'")
+
 # ── report ────────────────────────────────────────────────────────────────
 print(f"scanned {len(cs_files())} C# files, {len(xaml_files())} XAML files, {len(en_keys)} localization keys")
 if problems:

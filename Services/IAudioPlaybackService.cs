@@ -36,7 +36,11 @@ public interface IAudioPlaybackService
     Chapter? CurrentChapter { get; }
     int CurrentChapterIndex { get; }
 
+    /// <summary>Seek to the first second of the given chapter (0-based).</summary>
     Task SeekToChapterAsync(int chapterIndex);
+
+    /// <summary>Seek to the very end of the given chapter (0-based), just before its boundary.</summary>
+    Task SeekToChapterEndAsync(int chapterIndex);
 }
 
 public enum PlaybackState

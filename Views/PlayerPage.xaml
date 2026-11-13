@@ -208,9 +208,10 @@
                 </StackPanel>
 
                 <!-- Playback Controls -->
-                <StackPanel Orientation="Horizontal"
+                <StackPanel x:Name="TransportControlsPanel"
+                            Orientation="Horizontal"
                             HorizontalAlignment="Center"
-                            Spacing="12"
+                            Spacing="8"
                             Margin="0,12,0,0">
 
                     <!-- Previous Chapter -->
@@ -222,8 +223,19 @@
                         <FontIcon Glyph="&#xE892;" FontSize="16"/>
                     </Button>
 
+                    <!-- Jump to the start of the current chapter -->
+                    <Button x:Name="ChapterStartButton"
+                            Click="ChapterStart_Click"
+                            Style="{StaticResource CircularButtonStyle}"
+                            Width="40" Height="40" CornerRadius="20"
+                            ToolTipService.ToolTip="Start of this chapter"
+                            Visibility="Collapsed">
+                        <TextBlock loc:Loc.Text="ChapterStartShort" Text="Start"
+                                   FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                    </Button>
+
                     <!-- Skip Back 10s -->
-                    <Button Click="SkipBack_Click"
+                    <Button x:Name="SkipBackButton" Click="SkipBack_Click"
                             Style="{StaticResource CircularButtonStyle}"
                             ToolTipService.ToolTip="Skip back 10 seconds">
                         <StackPanel>
@@ -241,13 +253,24 @@
                     </Button>
 
                     <!-- Skip Forward 30s -->
-                    <Button Click="SkipForward_Click"
+                    <Button x:Name="SkipForwardButton" Click="SkipForward_Click"
                             Style="{StaticResource CircularButtonStyle}"
                             ToolTipService.ToolTip="Skip forward 30 seconds">
                         <StackPanel>
                             <FontIcon Glyph="&#xE893;" FontSize="18"/>
                             <TextBlock Text="30" FontSize="10" HorizontalAlignment="Center" Opacity="0.7"/>
                         </StackPanel>
+                    </Button>
+
+                    <!-- Jump to the end of the current chapter -->
+                    <Button x:Name="ChapterEndButton"
+                            Click="ChapterEnd_Click"
+                            Style="{StaticResource CircularButtonStyle}"
+                            Width="40" Height="40" CornerRadius="20"
+                            ToolTipService.ToolTip="End of this chapter"
+                            Visibility="Collapsed">
+                        <TextBlock loc:Loc.Text="ChapterEndShort" Text="End"
+                                   FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                     </Button>
 
                     <!-- Next Chapter -->
