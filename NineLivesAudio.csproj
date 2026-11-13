@@ -60,4 +60,15 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+
+  <!--
+    SatelliteResourceLanguages (above) only trims managed *.resources.dll satellites. A
+    self-contained WinUI 3 publish still carries one folder per culture for the Windows App
+    SDK's native MUI resources, which is what fills the install directory with cs/ de/ fr/
+    ja/ ... Build/trim-cultures.ps1 deletes those, keeping en* and zh*.
+  -->
+  <Target Name="TrimLocalizedResourceFolders" AfterTargets="Publish"
+          Condition="'$(OS)' == 'Windows_NT' and Exists('$(MSBuildProjectDirectory)\build\trim-cultures.ps1')">
+    <Exec Command="pwsh -NoProfile -NonInteractive -File &quot;$(MSBuildProjectDirectory)\build\trim-cultures.ps1&quot; -PublishDir &quot;$(PublishDir)&quot;" />
+  </Target>
 </Project>
