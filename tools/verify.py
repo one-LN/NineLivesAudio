@@ -19,6 +19,8 @@ mistakes that are easy to introduce with bulk edits:
  12. localization attaches only where the target type supports it
  13. distinctive WinRT/BE types have their `using`
  14. the empty-library bug cannot come back (401 handling + "no data" guards)
+ 15. no code-behind references an x:Name that lives inside a DataTemplate
+     (those are template-scope names, not page fields — a real compile error)
 
 Usage:  python3 tools/verify.py [-v]
 Exit code 0 = clean.
@@ -154,6 +156,36 @@ for x in xaml_files():
     xaml_names = set(re.findall(r'x:Name="([A-Za-z0-9_]+)"', read(x)))
     for name in set(re.findall(r'x:Bind\s+(\w+)', read(x))):
         pass  # x:Bind targets page/VM members, validated by the compiler
+
+# ── 5b. x:Name inside a DataTemplate is not a page field ──────────────────
+# `<TextBlock x:Name="Badge"/>` inside a DataTemplate does NOT generate a field on
+# the page/UserControl, so touching it from code-behind fails to compile:
+#   error CS0103: The name 'Badge' does not exist in the current context
+NS_XAML = "{http://schemas.microsoft.com/winfx/2006/xaml}"
+for x in xaml_files():
+    code_behind = x.with_name(x.name + ".cs")
+    if not code_behind.exists():
+        continue
+    src = strip_non_code(read(code_behind))
+    try:
+        root = ET.parse(x).getroot()
+    except ET.ParseError:
+        continue  # already reported by check 1
+    parents = {child: parent for parent in root.iter() for child in parent}
+    for elem in root.iter():
+        name = elem.get(NS_XAML + "Name")
+        if not name:
+            continue
+        node, in_template = parents.get(elem), False
+        while node is not None:
+            if isinstance(node.tag, str) and node.tag.endswith("DataTemplate"):
+                in_template = True
+                break
+            node = parents.get(node)
+        if in_template and re.search(rf"(?<![\w.]){re.escape(name)}\b", src):
+            fail(f"[scope] {x.relative_to(ROOT)}: x:Name '{name}' is declared inside a "
+                 f"DataTemplate but {code_behind.name} uses it as a page field "
+                 "(compile error CS0103) — localize it with loc:Loc.* or bind it instead")
 
 # ── 6./7. localization resources ──────────────────────────────────────────
 loc_path = ROOT / "Services" / "LocalizationService.cs"

@@ -522,7 +522,6 @@ public sealed partial class LibraryPage : Page
     {
         if (LibraryTitleText != null) LibraryTitleText.Text = _localization.GetString("LibraryTitle");
         if (LoadingLibraryText != null) LoadingLibraryText.Text = _localization.GetString("LoadingLibrary");
-        if (LocalBadgeText != null) LocalBadgeText.Text = _localization.GetString("Local");
         ViewModel.RefreshLocalizedStrings();
         UpdateStatusPill();
     }

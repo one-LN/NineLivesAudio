@@ -288,7 +288,7 @@
                                         Visibility="{x:Bind IsDownloaded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
                                     <StackPanel Orientation="Horizontal" Spacing="4">
                                         <FontIcon Glyph="&#xE73E;" FontSize="10"/>
-                                        <TextBlock x:Name="LocalBadgeText" Text="Local" Style="{StaticResource BadgeTextStyle}"/>
+                                        <TextBlock loc:Loc.Text="Local" Text="Local" Style="{StaticResource BadgeTextStyle}"/>
                                     </StackPanel>
                                 </Border>
 
