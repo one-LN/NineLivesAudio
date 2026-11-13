@@ -52,6 +52,7 @@ public partial class App : Application
 
                 // Services - UI/UX Enhancements
                 services.AddSingleton<INotificationService, NotificationService>();
+                services.AddSingleton<ITrayIconService, TrayIconService>();
                 services.AddSingleton<IMetadataNormalizer, MetadataNormalizer>();
                 services.AddSingleton<IPlaybackSourceResolver, PlaybackSourceResolver>();
                 services.AddSingleton<ILibraryFilterService, LibraryFilterService>();

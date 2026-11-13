@@ -17,6 +17,7 @@ public sealed partial class MiniPlayerWindow : Window
 {
     private readonly IAudioPlaybackService _playbackService;
     private readonly ILoggingService _logger;
+    private readonly ILocalizationService _localization;
     private AppWindow? _appWindow;
     private bool _isUserSeeking;
     private bool _isPinned;
@@ -25,6 +26,7 @@ public sealed partial class MiniPlayerWindow : Window
     {
         _playbackService = App.Services.GetRequiredService<IAudioPlaybackService>();
         _logger = App.Services.GetRequiredService<ILoggingService>();
+        _localization = App.Services.GetRequiredService<ILocalizationService>();
 
         this.InitializeComponent();
 
@@ -34,8 +36,13 @@ public sealed partial class MiniPlayerWindow : Window
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
         _appWindow = AppWindow.GetFromWindowId(windowId);
-        _appWindow?.Resize(new Windows.Graphics.SizeInt32(360, 200));
-        _appWindow?.SetIcon("Assets\\app-icon.ico");
+        _appWindow?.Resize(new Windows.Graphics.SizeInt32(360, 218));
+        try
+        {
+            var windowIcon = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "app-icon.ico");
+            if (System.IO.File.Exists(windowIcon)) _appWindow?.SetIcon(windowIcon);
+        }
+        catch { /* Non-fatal — icon is cosmetic */ }
 
         // Set title bar icon via Win32
         try
@@ -77,6 +84,10 @@ public sealed partial class MiniPlayerWindow : Window
         // Clean up on close
         this.Closed += OnClosed;
 
+        ApplyLocalization();
+        _localization.LanguageChanged -= ApplyLocalization;
+        _localization.LanguageChanged += ApplyLocalization;
+
         // Initialize UI from current state
         UpdatePlayPauseIcon();
         UpdateProgressFromCurrentState();
@@ -84,8 +95,18 @@ public sealed partial class MiniPlayerWindow : Window
         _logger.Log("[MiniPlayer] Window opened");
     }
 
+    private void ApplyLocalization()
+    {
+        if (PinToggle != null) ToolTipService.SetToolTip(PinToggle, _localization.GetString("KeepOnTop"));
+        if (ExpandButton != null) ToolTipService.SetToolTip(ExpandButton, _localization.GetString("BackToFullPlayer"));
+        if (SkipBackButton != null) ToolTipService.SetToolTip(SkipBackButton, _localization.GetString("SkipBackTip"));
+        if (SkipForwardButton != null) ToolTipService.SetToolTip(SkipForwardButton, _localization.GetString("SkipForwardTip"));
+        if (PlayPauseButton != null) ToolTipService.SetToolTip(PlayPauseButton, _localization.GetString("PlayPauseTip"));
+    }
+
     private void OnClosed(object sender, WindowEventArgs args)
     {
+        _localization.LanguageChanged -= ApplyLocalization;
         WeakReferenceMessenger.Default.UnregisterAll(this);
         _logger.Log("[MiniPlayer] Window closed");
     }

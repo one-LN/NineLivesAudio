@@ -59,6 +59,11 @@
     <Content Include="Assets\nine-lives-logo.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- ApplicationIcon only embeds the icon in the exe's resources. The window/taskbar
+         icon is set at runtime from this file, so it has to be in the output too. -->
+    <Content Include="Assets\app-icon.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

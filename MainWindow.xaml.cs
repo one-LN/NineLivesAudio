@@ -27,6 +27,7 @@ namespace NineLivesAudio
         private readonly INavigationService _navigationService;
         private readonly MainViewModel _mainViewModel;
         private readonly ILocalizationService _localization;
+        private readonly ITrayIconService _tray;
         private DateTime _lastMiniPlayerUpdate = DateTime.MinValue;
 
         // Window reference for preset sizing
@@ -43,7 +44,12 @@ namespace NineLivesAudio
             var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
             _appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
             _appWindow?.Resize(new Windows.Graphics.SizeInt32(550, 660)); // 10% larger than minimum
-            _appWindow?.SetIcon("Assets\\app-icon.ico"); // Taskbar + title bar icon
+            try
+            {
+                var windowIcon = Path.Combine(AppContext.BaseDirectory, "Assets", "app-icon.ico");
+                if (File.Exists(windowIcon)) _appWindow?.SetIcon(windowIcon); // Taskbar + title bar icon
+            }
+            catch { /* Non-fatal — icon is cosmetic */ }
 
             // Set title bar icon via Win32 (SetIcon doesn't reliably set the small icon)
             try
@@ -91,6 +97,11 @@ namespace NineLivesAudio
             _mainViewModel = App.Services.GetRequiredService<MainViewModel>();
             _localization = App.Services.GetRequiredService<ILocalizationService>();
             this.Closed += MainWindow_Closed;
+
+            // Minimize-to-tray: the service swallows WM_SYSCOMMAND/SC_MINIMIZE while the
+            // setting is on, hides the window and keeps a notification-area icon around.
+            _tray = App.Services.GetRequiredService<ITrayIconService>();
+            _tray.Attach(this);
 
             // Wire MiniPlayer to playback events via Messenger
             WeakReferenceMessenger.Default.Register<PlaybackStateChangedMessage>(this, (r, m) =>
@@ -486,6 +497,9 @@ namespace NineLivesAudio
             WeakReferenceMessenger.Default.UnregisterAll(this);
             this.Closed -= MainWindow_Closed;
 
+            // Never leave an icon behind in the notification area.
+            _tray?.Dispose();
+
             if (_mainViewModel is IDisposable disposable)
             {
                 disposable.Dispose();
@@ -500,6 +514,11 @@ namespace NineLivesAudio
             if (RetryButton != null) RetryButton.Content = _localization.GetString("Retry");
             if (OpenLogsButton != null) OpenLogsButton.Content = _localization.GetString("OpenLogs");
             if (ResetButton != null) ResetButton.Content = _localization.GetString("ResetConnection");
+
+            // Mini-player bar tooltips
+            if (MiniRewindBtn != null) ToolTipService.SetToolTip(MiniRewindBtn, _localization.GetString("SkipBackTip"));
+            if (MiniForwardBtn != null) ToolTipService.SetToolTip(MiniForwardBtn, _localization.GetString("SkipForwardTip"));
+            if (MiniPlayPauseBtn != null) ToolTipService.SetToolTip(MiniPlayPauseBtn, _localization.GetString("PlayPauseTip"));
             // Re-render the status dot text in the new language.
             UpdateConnectivityUI(_connectivity.IsOnline, _connectivity.IsServerReachable);
         }

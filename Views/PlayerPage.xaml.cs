@@ -262,7 +262,10 @@ public sealed partial class PlayerPage : Page
         var totalTracks = _playbackService.TotalTracks;
         if (totalTracks > 1)
         {
-            TrackIndicator.Text = $"Track {_playbackService.CurrentTrackIndex + 1} of {totalTracks}";
+            TrackIndicator.Text = string.Format(
+                _localization.GetString("TrackOf"),
+                _playbackService.CurrentTrackIndex + 1,
+                totalTracks);
             TrackIndicator.Visibility = Visibility.Visible;
         }
         else
@@ -781,7 +784,10 @@ public sealed partial class PlayerPage : Page
         if (BookmarksLabelText != null) BookmarksLabelText.Text = _localization.GetString("Bookmarks");
         if (LoadingAudiobookText != null) LoadingAudiobookText.Text = _localization.GetString("LoadingAudiobook");
 
+        UpdateTrackIndicator();
+
         // Tooltips are not bound, so keep them in sync with the language too.
+        ToolTipService.SetToolTip(PopOutButton, _localization.GetString("PopOutMiniPlayer"));
         ToolTipService.SetToolTip(PrevChapterButton, _localization.GetString("PrevChapterTip"));
         ToolTipService.SetToolTip(NextChapterButton, _localization.GetString("NextChapterTip"));
         ToolTipService.SetToolTip(SkipBackButton, _localization.GetString("SkipBackTip"));
