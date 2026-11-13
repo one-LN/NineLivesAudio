@@ -27,7 +27,7 @@ public sealed class TrayIconService : ITrayIconService
     private const uint WM_RBUTTONUP = 0x0205;
     private const uint WM_NULL = 0x0000;
 
-    private const uint SW_HIDE = 0;
+    private const int SW_HIDE = 0;
     private const int SW_SHOW = 5;
     private const int SW_RESTORE = 9;
 
