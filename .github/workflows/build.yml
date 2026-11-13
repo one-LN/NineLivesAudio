@@ -42,7 +42,14 @@ jobs:
           $dirs = Get-ChildItem binpublish -Directory | Select-Object -ExpandProperty Name
           $files = (Get-ChildItem binpublish -Recurse -File).Count
           $size = [math]::Round(((Get-ChildItem binpublish -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
-          "::notice title=Publish layout::$($dirs.Count) folder(s) [$($dirs -join ', ')] · $files files · $size MB"
+          $summary = "$($dirs.Count) folder(s) [$($dirs -join ', ')] · $files files · $size MB"
+          # The app ships en-US/zh-CN only and SatelliteResourceLanguages is trimmed, so a
+          # sub-folder here means a dependency started shipping its own culture folder again.
+          if ($dirs.Count -gt 0) {
+            "::warning title=Publish layout::$summary"
+          } else {
+            "::notice title=Publish layout flat::$summary"
+          }
 
       # Optional: the runner image ships Inno Setup 6, so a setup.exe is produced too.
       # A missing ISCC.exe must not fail the portable build.
