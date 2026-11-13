@@ -36,6 +36,33 @@ jobs:
 
       # Shows up as a notice annotation on the run page: makes the publish layout
       # (and any stray culture folders) reviewable without downloading the artifact.
+      # SatelliteResourceLanguages only trims managed *.resources.dll satellites; a
+      # self-contained WinUI 3 publish still copies one folder per culture for the
+      # Windows App SDK's native MUI files. Drop everything except the two UI languages.
+      - name: Trim unused language folders
+        shell: pwsh
+        run: |
+          $keep = @('en', 'zh')
+          $root = 'binpublish'
+          try {
+            $removed = @()
+            foreach ($dir in Get-ChildItem $root -Directory) {
+              if ($dir.Name -notmatch '^[a-z]{2,3}(-[a-z]{2,4})?$') { continue }
+              $language = ($dir.Name -split '-')[0].ToLower()
+              if ($keep -contains $language) { continue }
+              Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction Stop
+              $removed += $dir.Name
+            }
+            if ($removed.Count -gt 0) {
+              Write-Host "Removed $($removed.Count) culture folder(s): $($removed -join ', ')"
+            } else {
+              Write-Host 'No culture folders to remove.'
+            }
+          }
+          catch {
+            Write-Error "Language folder trim failed: $($_.Exception.Message)"
+          }
+
       - name: Publish layout summary
         shell: pwsh
         run: |
