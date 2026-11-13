@@ -207,57 +207,65 @@
                                VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <!-- Playback Controls -->
+                <!-- Playback Controls
+                     One rhythm: 44px round icon buttons (chapter jumps) and 58x44 pills
+                     (skip ±N), all vertically centred around the 72px play button. -->
                 <StackPanel x:Name="TransportControlsPanel"
                             Orientation="Horizontal"
                             HorizontalAlignment="Center"
-                            Spacing="8"
+                            VerticalAlignment="Center"
+                            Spacing="10"
                             Margin="0,12,0,0">
 
                     <!-- Previous Chapter -->
                     <Button x:Name="PrevChapterButton"
                             Click="PrevChapter_Click"
                             Style="{StaticResource CircularButtonStyle}"
+                            VerticalAlignment="Center"
                             ToolTipService.ToolTip="Previous chapter"
                             Visibility="Collapsed">
-                        <FontIcon Glyph="&#xE892;" FontSize="16"/>
+                        <FontIcon Glyph="&#xE892;" FontSize="18"/>
                     </Button>
 
                     <!-- Skip Back 10s -->
                     <Button x:Name="SkipBackButton" Click="SkipBack_Click"
-                            Style="{StaticResource CircularButtonStyle}"
+                            Style="{StaticResource SkipPillButtonStyle}"
                             ToolTipService.ToolTip="Skip back 10 seconds">
-                        <StackPanel>
-                            <FontIcon Glyph="&#xE892;" FontSize="18"/>
-                            <TextBlock Text="10" FontSize="10" HorizontalAlignment="Center" Opacity="0.7"/>
-                        </StackPanel>
+                        <TextBlock Text="&#x2212;10s"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
                     </Button>
 
                     <!-- Play/Pause -->
                     <Button x:Name="PlayPauseButton"
                             Click="PlayPause_Click"
-                            Style="{StaticResource SigilPlayButtonStyle}">
+                            Style="{StaticResource SigilPlayButtonStyle}"
+                            VerticalAlignment="Center">
                         <FontIcon x:Name="PlayPauseIcon" Glyph="&#xE768;" FontSize="28"
                                   Foreground="{StaticResource VoidDeepBrush}"/>
                     </Button>
 
                     <!-- Skip Forward 30s -->
                     <Button x:Name="SkipForwardButton" Click="SkipForward_Click"
-                            Style="{StaticResource CircularButtonStyle}"
+                            Style="{StaticResource SkipPillButtonStyle}"
                             ToolTipService.ToolTip="Skip forward 30 seconds">
-                        <StackPanel>
-                            <FontIcon Glyph="&#xE893;" FontSize="18"/>
-                            <TextBlock Text="30" FontSize="10" HorizontalAlignment="Center" Opacity="0.7"/>
-                        </StackPanel>
+                        <TextBlock Text="+30s"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
                     </Button>
 
                     <!-- Next Chapter -->
                     <Button x:Name="NextChapterButton"
                             Click="NextChapter_Click"
                             Style="{StaticResource CircularButtonStyle}"
+                            VerticalAlignment="Center"
                             ToolTipService.ToolTip="Next chapter"
                             Visibility="Collapsed">
-                        <FontIcon Glyph="&#xE893;" FontSize="16"/>
+                        <FontIcon Glyph="&#xE893;" FontSize="18"/>
                     </Button>
                 </StackPanel>
 

@@ -267,6 +267,18 @@
         <Setter Property="BorderThickness" Value="0"/>
     </Style>
 
+    <!--
+      Skip ±N seconds. Deliberately a pill with a text label instead of a round icon
+      button: the round icon buttons next to it are chapter jumps, and two identical
+      triangular glyphs sat side by side looking like duplicates.
+    -->
+    <Style x:Key="SkipPillButtonStyle" TargetType="Button" BasedOn="{StaticResource CircularButtonStyle}">
+        <Setter Property="Width" Value="58"/>
+        <Setter Property="Height" Value="44"/>
+        <Setter Property="CornerRadius" Value="22"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
     <Style x:Key="MediumCircularButtonStyle" TargetType="Button">
         <Setter Property="CornerRadius" Value="24"/>
         <Setter Property="Width" Value="48"/>
