@@ -266,6 +266,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                     BuildLocalTrackList(audioBook, source.LocalFilePath!);
                     await NormalizeResumePositionAsync(audioBook);
                     NormalizeChapterUnits();
+                    AlignChaptersToTracks();
                     DetermineStartingTrack(audioBook.CurrentTime);
                     LogLoadSummary(audioBook);
                     var localLoaded = await LoadLocalFileAsync(_trackPaths[_currentTrackIndex], audioBook, ct);
@@ -281,6 +282,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                         BuildStreamTrackDurations();
                         await NormalizeResumePositionAsync(audioBook);
                         NormalizeChapterUnits();
+                        AlignChaptersToTracks();
                         DetermineStartingTrack(audioBook.CurrentTime);
                         LogLoadSummary(audioBook);
 
@@ -1306,6 +1308,38 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     }
 
     /// <summary>
+    /// Chapter times and the per-file track table are two independent estimates of the same
+    /// timeline. On a multi-file book (typically one file per chapter) integer rounding drifts
+    /// a second or two per file, so by chapter 300 the two disagree by minutes — a jump then
+    /// looks like it lands in the wrong chapter. When the counts line up 1:1 the files are the
+    /// ground truth (they are what the player actually seeks in), so use them.
+    /// </summary>
+    private void AlignChaptersToTracks()
+    {
+        if (_chapters.Count == 0 || _trackDurations.Count == 0) return;
+        if (_chapters.Count != _trackDurations.Count) return;
+
+        var changed = 0;
+        for (var i = 0; i < _chapters.Count; i++)
+        {
+            var start = i == 0 ? 0 : _trackDurations[i - 1];
+            var end = _trackDurations[i];
+
+            if (Math.Abs(_chapters[i].Start - start) > 0.5 || Math.Abs(_chapters[i].End - end) > 0.5)
+                changed++;
+
+            _chapters[i].Start = start;
+            _chapters[i].End = end;
+        }
+
+        if (changed > 0)
+            _logger.Log($"[Playback] Chapters aligned to the file table: {_chapters.Count} rows, " +
+                        $"{changed} differed by more than 0.5s");
+        else
+            _logger.LogDebug("[Playback] Chapters already match the file table");
+    }
+
+    /// <summary>
     /// The cumulative track table is built from DB metadata, which can be missing or
     /// stale (many library endpoints omit per-file duration). The decoder knows the
     /// truth for the file we just opened, so shift the remaining entries by the delta —
@@ -1324,6 +1358,10 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
         for (var i = trackIndex; i < _trackDurations.Count; i++)
             _trackDurations[i] += delta;
+
+        // Chapter times were derived from this table, so they have to follow it.
+        if (_chapters.Count == _trackDurations.Count)
+            AlignChaptersToTracks();
 
         _logger.Log($"[Playback] Track {trackIndex + 1} duration corrected by {delta:+0.0;-0.0}s " +
                     $"(book total now {TimeSpan.FromSeconds(_trackDurations.Last())})");

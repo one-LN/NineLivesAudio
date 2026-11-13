@@ -1,3 +1,4 @@
+using System.Linq;
 using CommunityToolkit.Mvvm.Messaging;
 using NineLivesAudio.Helpers;
 using NineLivesAudio.Messages;
@@ -25,6 +26,7 @@ public sealed partial class PlayerPage : Page
     private readonly ILocalizationService _localization;
     private readonly ISettingsService _settingsService;
     private bool _isUserSeeking = false;
+    private Flyout? _chapterFlyout;
     private bool _isChapterMode = false;
 
     // Set while the toggle is changed by code (restore / "this book has no chapters")
@@ -363,32 +365,65 @@ public sealed partial class PlayerPage : Page
 
     private void ChaptersButton_Click(object sender, RoutedEventArgs e)
     {
-        var flyout = new MenuFlyout();
         var chapters = _playbackService.Chapters;
-        var currentIdx = _playbackService.CurrentChapterIndex;
+        if (chapters.Count == 0) return;
 
-        for (int i = 0; i < chapters.Count; i++)
+        var currentIndex = _playbackService.CurrentChapterIndex;
+
+        var rows = new List<ChapterDisplayItem>(chapters.Count);
+        for (var i = 0; i < chapters.Count; i++)
         {
             var chapter = chapters[i];
-            var item = new MenuFlyoutItem
+            rows.Add(new ChapterDisplayItem
             {
-                // The playing chapter gets a play glyph; clicking any entry jumps to its start.
-                Text = $"{i + 1}. {chapter.Title}",
-                Icon = i == currentIdx ? new FontIcon { Glyph = "\uE768" } : null
-            };
-
-            var capturedIndex = i;
-            item.Click += async (s, args) => await SeekToChapterAsync(capturedIndex);
-            flyout.Items.Add(item);
+                Index = i + 1,
+                Title = string.IsNullOrWhiteSpace(chapter.Title) ? $"#{i + 1}" : chapter.Title,
+                StartTime = TimeFormatHelper.FormatDuration(chapter.StartTime),
+                Duration = TimeFormatHelper.FormatDuration(chapter.Duration),
+                IsCurrent = i == currentIndex,
+                Status = i < currentIndex ? "done" : i == currentIndex ? "current" : "upcoming"
+            });
         }
 
-        // Books can have 100+ chapters; cap the menu height so it scrolls instead of overflowing.
-        flyout.MenuFlyoutPresenterStyle = new Style(typeof(MenuFlyoutPresenter))
+        // A ListView virtualises: a 2555-chapter book opens instantly, and the row template
+        // shows each chapter's start time so the jump target is visible before clicking.
+        var list = new ListView
         {
-            Setters = { new Setter(FrameworkElement.MaxHeightProperty, 520.0) }
+            ItemsSource = rows,
+            ItemTemplate = (DataTemplate)Resources["ChapterRowTemplate"],
+            SelectionMode = ListViewSelectionMode.Single,
+            IsItemClickEnabled = true,
+            MaxHeight = 460,
+            Width = 320
         };
 
-        flyout.ShowAt(ChaptersButton);
+        list.ItemClick += async (_, args) =>
+        {
+            if (args.ClickedItem is not ChapterDisplayItem row) return;
+            _chapterFlyout?.Hide();
+            await SeekToChapterAsync(row.Index - 1);
+        };
+
+        _chapterFlyout?.Hide();
+        _chapterFlyout = new Flyout
+        {
+            Content = list,
+            Placement = FlyoutPlacementMode.Top,
+            FlyoutPresenterStyle = new Style(typeof(FlyoutPresenter))
+            {
+                Setters =
+                {
+                    new Setter(Control.MaxHeightProperty, 520.0),
+                    new Setter(Control.PaddingProperty, new Thickness(4))
+                }
+            }
+        };
+
+        _chapterFlyout.ShowAt(ChaptersButton);
+
+        // Land on the chapter that is playing right now.
+        var currentRow = rows.FirstOrDefault(r => r.IsCurrent);
+        if (currentRow != null) list.ScrollIntoView(currentRow);
     }
 
     private void UpdateVolumeIcon()

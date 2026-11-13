@@ -9,6 +9,30 @@
     Loaded="Page_Loaded"
     Unloaded="Page_Unloaded">
 
+    <Page.Resources>
+        <!-- Rows for the chapter picker. A virtualised ListView keeps a 2555-chapter book
+             instant, and showing every start time is what makes "jump to this chapter" obvious. -->
+        <DataTemplate x:Key="ChapterRowTemplate">
+            <Grid ColumnSpacing="10" Padding="0,2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Index}" Width="34"
+                           Style="{StaticResource CaptionStyle}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding Title}"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                           Foreground="{StaticResource StarlightDimBrush}"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StartTime}" Style="{StaticResource CaptionStyle}"/>
+                    <TextBlock Text="·" Style="{StaticResource CaptionStyle}" Opacity="0.5"/>
+                    <TextBlock Text="{Binding Duration}" Style="{StaticResource CaptionStyle}" Opacity="0.6"/>
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+
     <Grid x:Name="PlayerRootGrid" Padding="{StaticResource PagePadding}">
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="PlayerLayoutStates">
