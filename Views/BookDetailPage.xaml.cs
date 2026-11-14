@@ -18,6 +18,7 @@ public sealed partial class BookDetailPage : Page
     private readonly BookDetailViewModel _viewModel;
     private readonly LibraryViewModel _libraryViewModel;
     private readonly ILoggingService _logger;
+    private readonly ILocalizationService _localization;
 
     public BookDetailPage()
     {
@@ -25,11 +26,16 @@ public sealed partial class BookDetailPage : Page
         _viewModel = App.Services.GetRequiredService<BookDetailViewModel>();
         _libraryViewModel = App.Services.GetRequiredService<LibraryViewModel>();
         _logger = App.Services.GetRequiredService<ILoggingService>();
+        _localization = App.Services.GetRequiredService<ILocalizationService>();
+        this.Unloaded += Page_Unloaded;
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        ApplyLocalization();
+        _localization.LanguageChanged -= ApplyLocalization;
+        _localization.LanguageChanged += ApplyLocalization;
 
         if (e.Parameter is AudioBook audioBook)
         {
@@ -41,6 +47,11 @@ public sealed partial class BookDetailPage : Page
 
     private void Page_Loaded(object sender, RoutedEventArgs e)
     {
+    }
+
+    private void Page_Unloaded(object sender, RoutedEventArgs e)
+    {
+        _localization.LanguageChanged -= ApplyLocalization;
     }
 
     private void LoadBookDetails()
@@ -60,7 +71,7 @@ public sealed partial class BookDetailPage : Page
         // Narrator
         if (!string.IsNullOrEmpty(_audioBook.Narrator))
         {
-            var narratorDisplay = $"Narrated by {_audioBook.Narrator}";
+            var narratorDisplay = _localization.Format("NarratedBy", _audioBook.Narrator);
             NarratorText.Text = narratorDisplay;
             NarratorText.Visibility = Visibility.Visible;
             NarratorTextNarrow.Text = narratorDisplay;
@@ -87,7 +98,7 @@ public sealed partial class BookDetailPage : Page
         // Added date
         if (_audioBook.AddedAt.HasValue)
         {
-            var addedDisplay = $"Added {_audioBook.AddedAt.Value:MMMM d, yyyy}";
+            var addedDisplay = _localization.Format("AddedOn", AppLanguage.FormatShortDate(_audioBook.AddedAt.Value));
             AddedAtText.Text = addedDisplay;
             AddedAtText.Visibility = Visibility.Visible;
             AddedAtTextNarrow.Text = addedDisplay;
@@ -95,7 +106,7 @@ public sealed partial class BookDetailPage : Page
         }
 
         // Cover image — set both wide and narrow images
-        var coverBitmap = CoverImageService.LoadCover(_audioBook.CoverPath);
+        var coverBitmap = CoverImageService.LoadCover(_audioBook.CoverPath, 800, 800);
         CoverImage.Source = coverBitmap;
         CoverImageNarrow.Source = coverBitmap;
 
@@ -184,7 +195,7 @@ public sealed partial class BookDetailPage : Page
             ChapterInfoTextNarrow.Visibility = Visibility.Collapsed;
         }
 
-        var playLabel = _audioBook.ProgressPercent > 0 ? "Continue" : "Play";
+        var playLabel = _audioBook.ProgressPercent > 0 ? _localization.GetString("Continue") : _localization.GetString("Play");
         PlayButtonText.Text = playLabel;
         PlayButtonTextNarrow.Text = playLabel;
     }
@@ -220,7 +231,7 @@ public sealed partial class BookDetailPage : Page
         }
 
         if (_audioBook.AddedAt.HasValue)
-            AddMetadataRow("Added", _audioBook.AddedAt.Value.ToString("MMMM d, yyyy"));
+            AddMetadataRow(_localization.GetString("Added"), AppLanguage.FormatShortDate(_audioBook.AddedAt.Value));
 
         if (_audioBook.IsFinished)
             AddMetadataRow("Status", "Finished");
@@ -265,7 +276,7 @@ public sealed partial class BookDetailPage : Page
             return;
         }
 
-        ChaptersHeader.Text = $"Chapters ({chapterItems.Count})";
+        ChaptersHeader.Text = _localization.Format("ChaptersCount", chapterItems.Count);
         ChaptersPanel.Visibility = Visibility.Visible;
 
         ChaptersRepeater.ItemTemplate = CreateChapterTemplate();
@@ -315,7 +326,7 @@ public sealed partial class BookDetailPage : Page
             return;
         }
 
-        TracksHeader.Text = $"Tracks ({trackItems.Count})";
+        TracksHeader.Text = _localization.Format("TracksCount", trackItems.Count);
 
         TracksRepeater.ItemTemplate = CreateTrackTemplate();
         TracksRepeater.ItemsSource = trackItems;
@@ -445,8 +456,8 @@ public sealed partial class BookDetailPage : Page
         catch (Exception ex)
         {
             _logger.LogError("Error with download action", ex);
-            DownloadButtonText.Text = $"Error: {ex.Message}";
-            DownloadButtonTextNarrow.Text = $"Error: {ex.Message}";
+            DownloadButtonText.Text = _localization.Format("ErrorLabel", ex.Message);
+            DownloadButtonTextNarrow.Text = _localization.Format("ErrorLabel", ex.Message);
             await Task.Delay(3000);
             UpdateDownloadState();
         }
@@ -476,6 +487,14 @@ public sealed partial class BookDetailPage : Page
                     break;
             }
         });
+    }
+
+    private void ApplyLocalization()
+    {
+        if (DetailsTitleText != null) DetailsTitleText.Text = _localization.GetString("Details");
+        if (GenresTitleText != null) GenresTitleText.Text = _localization.GetString("Genres");
+        if (TagsTitleText != null) TagsTitleText.Text = _localization.GetString("Tags");
+        if (DescriptionTitleText != null) DescriptionTitleText.Text = _localization.GetString("Description");
     }
 
 }

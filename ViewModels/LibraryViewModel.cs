@@ -38,10 +38,22 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
     private readonly INotificationService _notifications;
     private readonly IMetadataNormalizer _normalizer;
     private readonly ILibraryFilterService _filterService;
+    private readonly ILocalizationService _localization;
 
     // Debounce timer for search
     private CancellationTokenSource? _searchDebounceToken;
     private const int SearchDebounceMs = 300;
+
+    // Marshals background messages (connectivity pings) onto the UI thread.
+    private readonly Microsoft.UI.Dispatching.DispatcherQueue? _dispatcherQueue =
+        Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+
+    // True while "downloaded only" is active because the server was unreachable.
+    // The flag lets us switch the filter back off once the server answers again,
+    // without fighting a filter the user turned on by hand.
+    private bool _autoOfflineFallback;
+    private bool _settingOfflineFallback;
+    private bool _sessionExpiredNotified;
 
     // Cache for normalized metadata (avoid recomputing on every render)
     private readonly Dictionary<string, NormalizedMetadata> _normalizedCache = new();
@@ -72,10 +84,10 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
     private bool _showEmptyState;
 
     [ObservableProperty]
-    private string _emptyStateTitle = "No Books Found";
+    private string _emptyStateTitle = string.Empty; // localized in ctor
 
     [ObservableProperty]
-    private string _emptyStateSubtitle = "Connect to your server or refresh to load your library.";
+    private string _emptyStateSubtitle = string.Empty; // localized in ctor
 
     [ObservableProperty]
     private ViewMode _currentViewMode = ViewMode.All;
@@ -93,9 +105,18 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
     private bool _showDownloadedOnly;
 
     public ObservableCollection<Library> Libraries { get; } = new();
-    public ObservableCollection<AudioBook> AudioBooks { get; } = new();
-    public ObservableCollection<AudioBook> FilteredAudioBooks { get; } = new();
+
+    // Bulk-replaceable: a refresh swaps hundreds of books with one Reset notification
+    // instead of one CollectionChanged per book (the ItemsRepeater re-lays out once).
+    public RangeObservableCollection<AudioBook> AudioBooks { get; } = new();
+    public RangeObservableCollection<AudioBook> FilteredAudioBooks { get; } = new();
     public ObservableCollection<string> AvailableGroups { get; } = new();
+
+    // A page load, a library switch and a reconnect can all ask for a refresh at the
+    // same moment. Running them one after another meant the shelf was rebuilt two or
+    // three times (and the spinner stayed up through every network round-trip).
+    private Task? _booksLoadInFlight;
+    private Task? _librariesLoadInFlight;
 
     public LibraryViewModel(
         IAudioBookshelfApiService apiService,
@@ -106,7 +127,8 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         ILoggingService logger,
         INotificationService notifications,
         IMetadataNormalizer normalizer,
-        ILibraryFilterService filterService)
+        ILibraryFilterService filterService,
+        ILocalizationService localization)
     {
         _apiService = apiService;
         _database = database;
@@ -117,12 +139,140 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         _notifications = notifications;
         _normalizer = normalizer;
         _filterService = filterService;
+        _localization = localization;
+
+        // Seed localized defaults (field initializers cannot use the service).
+        EmptyStateTitle = _localization.GetString("NoBooksFound");
+        EmptyStateSubtitle = _localization.GetString("NotConnectedSubtitle");
 
         // Subscribe to download events for toasts
         WeakReferenceMessenger.Default.Register<DownloadCompletedMessage>(this, (r, m) =>
             ((LibraryViewModel)r).OnDownloadCompleted(m.Value));
         WeakReferenceMessenger.Default.Register<DownloadFailedMessage>(this, (r, m) =>
             ((LibraryViewModel)r).OnDownloadFailed(m.Value));
+
+        // When the server becomes reachable again, reload instead of leaving the
+        // user staring at a cached/empty shelf until they hit refresh.
+        WeakReferenceMessenger.Default.Register<ConnectivityChangedMessage>(this, (r, m) =>
+            ((LibraryViewModel)r).OnConnectivityChanged(m.Value));
+
+        // A full sync (first connect, "Sync now", 5-minute tick) can bring in new libraries
+        // and progress. Reload afterwards so the shelf stops showing the pre-connect state.
+        WeakReferenceMessenger.Default.Register<SyncCompletedMessage>(this, (r, m) =>
+            ((LibraryViewModel)r).OnSyncCompleted());
+    }
+
+    private void OnConnectivityChanged(ConnectivityChangedEventArgs e)
+    {
+        if (!e.IsOnline || !e.IsServerReachable) return;
+
+        var dispatcher = _dispatcherQueue;
+        if (dispatcher != null && !dispatcher.HasThreadAccess)
+        {
+            dispatcher.TryEnqueue(() => _ = ReloadAfterReconnectAsync());
+            return;
+        }
+
+        _ = ReloadAfterReconnectAsync();
+    }
+
+    private void OnSyncCompleted()
+    {
+        var dispatcher = _dispatcherQueue;
+        if (dispatcher != null && !dispatcher.HasThreadAccess)
+        {
+            dispatcher.TryEnqueue(() => _ = ReloadAfterSyncAsync());
+            return;
+        }
+
+        _ = ReloadAfterSyncAsync();
+    }
+
+    /// <summary>Refresh the shelf after a completed sync (no extra sync is triggered here).</summary>
+    private async Task ReloadAfterSyncAsync()
+    {
+        if (IsLoading) return;
+
+        try
+        {
+            await LoadLibrariesAsync();
+            if (SelectedLibrary != null)
+                await LoadAudioBooksAsync();
+            _logger.Log("[Library] Shelf refreshed after sync");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("[Library] Post-sync refresh failed", ex);
+        }
+    }
+
+    private async Task ReloadAfterReconnectAsync()
+    {
+        if (IsLoading) return;
+
+        _logger.Log("[Library] Server reachable again — refreshing library");
+        try
+        {
+            await LoadLibrariesAsync();
+            if (SelectedLibrary != null)
+                await LoadAudioBooksAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("[Library] Reconnect refresh failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// Shows only downloaded books as a resilience fallback and remembers that we
+    /// (not the user) switched the filter, so it can be undone automatically.
+    /// </summary>
+    private void ApplyOfflineFallback()
+    {
+        if (!ShowDownloadedOnly)
+        {
+            _settingOfflineFallback = true;
+            try
+            {
+                ShowDownloadedOnly = true;
+            }
+            finally
+            {
+                _settingOfflineFallback = false;
+            }
+        }
+
+        _autoOfflineFallback = true;
+    }
+
+    private void ClearOfflineFallback()
+    {
+        if (!_autoOfflineFallback) return;
+        _autoOfflineFallback = false;
+
+        if (ShowDownloadedOnly)
+            ShowDownloadedOnly = false;
+    }
+
+    /// <summary>
+    /// Turns a silent 401 into an explicit "session expired" state: the in-memory
+    /// session is dropped, the empty state switches to "not connected" and the user
+    /// is told once to sign in again — instead of an empty library with no hint.
+    /// </summary>
+    private void HandleUnauthorizedIfNeeded()
+    {
+        if (!_apiService.LastRequestUnauthorized) return;
+
+        _apiService.InvalidateSession();
+
+        if (_sessionExpiredNotified) return;
+        _sessionExpiredNotified = true;
+
+        var message = _localization.GetString("SessionExpired");
+        ErrorMessage = message;
+        HasError = true;
+        _notifications.ShowWarning(message, _localization.GetString("NotConnected"));
+        _logger.LogWarning("[Library] Token rejected with 401 — session invalidated");
     }
 
     /// <summary>
@@ -172,7 +322,16 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private async Task LoadLibrariesAsync()
+    private Task LoadLibrariesAsync()
+    {
+        if (_librariesLoadInFlight is { IsCompleted: false })
+            return _librariesLoadInFlight;
+
+        _librariesLoadInFlight = LoadLibrariesCoreAsync();
+        return _librariesLoadInFlight;
+    }
+
+    private async Task LoadLibrariesCoreAsync()
     {
         try
         {
@@ -209,6 +368,13 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
                         {
                             Libraries.Add(library);
                         }
+
+                        // A successful answer proves the session works again.
+                        _sessionExpiredNotified = false;
+                    }
+                    else
+                    {
+                        HandleUnauthorizedIfNeeded();
                     }
                 }
                 catch (Exception ex) when (ex is TaskCanceledException or HttpRequestException or OperationCanceledException)
@@ -230,9 +396,9 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             _logger.LogError("LoadLibrariesAsync failed", ex);
-            ErrorMessage = $"Failed to load libraries: {ex.Message}";
+            ErrorMessage = _localization.Format("FailedLoadLibraries", ex.Message);
             HasError = true;
-            _notifications.ShowError(ex.Message, "Load Failed");
+            _notifications.ShowError(ex.Message, _localization.GetString("LoadFailed"));
         }
         finally
         {
@@ -240,12 +406,46 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         }
     }
 
-    [RelayCommand]
-    private async Task LoadAudioBooksAsync()
+    /// <summary>True when both lists hold the same books in the same order (id-only compare).</summary>
+    private static bool HasSameBooks(IReadOnlyList<AudioBook> current, IReadOnlyList<AudioBook> candidate)
     {
+        if (current.Count != candidate.Count) return false;
+
+        for (var i = 0; i < current.Count; i++)
+        {
+            if (!string.Equals(current[i].Id, candidate[i].Id, StringComparison.Ordinal))
+                return false;
+        }
+
+        return true;
+    }
+
+    [RelayCommand]
+    private Task LoadAudioBooksAsync()
+    {
+        if (_booksLoadInFlight is { IsCompleted: false })
+        {
+            _logger.LogDebug("[Library] Books load already running — joining it");
+            return _booksLoadInFlight;
+        }
+
+        _booksLoadInFlight = LoadAudioBooksCoreAsync();
+        return _booksLoadInFlight;
+    }
+
+    private async Task LoadAudioBooksCoreAsync()
+    {
+        // Never bail out silently: pick a library when one exists, otherwise show
+        // the empty state so the user sees *why* the shelf is blank.
+        if (SelectedLibrary == null && Libraries.Count > 0)
+            SelectedLibrary = Libraries[0];
+
         if (SelectedLibrary == null)
         {
-            _logger.LogWarning("LoadAudioBooksAsync called but no library selected");
+            _logger.LogWarning("LoadAudioBooksAsync called but no library is available");
+            UpdateAvailableGroups();
+            ApplyFilterInternal();
+            UpdateShowEmptyState();
             return;
         }
 
@@ -259,15 +459,19 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             _normalizedCache.Clear();
 
             // Load from local database first (filtered by selected library)
-            _logger.Log("Loading audiobooks from local database...");
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             var localBooks = await _database.GetAudioBooksByLibraryAsync(SelectedLibrary.Id);
-            _logger.Log($"Loaded {localBooks.Count} audiobooks from database");
+            _logger.Log($"[Library] Local load: {localBooks.Count} books in {stopwatch.ElapsedMilliseconds} ms");
 
-            AudioBooks.Clear();
-            foreach (var book in localBooks)
-            {
-                AudioBooks.Add(book);
-            }
+            AudioBooks.ReplaceRange(localBooks);
+            UpdateAvailableGroups();
+            ApplyFilterInternal();
+
+            // Stop the spinner here: from now on the shelf is usable and everything
+            // below is a background refresh. An empty cache keeps the spinner up so the
+            // first paint is not a "no books" empty state.
+            if (AudioBooks.Count > 0)
+                IsLoading = false;
 
             // If online, delegate to SyncService for server refresh + merge.
             // SyncService handles LocalPath preservation with robust matching.
@@ -276,34 +480,53 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
                 try
                 {
                     _logger.Log("Triggering SyncService for fresh server data...");
+                    var syncStopwatch = System.Diagnostics.Stopwatch.StartNew();
                     await _syncService.SyncLibrariesAsync();
+                    _logger.Log($"[Library] Server sync finished in {syncStopwatch.ElapsedMilliseconds} ms");
 
-                    // Reload from DB after sync (SyncService saved the merged data)
+                    // Reload from DB after sync (SyncService saved the merged data).
+                    // Skipped when the ids did not change: re-binding 309 cards costs more
+                    // than the query itself.
                     var refreshedBooks = await _database.GetAudioBooksByLibraryAsync(SelectedLibrary.Id);
-                    AudioBooks.Clear();
-                    foreach (var book in refreshedBooks)
-                        AudioBooks.Add(book);
-                    _logger.Log($"Reloaded {AudioBooks.Count} audiobooks from database after sync");
+                    if (!HasSameBooks(AudioBooks, refreshedBooks))
+                    {
+                        AudioBooks.ReplaceRange(refreshedBooks);
+                        UpdateAvailableGroups();
+                        _logger.Log($"[Library] Server data changed — {AudioBooks.Count} books re-bound");
+                    }
+                    else
+                    {
+                        _logger.LogDebug("[Library] Server data unchanged — keeping the current list");
+                    }
+
+                    // The server answered: drop the offline-only filter again (unless the
+                    // user picked it themselves) and refresh the empty state accordingly.
+                    var wasFallback = _autoOfflineFallback;
+                    ClearOfflineFallback();
+                    ApplyFilterInternal();
+
+                    if (wasFallback)
+                        _notifications.ShowSuccess(_localization.GetString("BackOnline"));
+
+                    HandleUnauthorizedIfNeeded();
                 }
                 catch (Exception ex) when (ex is TaskCanceledException or HttpRequestException or OperationCanceledException)
                 {
                     _logger.LogWarning($"[Library] Server unreachable, using cached books: {ex.Message}");
                     // Continue with locally cached books already loaded above
-                    ShowDownloadedOnly = true;
-                    _notifications.ShowInfo("Showing downloaded books only (server unreachable)");
+                    ApplyOfflineFallback();
+                    _notifications.ShowInfo(_localization.GetString("ShowingDownloadedOnly"));
                 }
             }
 
-            _logger.Log("Updating available groups...");
-            UpdateAvailableGroups();
-            _logger.Log("Applying filter...");
-            ApplyFilterInternal();
-            _logger.Log($"LoadAudioBooksAsync completed. Total books: {AudioBooks.Count}, Filtered: {FilteredAudioBooks.Count}");
+            IsLoading = false;
+            _logger.Log($"[Library] Load completed in {stopwatch.ElapsedMilliseconds} ms. " +
+                        $"Total books: {AudioBooks.Count}, Filtered: {FilteredAudioBooks.Count}");
         }
         catch (Exception ex)
         {
             _logger.LogError($"LoadAudioBooksAsync failed for library {SelectedLibrary?.Name}", ex);
-            ErrorMessage = $"Failed to load audiobooks: {ex.Message}";
+            ErrorMessage = _localization.Format("FailedLoadBooks", ex.Message);
             HasError = true;
         }
         finally
@@ -324,7 +547,7 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             await LoadAudioBooksAsync();
         }
         IsRefreshing = false;
-        _notifications.ShowSuccess("Library refreshed");
+        _notifications.ShowSuccess(_localization.GetString("LibraryRefreshed"));
     }
 
     [RelayCommand]
@@ -342,9 +565,9 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to play audiobook: {ex.Message}";
+            ErrorMessage = _localization.Format("FailedPlay", ex.Message);
             HasError = true;
-            _notifications.ShowError(ex.Message, "Playback Error");
+            _notifications.ShowError(ex.Message, _localization.GetString("PlaybackError"));
         }
     }
 
@@ -356,13 +579,13 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         try
         {
             await _downloadService.QueueDownloadAsync(audioBook);
-            _notifications.ShowInfo($"Downloading: {audioBook.Title}");
+            _notifications.ShowInfo(_localization.Format("DownloadingTitle", audioBook.Title));
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to queue download: {ex.Message}";
+            ErrorMessage = _localization.Format("FailedQueue", ex.Message);
             HasError = true;
-            _notifications.ShowError(ex.Message, "Download Error");
+            _notifications.ShowError(ex.Message, _localization.GetString("DownloadError"));
         }
     }
 
@@ -378,17 +601,17 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             audioBook.LocalPath = null;
             foreach (var af in audioBook.AudioFiles) af.LocalPath = null;
             _normalizedCache.Remove(audioBook.Id);
-            _notifications.ShowSuccess($"Download removed: {audioBook.Title}");
+            _notifications.ShowSuccess(_localization.Format("DownloadRemoved", audioBook.Title));
         }
         catch (Exception ex)
         {
-            _notifications.ShowError(ex.Message, "Remove Download Error");
+            _notifications.ShowError(ex.Message, _localization.GetString("RemoveDownloadError"));
         }
     }
 
     private void OnDownloadCompleted(DownloadItem item)
     {
-        _notifications.ShowSuccess($"Download complete: {item.Title}");
+        _notifications.ShowSuccess(_localization.Format("DownloadComplete", item.Title));
 
         // Update the AudioBook in our collection
         var book = AudioBooks.FirstOrDefault(b => b.Id == item.AudioBookId);
@@ -402,7 +625,7 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
 
     private void OnDownloadFailed(DownloadItem item)
     {
-        _notifications.ShowError($"{item.Title}: {item.ErrorMessage}", "Download Failed");
+        _notifications.ShowError($"{item.Title}: {item.ErrorMessage}", _localization.GetString("DownloadFailed"));
     }
 
     partial void OnSelectedLibraryChanged(Library? value)
@@ -415,24 +638,23 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
 
     partial void OnSearchQueryChanged(string value)
     {
-        // Debounce search to reduce filtering churn
+        // Debounce search to reduce filtering churn (async/await, no ContinueWith).
         _searchDebounceToken?.Cancel();
+        _searchDebounceToken?.Dispose();
         _searchDebounceToken = new CancellationTokenSource();
         var token = _searchDebounceToken.Token;
+        _ = DebounceApplyFilterAsync(token);
+    }
 
-        // Capture dispatcher on UI thread BEFORE scheduling background continuation
-        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
-
-        Task.Delay(SearchDebounceMs, token).ContinueWith(_ =>
+    private async Task DebounceApplyFilterAsync(CancellationToken token)
+    {
+        try
         {
+            await Task.Delay(SearchDebounceMs, token);
             if (!token.IsCancellationRequested)
-            {
-                dispatcher?.TryEnqueue(() =>
-                {
-                    ApplyFilterInternal();
-                });
-            }
-        }, TaskScheduler.Default);
+                ApplyFilterInternal();
+        }
+        catch (OperationCanceledException) { /* superseded by newer keystroke */ }
     }
 
     partial void OnCurrentViewModeChanged(ViewMode value)
@@ -459,6 +681,10 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
 
     partial void OnShowDownloadedOnlyChanged(bool value)
     {
+        // A user-initiated toggle means the offline fallback is no longer ours to undo.
+        if (!_settingOfflineFallback)
+            _autoOfflineFallback = false;
+
         ApplyFilterInternal();
     }
 
@@ -527,12 +753,11 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             if (same) return;
         }
 
-        FilteredAudioBooks.Clear();
-        foreach (var book in newItems)
-        {
-            FilteredAudioBooks.Add(book);
-        }
+        FilteredAudioBooks.ReplaceRange(newItems);
     }
+
+    /// <summary>Re-renders computed strings after the UI language changed.</summary>
+    public void RefreshLocalizedStrings() => UpdateShowEmptyState();
 
     private void UpdateShowEmptyState()
     {
@@ -542,23 +767,23 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         {
             if (!string.IsNullOrWhiteSpace(SearchQuery))
             {
-                EmptyStateTitle = "No Results";
-                EmptyStateSubtitle = $"No books match \"{SearchQuery}\". Try a different search.";
+                EmptyStateTitle = _localization.GetString("NoResults");
+                EmptyStateSubtitle = _localization.Format("NoResultsSubtitle", SearchQuery);
             }
             else if (!_apiService.IsAuthenticated)
             {
-                EmptyStateTitle = "Not Connected";
-                EmptyStateSubtitle = "Connect to your AudioBookshelf server in Settings.";
+                EmptyStateTitle = _localization.GetString("NotConnected");
+                EmptyStateSubtitle = _localization.GetString("NotConnectedSubtitle");
             }
             else if (AudioBooks.Count == 0)
             {
-                EmptyStateTitle = "Library Empty";
-                EmptyStateSubtitle = "Your library has no books yet. Add some on your server.";
+                EmptyStateTitle = _localization.GetString("LibraryEmpty");
+                EmptyStateSubtitle = _localization.GetString("LibraryEmptySubtitle");
             }
             else
             {
-                EmptyStateTitle = "No Books Found";
-                EmptyStateSubtitle = "Try changing your filters.";
+                EmptyStateTitle = _localization.GetString("NoBooksFound");
+                EmptyStateSubtitle = _localization.GetString("TryChangingFilters");
             }
         }
     }

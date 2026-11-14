@@ -8,6 +8,19 @@ public interface IAudioBookshelfApiService
     string? ServerUrl { get; }
     string? LastError { get; }
 
+    /// <summary>
+    /// True when the most recent request was rejected with HTTP 401, i.e. the stored
+    /// token is no longer accepted by the server. Lets the UI show "session expired"
+    /// instead of an empty library.
+    /// </summary>
+    bool LastRequestUnauthorized { get; }
+
+    /// <summary>
+    /// Drops the in-memory session (token + Authorization header) so callers stop
+    /// hammering the API with a dead token. The saved token is left untouched.
+    /// </summary>
+    void InvalidateSession();
+
     // Authentication
     Task<bool> LoginAsync(string serverUrl, string username, string password);
     Task LogoutAsync();
@@ -24,7 +37,11 @@ public interface IAudioBookshelfApiService
 
     // Playback & Progress
     Task<PlaybackSessionInfo?> StartPlaybackSessionAsync(string itemId);
-    Task<bool> UpdateProgressAsync(string itemId, double currentTime, bool isFinished = false);
+    /// <summary>
+    /// Pushes listening progress. <paramref name="duration"/> is used to send the
+    /// 0..1 <c>progress</c> ratio; pass 0 to let the server compute it.
+    /// </summary>
+    Task<bool> UpdateProgressAsync(string itemId, double currentTime, bool isFinished = false, double duration = 0);
     Task<bool> SyncSessionProgressAsync(string sessionId, double currentTime, double duration, double timeListened = 0);
     Task ClosePlaybackSessionAsync(string sessionId);
 

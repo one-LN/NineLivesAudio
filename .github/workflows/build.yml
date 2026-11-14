@@ -1,0 +1,171 @@
+name: Build
+
+on:
+  push:
+    branches: [master, main, "arena/**"]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static self-check (localization, XAML, DI, packaging)
+        run: python3 tools/verify.py
+
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write   # needed to publish the download release below
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Restore
+        run: dotnet restore -r win-x64
+
+      - name: Build (Release)
+        run: dotnet build -r win-x64 -c Release --no-restore
+
+      - name: Publish (win-x64, self-contained)
+        run: dotnet publish -p:PublishProfile=win-x64 -c Release --no-restore
+
+      # Shows up as a notice annotation on the run page: makes the publish layout
+      # (and any stray culture folders) reviewable without downloading the artifact.
+      # SatelliteResourceLanguages only trims managed *.resources.dll satellites; a
+      # self-contained WinUI 3 publish still copies one folder per culture for the
+      # Windows App SDK's native MUI files. Drop everything except the two UI languages.
+      - name: Trim unused language folders
+        shell: pwsh
+        run: |
+          $keep = @('en', 'zh')
+          $root = 'binpublish'
+          try {
+            $removed = @()
+            foreach ($dir in Get-ChildItem $root -Directory) {
+              if ($dir.Name -notmatch '^[a-z]{2,3}(-[a-z]{2,4})?$') { continue }
+              $language = ($dir.Name -split '-')[0].ToLower()
+              if ($keep -contains $language) { continue }
+              Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction Stop
+              $removed += $dir.Name
+            }
+            if ($removed.Count -gt 0) {
+              Write-Host "Removed $($removed.Count) culture folder(s): $($removed -join ', ')"
+            } else {
+              Write-Host 'No culture folders to remove.'
+            }
+          }
+          catch {
+            Write-Error "Language folder trim failed: $($_.Exception.Message)"
+          }
+
+      - name: Publish layout summary
+        shell: pwsh
+        run: |
+          $dirs = Get-ChildItem binpublish -Directory | Select-Object -ExpandProperty Name
+          $files = (Get-ChildItem binpublish -Recurse -File).Count
+          $size = [math]::Round(((Get-ChildItem binpublish -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
+          Write-Host "Layout: $($dirs.Count) folder(s) [$($dirs -join ', ')] · $files files · $size MB"
+
+          # The app ships en-US/zh-CN only. Build/trim-cultures.ps1 removes the rest at
+          # publish time; anything culture-shaped that survives is a regression, so fail
+          # the build instead of just warning — a green run now proves the package is clean.
+          $stray = $dirs | Where-Object { $_ -match '^[a-z]{2,3}(-[a-z]{2,4})?$' -and $_ -notmatch '^(en|zh)(-|$)' }
+          if ($stray) {
+            Write-Error "Unexpected language folder(s) in publish output: $($stray -join ', ')"
+          } else {
+            Write-Host "No stray language folders."
+          }
+
+      # Optional: the runner image ships Inno Setup 6, so a setup.exe is produced too.
+      # A missing ISCC.exe must not fail the portable build.
+      - name: Compile installer (Inno Setup)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($null -eq $iscc) {
+            Write-Host "Inno Setup not found — skipping installer" -ForegroundColor Yellow
+            exit 0
+          }
+          & $iscc "installer.iss"
+
+      - name: Upload portable build (binpublish)
+        uses: actions/upload-artifact@v4
+        with:
+          name: NineLivesAudio-win-x64-portable
+          path: binpublish/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: NineLivesAudio-win-x64-installer
+          path: installer_output/*.exe
+          if-no-files-found: warn
+          retention-days: 30
+
+      # A plain download link, no GitHub login required: the artifact above needs a
+      # signed-in browser, which is useless if all you want is the installer.
+      - name: Package portable zip
+        shell: pwsh
+        run: Compress-Archive -Path binpublish/* -DestinationPath NineLivesAudio-win-x64-portable.zip -Force
+
+      - name: Publish download release
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref_name }}
+        run: |
+          set -e
+          VERSION=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' NineLivesAudio.csproj | head -1)
+          VERSION=${VERSION:-0.0.0}
+          ASSETS="installer_output/NineLivesAudioSetup.exe NineLivesAudio-win-x64-portable.zip"
+          NAMES="NineLivesAudioSetup.exe NineLivesAudio-win-x64-portable.zip"
+
+          # Two tags: a rolling "latest-build" and a normal version release (v1.0.4), so the
+          # downloads look like every other GitHub project instead of one odd tag.
+          for TAG in latest-build "v$VERSION"; do
+            {
+              echo "Build of \`$SHA\` from \`$REF\` — $VERSION."
+              echo ""
+              echo "| File | What it is |"
+              echo "| --- | --- |"
+              echo "| **NineLivesAudioSetup.exe** | Installer: Start Menu shortcut, uninstall entry, keeps your data |"
+              echo "| **NineLivesAudio-win-x64-portable.zip** | Portable: unzip anywhere, run NineLivesAudio.exe |"
+              echo ""
+              echo "Data lives in \`<app folder>\\data\` in both cases. Every build replaces the files in this release."
+            } > release-notes.md
+
+            if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+                --title "NineLivesAudio $VERSION" --notes-file release-notes.md
+            else
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
+            fi
+
+            gh release upload "$TAG" $ASSETS --clobber --repo "$GITHUB_REPOSITORY"
+
+            # Drop assets a previous layout left behind (e.g. the withdrawn single-file build),
+            # otherwise a stale file keeps sitting on the download page.
+            for name in $(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'); do
+              case " $NAMES " in
+                *" $name "*) ;;
+                *) gh release delete-asset "$TAG" "$name" -y --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 || true ;;
+              esac
+            done
+
+            echo "Download: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          done

@@ -2,11 +2,11 @@
 
 > Because one life just isn't enough for your audiobook collection.
 
-A beautiful, native Windows desktop client for [Audiobookshelf](https://www.audiobookshelf.org/). Built with WinUI 3 and .NET 10, Nine Lives brings your audiobook library to life with a cosmic dark theme, offline downloads, and seamless sync across all your devices.
+A beautiful, native Windows desktop client for [Audiobookshelf](https://www.audiobookshelf.org/). Built with WinUI 3 and .NET 9, Nine Lives brings your audiobook library to life with a cosmic dark theme, offline downloads, and seamless sync across all your devices.
 
-[![Release](https://img.shields.io/github/v/release/StaticHumStudio/NineLivesAudio)](https://github.com/StaticHumStudio/NineLivesAudio/releases/latest)
+[![Release](https://img.shields.io/github/v/release/one-LN/NineLivesAudio)](https://github.com/one-LN/NineLivesAudio/releases/latest)
 [![License](https://img.shields.io/badge/license-Private-blue.svg)](LICENSE)
-[![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/9.0)
 
 ![Nine Lives Audio Screenshot](Assets/nine-lives-logo.png)
 
@@ -27,7 +27,7 @@ A beautiful, native Windows desktop client for [Audiobookshelf](https://www.audi
 
 ### Installation
 
-1. **Download the installer** from the [latest release](https://github.com/StaticHumStudio/NineLivesAudio/releases/latest)
+1. **Download the installer** from the [latest release](https://github.com/one-LN/NineLivesAudio/releases/latest)
 2. **Run `NineLivesAudioSetup.exe`**
 
 > ⚠️ **Windows SmartScreen Warning?** You'll likely see "Windows protected your PC" because this app uses a self-signed certificate. This is completely normal for open-source projects. Here's how to proceed safely:
@@ -52,6 +52,12 @@ A beautiful, native Windows desktop client for [Audiobookshelf](https://www.audi
 
 ---
 
+## 🌐 Language / 语言
+
+Nine Lives Audio supports **English** and **简体中文**. The UI follows your system language by default, or you can switch anytime in **Settings → Appearance → Language** — no restart required.
+
+九命音频支持**英文**和**简体中文**。界面默认跟随系统语言，也可在**设置 → 外观 → 语言**中随时切换，无需重启。
+
 ## 🎵 Features
 
 ### Nine Lives Home Page
@@ -69,7 +75,8 @@ Your 9 most recently played audiobooks, front and center. Because cats have nine
 - **Connection indicator** - Always know if you're online or offline
 
 ### Player That Just Works
-- **Chapter navigation** - Jump ahead or back through chapters
+- **Chapter navigation** - Previous / next chapter buttons (`Ctrl+Shift+←` / `Ctrl+Shift+→`) and a chapter list that jumps to the clicked chapter
+- **Skip intro / skip outro** - Global settings (Settings → Playback): auto-skip the first N seconds on start, and when fewer than N seconds remain continue with the next chapter (the last chapter marks the book finished)
 - **Playback speed control** - 0.5x to 3.0x (because sometimes you need to speed through that boring chapter)
 - **Volume control** with mute detection
 - **Sleep timer** - 5, 10, 15, 30, 45, 60, 90, or 120 minutes
@@ -121,7 +128,7 @@ Your audiobook life, everywhere you need it.
 Built with modern Windows development tools:
 
 - **UI Framework**: WinUI 3 / Windows App SDK 1.6
-- **Runtime**: .NET 10
+- **Runtime**: .NET 9
 - **Architecture**: MVVM (CommunityToolkit.Mvvm)
 - **Local Audio**: NAudio 2.2
 - **Streaming**: Windows MediaPlayer
@@ -135,14 +142,14 @@ Built with modern Windows development tools:
 Want to hack on Nine Lives? Here's how:
 
 ### Prerequisites
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 - Windows 10 SDK (10.0.22621.0)
 - Windows App SDK 1.6
 
 ### Build & Run
 ```bash
 # Clone the repo
-git clone https://github.com/StaticHumStudio/NineLivesAudio.git
+git clone https://github.com/one-LN/NineLivesAudio.git
 cd NineLivesAudio
 
 # Build
@@ -159,6 +166,65 @@ dotnet run -r win-x64
 # Build, sign (dev cert), and run in one command
 .\build-and-run.ps1
 ```
+
+### Self-check & Packaging
+```powershell
+# Offline static checks (15 groups): localization parity, XAML sanity, DI graph,
+# packaging consistency, and regression guards for the "connected but empty library" bug
+python tools\verify.py
+
+# Full pipeline: self-check -> restore -> build -> publish (binpublish) -> optional installer
+powershell -ExecutionPolicy Bypass -File tools\package.ps1 -Installer
+```
+
+`tools/verify.py` is pure Python (no .NET needed) and also runs in CI on every pull request,
+so localization or XAML wiring mistakes fail fast without a Windows build agent.
+
+### Getting a runnable .exe
+
+A WinUI 3 app cannot be cross-compiled — you need **Windows + .NET 9 SDK** (and Inno Setup 6
+only if you want the installer).
+
+**Option A — build locally**
+
+```powershell
+git clone https://github.com/one-LN/NineLivesAudio.git
+cd NineLivesAudio
+git checkout master                      # or the branch you want to package
+powershell -ExecutionPolicy Bypass -File tools\package.ps1 -Installer
+```
+
+| Output | What it is |
+| --- | --- |
+| `binpublish\NineLivesAudio.exe` | Portable, self-contained app — keep the whole `binpublish` folder together |
+| `installer_output\NineLivesAudioSetup.exe` | Installer (per-user, no admin rights needed) |
+
+Without `-Installer` you still get `binpublish` — just run the exe from that folder, no install required.
+
+**Option B — let GitHub Actions build it**
+
+Push a commit, open a pull request, or run the **Build** workflow manually
+(*Actions → Build → Run workflow*). When the run finishes, download these artifacts from the run page:
+
+- `NineLivesAudio-win-x64-portable` — the `binpublish` folder as a zip
+- `NineLivesAudio-win-x64-installer` — `NineLivesAudioSetup.exe`
+
+No local toolchain needed, and no Windows machine needed to *start* the build.
+(The Windows runner compiles it; you only download the result.)
+
+### Localization (i18n)
+All UI strings live in `Services/LocalizationService.cs` (`en-US` + `zh-CN`, identical key sets).
+Add a key to **both** dictionaries — `tools/verify.py` fails the build if they drift.
+
+Usage from code: `_localization.GetString("SaveSettings")`, `_localization.Format("DaysAgo", 3)`.
+
+Usage from XAML (no code-behind needed):
+```xml
+<Button loc:Loc.Content="SaveSettings"/>
+<ToggleSwitch loc:Loc.Header="HideFinished"/>
+<TextBox loc:Loc.Placeholder="EnterUsername"/>
+```
+The values refresh in place when the user changes the language in Settings.
 
 ---
 
@@ -287,9 +353,9 @@ Private project by [Static Hum Studio](https://github.com/StaticHumStudio).
 
 ## 💬 Support
 
-- 🐛 [Report a bug](https://github.com/StaticHumStudio/NineLivesAudio/issues)
-- 💡 [Request a feature](https://github.com/StaticHumStudio/NineLivesAudio/issues)
-- 📖 [View documentation](https://github.com/StaticHumStudio/NineLivesAudio/wiki)
+- 🐛 [Report a bug](https://github.com/one-LN/NineLivesAudio/issues)
+- 💡 [Request a feature](https://github.com/one-LN/NineLivesAudio/issues)
+- 📖 [View documentation](https://github.com/one-LN/NineLivesAudio/wiki)
 
 ---
 
@@ -299,7 +365,7 @@ Private project by [Static Hum Studio](https://github.com/StaticHumStudio).
 
 *Because every book deserves nine lives worth of listening.*
 
-[Download Now](https://github.com/StaticHumStudio/NineLivesAudio/releases/latest) • [Report Issue](https://github.com/StaticHumStudio/NineLivesAudio/issues) • [View Source](https://github.com/StaticHumStudio/NineLivesAudio)
+[Download Now](https://github.com/one-LN/NineLivesAudio/releases/latest) • [Report Issue](https://github.com/one-LN/NineLivesAudio/issues) • [View Source](https://github.com/one-LN/NineLivesAudio)
 
 </div>
 

@@ -18,7 +18,7 @@ if ($LASTEXITCODE -ne 0) {
 $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object { $_.Subject -eq 'CN=Static Hum Studio' } | Select-Object -First 1
 if ($cert) {
     Write-Host "Signing assemblies..." -ForegroundColor Yellow
-    $binPath = "bin\Debug\net10.0-windows10.0.22621.0\win-x64"
+    $binPath = "bin\Debug\net9.0-windows10.0.22621.0\win-x64"
     Set-AuthenticodeSignature -FilePath "$binPath\NineLivesAudio.dll" -Certificate $cert | Out-Null
     Set-AuthenticodeSignature -FilePath "$binPath\NineLivesAudio.exe" -Certificate $cert | Out-Null
     Write-Host "Signed successfully" -ForegroundColor Green

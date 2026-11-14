@@ -1,4 +1,5 @@
 using NineLivesAudio.Helpers;
+using NineLivesAudio.Services;
 using NineLivesAudio.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
@@ -18,13 +19,20 @@ public sealed partial class HomePage : Page
 
     private readonly TapHelper _tapHelper = new();
 
-    // Hover brush cache
+    // Hover brush cache (created once; pointer events fire constantly)
     private static readonly SolidColorBrush HoverBrush =
         new(Windows.UI.Color.FromArgb(0x15, 0xFF, 0xFF, 0xFF)); // subtle white overlay
+    private static readonly SolidColorBrush HighlightBrush =
+        new(Windows.UI.Color.FromArgb(0xFF, 0x11, 0x18, 0x27));
+    private static readonly SolidColorBrush TransparentBrush =
+        new(Windows.UI.Color.FromArgb(0x00, 0x00, 0x00, 0x00));
+
+    private readonly ILocalizationService _localization;
 
     public HomePage()
     {
         ViewModel = App.Services.GetRequiredService<HomeViewModel>();
+        _localization = App.Services.GetRequiredService<ILocalizationService>();
         this.InitializeComponent();
         this.Loaded += OnLoaded;
         this.Unloaded += OnUnloaded;
@@ -46,6 +54,7 @@ public sealed partial class HomePage : Page
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        _localization.LanguageChanged -= ApplyLocalization;
         this.Loaded -= OnLoaded;
         this.Unloaded -= OnUnloaded;
         ViewModel.PropertyChanged -= ViewModel_PropertyChanged;
@@ -74,6 +83,9 @@ public sealed partial class HomePage : Page
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        ApplyLocalization();
+        _localization.LanguageChanged -= ApplyLocalization;
+        _localization.LanguageChanged += ApplyLocalization;
         await ViewModel.LoadAsync();
     }
 
@@ -98,13 +110,11 @@ public sealed partial class HomePage : Page
             if (isMostRecent)
             {
                 // Restore VoidSurface highlight
-                grid.Background = new SolidColorBrush(
-                    Windows.UI.Color.FromArgb(0xFF, 0x11, 0x18, 0x27));
+                grid.Background = HighlightBrush;
             }
             else
             {
-                grid.Background = new SolidColorBrush(
-                    Windows.UI.Color.FromArgb(0x00, 0x00, 0x00, 0x00));
+                grid.Background = TransparentBrush;
             }
         }
     }
@@ -138,4 +148,12 @@ public sealed partial class HomePage : Page
             frame?.Navigate(typeof(LibraryPage));
         }
     }
+
+    private void ApplyLocalization()
+    {
+        if (HomeTitleText != null) HomeTitleText.Text = _localization.GetString("HomeTitle");
+        if (HomeEmptyTitleText != null) HomeEmptyTitleText.Text = _localization.GetString("HomeEmptyTitle");
+        if (HomeEmptySubtitleText != null) HomeEmptySubtitleText.Text = _localization.GetString("HomeEmptySubtitle");
+    }
+
 }

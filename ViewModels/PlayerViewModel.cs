@@ -14,6 +14,7 @@ public partial class PlayerViewModel : ObservableObject, IDisposable
     private readonly IAudioPlaybackService _playbackService;
     private readonly ISettingsService _settingsService;
     private readonly DispatcherQueue _dispatcherQueue;
+    private readonly ILocalizationService _localization;
 
     [ObservableProperty]
     private AudioBook? _currentAudioBook;
@@ -59,10 +60,12 @@ public partial class PlayerViewModel : ObservableObject, IDisposable
 
     public PlayerViewModel(
         IAudioPlaybackService playbackService,
-        ISettingsService settingsService)
+        ISettingsService settingsService,
+        ILocalizationService localization)
     {
         _playbackService = playbackService;
         _settingsService = settingsService;
+        _localization = localization;
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
 
         Volume = _playbackService.Volume;
@@ -240,7 +243,7 @@ public partial class PlayerViewModel : ObservableObject, IDisposable
         var remaining = _sleepTimerEndTime.Value - DateTime.Now;
         if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
 
-        SleepTimerText = $"Sleep in {(int)remaining.TotalMinutes}:{remaining.Seconds:D2}";
+        SleepTimerText = _localization.Format("SleepIn", $"{(int)remaining.TotalMinutes}:{remaining.Seconds:D2}");
     }
 
     partial void OnVolumeChanged(float value)

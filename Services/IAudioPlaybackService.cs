@@ -36,6 +36,7 @@ public interface IAudioPlaybackService
     Chapter? CurrentChapter { get; }
     int CurrentChapterIndex { get; }
 
+    /// <summary>Seek to the first second of the given chapter (0-based).</summary>
     Task SeekToChapterAsync(int chapterIndex);
 }
 

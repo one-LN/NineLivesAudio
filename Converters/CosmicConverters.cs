@@ -8,12 +8,15 @@ public class HoursToCosmicBrushConverter : IValueConverter
     private static readonly SolidColorBrush DefaultBrush =
         new(Windows.UI.Color.FromArgb(0xFF, 0x4A, 0x4A, 0x4A));
 
+    // Cache brushes by color to avoid allocating a new brush on every binding update.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Windows.UI.Color, SolidColorBrush> BrushCache = new();
+
     public object Convert(object value, Type targetType, object parameter, string language)
     {
         if (value is double hours)
         {
             var color = CosmicCatHelper.GetCosmicEnergyColor(hours);
-            return new SolidColorBrush(color);
+            return BrushCache.GetOrAdd(color, c => new SolidColorBrush(c));
         }
         return DefaultBrush;
     }

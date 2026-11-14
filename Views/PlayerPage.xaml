@@ -3,10 +3,35 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:loc="using:NineLivesAudio.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     Loaded="Page_Loaded"
     Unloaded="Page_Unloaded">
+
+    <Page.Resources>
+        <!-- Rows for the chapter picker. A virtualised ListView keeps a 2555-chapter book
+             instant, and showing every start time is what makes "jump to this chapter" obvious. -->
+        <DataTemplate x:Key="ChapterRowTemplate">
+            <Grid ColumnSpacing="10" Padding="0,2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Index}" Width="34"
+                           Style="{StaticResource CaptionStyle}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding Title}"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                           Foreground="{StaticResource StarlightDimBrush}"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StartTime}" Style="{StaticResource CaptionStyle}"/>
+                    <TextBlock Text="·" Style="{StaticResource CaptionStyle}" Opacity="0.5"/>
+                    <TextBlock Text="{Binding Duration}" Style="{StaticResource CaptionStyle}" Opacity="0.6"/>
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
 
     <Grid x:Name="PlayerRootGrid" Padding="{StaticResource PagePadding}">
         <VisualStateManager.VisualStateGroups>
@@ -66,7 +91,7 @@
                     Background="Transparent" BorderThickness="0">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="&#xE72B;" FontSize="16" Foreground="{StaticResource MistFaintBrush}"/>
-                    <TextBlock x:Name="PlayerBackButtonLabel" Text="Back" VerticalAlignment="Center"
+                    <TextBlock x:Name="PlayerBackButtonLabel" loc:Loc.Text="Back" Text="Back" VerticalAlignment="Center"
                                Foreground="{StaticResource MistFaintBrush}"/>
                 </StackPanel>
             </Button>
@@ -86,11 +111,11 @@
                     Style="{StaticResource EmptyStateContainerStyle}"
                     Visibility="Collapsed">
             <FontIcon Glyph="&#xE768;" Style="{StaticResource EmptyStateIconStyle}"/>
-            <TextBlock Text="No audiobook playing"
+            <TextBlock x:Name="NoBookPlayingText" Text="No audiobook playing"
                        Style="{StaticResource EmptyStateTitleStyle}"/>
-            <TextBlock Text="Select a book from your library to start listening"
+            <TextBlock x:Name="NoBookPlayingSubtitleText" Text="Select a book from your library to start listening"
                        Style="{StaticResource EmptyStateSubtitleStyle}"/>
-            <Button Content="Go to Library" Click="GoToLibrary_Click"
+            <Button loc:Loc.Content="GoToLibrary" Content="Go to Library" Click="GoToLibrary_Click"
                     Style="{ThemeResource AccentButtonStyle}" Margin="0,16,0,0"/>
         </StackPanel>
 
@@ -154,15 +179,31 @@
                            Opacity="0.6"
                            Visibility="Collapsed"/>
 
-                <!-- Chapter Name -->
-                <TextBlock x:Name="ChapterNameText"
-                           Style="{StaticResource CaptionStyle}"
-                           TextAlignment="Center"
-                           Margin="0,4,0,0"
-                           Opacity="0.8"
-                           TextTrimming="CharacterEllipsis"
-                           MaxLines="1"
-                           Visibility="Collapsed"/>
+                <!-- Chapter name + its exact start/end on the book timeline.
+                     Tapping it opens the chapter picker, so the title itself works as the
+                     "show me the chapters" affordance. -->
+                <Button x:Name="ChapterNameButton"
+                        Click="ChaptersButton_Click"
+                        HorizontalAlignment="Center"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="8,0"
+                        Margin="0,2,0,0"
+                        Visibility="Collapsed">
+                    <StackPanel Spacing="1">
+                        <TextBlock x:Name="ChapterNameText"
+                                   Style="{StaticResource CaptionStyle}"
+                                   TextAlignment="Center"
+                                   Opacity="0.8"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxLines="1"/>
+                        <TextBlock x:Name="ChapterBoundsText"
+                                   Style="{StaticResource CaptionStyle}"
+                                   TextAlignment="Center"
+                                   FontSize="11"
+                                   Opacity="0.55"/>
+                    </StackPanel>
+                </Button>
 
                 <!-- Progress Slider -->
                 <Grid Margin="0,12,0,0">
@@ -194,68 +235,77 @@
                             Spacing="8"
                             Margin="0,4,0,0"
                             Visibility="Collapsed">
-                    <TextBlock Text="Book"
+                    <TextBlock x:Name="BookLabelText" Text="Book"
                                Style="{StaticResource CaptionStyle}"
                                VerticalAlignment="Center"/>
                     <ToggleSwitch x:Name="ChapterModeToggle"
                                   OnContent="" OffContent=""
                                   Toggled="ChapterModeToggle_Toggled"
                                   MinWidth="40"/>
-                    <TextBlock Text="Chapter"
+                    <TextBlock x:Name="ChapterLabelText" Text="Chapter"
                                Style="{StaticResource CaptionStyle}"
                                VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <!-- Playback Controls -->
-                <StackPanel Orientation="Horizontal"
+                <!-- Playback Controls
+                     One rhythm: 44px round icon buttons (chapter jumps) and 58x44 pills
+                     (skip ±N), all vertically centred around the 72px play button. -->
+                <StackPanel x:Name="TransportControlsPanel"
+                            Orientation="Horizontal"
                             HorizontalAlignment="Center"
-                            Spacing="12"
+                            VerticalAlignment="Center"
+                            Spacing="10"
                             Margin="0,12,0,0">
 
                     <!-- Previous Chapter -->
                     <Button x:Name="PrevChapterButton"
                             Click="PrevChapter_Click"
                             Style="{StaticResource CircularButtonStyle}"
+                            VerticalAlignment="Center"
                             ToolTipService.ToolTip="Previous chapter"
                             Visibility="Collapsed">
-                        <FontIcon Glyph="&#xE892;" FontSize="16"/>
+                        <FontIcon Glyph="&#xE892;" FontSize="18"/>
                     </Button>
 
                     <!-- Skip Back 10s -->
-                    <Button Click="SkipBack_Click"
-                            Style="{StaticResource CircularButtonStyle}"
+                    <Button x:Name="SkipBackButton" Click="SkipBack_Click"
+                            Style="{StaticResource SkipPillButtonStyle}"
                             ToolTipService.ToolTip="Skip back 10 seconds">
-                        <StackPanel>
-                            <FontIcon Glyph="&#xE892;" FontSize="18"/>
-                            <TextBlock Text="10" FontSize="10" HorizontalAlignment="Center" Opacity="0.7"/>
-                        </StackPanel>
+                        <TextBlock Text="&#x2212;10s"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
                     </Button>
 
                     <!-- Play/Pause -->
                     <Button x:Name="PlayPauseButton"
                             Click="PlayPause_Click"
-                            Style="{StaticResource SigilPlayButtonStyle}">
+                            Style="{StaticResource SigilPlayButtonStyle}"
+                            VerticalAlignment="Center">
                         <FontIcon x:Name="PlayPauseIcon" Glyph="&#xE768;" FontSize="28"
                                   Foreground="{StaticResource VoidDeepBrush}"/>
                     </Button>
 
                     <!-- Skip Forward 30s -->
-                    <Button Click="SkipForward_Click"
-                            Style="{StaticResource CircularButtonStyle}"
+                    <Button x:Name="SkipForwardButton" Click="SkipForward_Click"
+                            Style="{StaticResource SkipPillButtonStyle}"
                             ToolTipService.ToolTip="Skip forward 30 seconds">
-                        <StackPanel>
-                            <FontIcon Glyph="&#xE893;" FontSize="18"/>
-                            <TextBlock Text="30" FontSize="10" HorizontalAlignment="Center" Opacity="0.7"/>
-                        </StackPanel>
+                        <TextBlock Text="+30s"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
                     </Button>
 
                     <!-- Next Chapter -->
                     <Button x:Name="NextChapterButton"
                             Click="NextChapter_Click"
                             Style="{StaticResource CircularButtonStyle}"
+                            VerticalAlignment="Center"
                             ToolTipService.ToolTip="Next chapter"
                             Visibility="Collapsed">
-                        <FontIcon Glyph="&#xE893;" FontSize="16"/>
+                        <FontIcon Glyph="&#xE893;" FontSize="18"/>
                     </Button>
                 </StackPanel>
 
@@ -279,7 +329,7 @@
                                            Foreground="{StaticResource MistBrush}"/>
                             </StackPanel>
                         </Button>
-                        <TextBlock Text="Speed" Style="{StaticResource CaptionStyle}"
+                        <TextBlock x:Name="SpeedLabelText" Text="Speed" Style="{StaticResource CaptionStyle}"
                                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
                     </StackPanel>
 
@@ -293,7 +343,7 @@
                                            Foreground="{StaticResource MistBrush}"/>
                             </StackPanel>
                         </Button>
-                        <TextBlock Text="Sleep" Style="{StaticResource CaptionStyle}"
+                        <TextBlock x:Name="SleepLabelText" Text="Sleep" Style="{StaticResource CaptionStyle}"
                                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
                     </StackPanel>
 
@@ -303,7 +353,7 @@
                             <Button.Flyout>
                                 <Flyout>
                                     <StackPanel Width="200">
-                                        <TextBlock Text="Volume" FontWeight="SemiBold" Margin="0,0,0,8"
+                                        <TextBlock loc:Loc.Text="Volume" Text="Volume" FontWeight="SemiBold" Margin="0,0,0,8"
                                                    Foreground="{StaticResource StarlightDimBrush}"/>
                                         <Slider x:Name="VolumeSlider"
                                                 Minimum="0"
@@ -315,7 +365,7 @@
                             </Button.Flyout>
                             <FontIcon x:Name="VolumeIcon" Glyph="&#xE995;" FontSize="16"/>
                         </Button>
-                        <TextBlock Text="Volume" Style="{StaticResource CaptionStyle}"
+                        <TextBlock x:Name="VolumeLabelText" Text="Volume" Style="{StaticResource CaptionStyle}"
                                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
                     </StackPanel>
 
@@ -325,7 +375,7 @@
                                 Style="{StaticResource IconButtonStyle}">
                             <FontIcon Glyph="&#xE8FD;" FontSize="16"/>
                         </Button>
-                        <TextBlock Text="Chapters" Style="{StaticResource CaptionStyle}"
+                        <TextBlock x:Name="ChaptersLabelText" Text="Chapters" Style="{StaticResource CaptionStyle}"
                                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
                     </StackPanel>
 
@@ -335,7 +385,7 @@
                                 Style="{StaticResource IconButtonStyle}">
                             <FontIcon Glyph="&#xE8A4;" FontSize="16"/>
                         </Button>
-                        <TextBlock Text="Bookmarks" Style="{StaticResource CaptionStyle}"
+                        <TextBlock x:Name="BookmarksLabelText" Text="Bookmarks" Style="{StaticResource CaptionStyle}"
                                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
                     </StackPanel>
                 </Grid>
@@ -356,7 +406,7 @@
                         </StackPanel>
                         <Button HorizontalAlignment="Right"
                                 Click="CancelSleepTimer_Click"
-                                Content="Cancel"
+                                loc:Loc.Content="Cancel" Content="Cancel"
                                 Background="Transparent" BorderThickness="0"/>
                     </Grid>
                 </Border>
@@ -372,7 +422,7 @@
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16">
                 <ProgressRing IsActive="True" Width="50" Height="50"
                               Foreground="{StaticResource SigilGoldDimBrush}"/>
-                <TextBlock Text="Loading audiobook..." Style="{StaticResource SubtitleStyle}"
+                <TextBlock x:Name="LoadingAudiobookText" Text="Loading audiobook..." Style="{StaticResource SubtitleStyle}"
                            HorizontalAlignment="Center"/>
             </StackPanel>
         </Grid>

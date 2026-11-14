@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:loc="using:NineLivesAudio.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     Loaded="Page_Loaded">
@@ -12,7 +13,7 @@
 
             <!-- Server Connection -->
             <StackPanel>
-                <TextBlock Text="Server Connection"
+                <TextBlock x:Name="ServerConnectionTitle" Text="Server Connection"
                            Style="{StaticResource SectionTitleStyle}"
                            Margin="0,0,0,12"/>
 
@@ -32,26 +33,26 @@
                         </StackPanel>
 
                         <!-- Server URL -->
-                        <TextBox Header="Server URL"
+                        <TextBox x:Name="ServerUrlBox" Header="Server URL"
                                  PlaceholderText="https://audiobooks.example.com"
                                  Text="{x:Bind ViewModel.ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  IsEnabled="{x:Bind ViewModel.IsConnected, Mode=OneWay, Converter={StaticResource BoolToInverseConverter}}"/>
 
                         <!-- Username -->
-                        <TextBox Header="Username"
-                                 PlaceholderText="Enter your username"
+                        <TextBox x:Name="UsernameBox" Header="Username"
+                                 loc:Loc.Placeholder="EnterUsername" PlaceholderText="Enter your username"
                                  Text="{x:Bind ViewModel.Username, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  IsEnabled="{x:Bind ViewModel.IsConnected, Mode=OneWay, Converter={StaticResource BoolToInverseConverter}}"/>
 
                         <!-- Password -->
-                        <PasswordBox Header="Password"
-                                     PlaceholderText="Enter your password"
+                        <PasswordBox x:Name="PasswordBox" Header="Password"
+                                     loc:Loc.Placeholder="EnterPassword" PlaceholderText="Enter your password"
                                      Password="{x:Bind ViewModel.Password, Mode=TwoWay}"
                                      Visibility="{x:Bind ViewModel.IsConnected, Mode=OneWay, Converter={StaticResource BoolToVisibilityInverseConverter}}"/>
 
                         <!-- Connect/Disconnect Buttons -->
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="Connect"
+                            <Button x:Name="ConnectButton" Content="Connect"
                                     Style="{ThemeResource AccentButtonStyle}"
                                     Background="{StaticResource SigilGoldBrush}"
                                     Foreground="{StaticResource VoidDeepBrush}"
@@ -59,11 +60,11 @@
                                     Visibility="{x:Bind ViewModel.IsConnected, Mode=OneWay, Converter={StaticResource BoolToVisibilityInverseConverter}}"
                                     IsEnabled="{x:Bind ViewModel.IsConnecting, Mode=OneWay, Converter={StaticResource BoolToInverseConverter}}"/>
 
-                            <Button Content="Disconnect"
+                            <Button x:Name="DisconnectButton" Content="Disconnect"
                                     Command="{x:Bind ViewModel.DisconnectCommand}"
                                     Visibility="{x:Bind ViewModel.IsConnected, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"/>
 
-                            <Button Content="Test Connection"
+                            <Button x:Name="TestConnectionButton" Content="Test Connection"
                                     Command="{x:Bind ViewModel.TestConnectionCommand}"
                                     Visibility="{x:Bind ViewModel.IsConnected, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"/>
 
@@ -78,7 +79,7 @@
 
             <!-- Playback Settings -->
             <StackPanel>
-                <TextBlock Text="Playback"
+                <TextBlock x:Name="PlaybackTitle" Text="Playback"
                            Style="{StaticResource SectionTitleStyle}"
                            Margin="0,0,0,12"/>
 
@@ -91,7 +92,7 @@
 
                         <!-- Default Volume -->
                         <StackPanel>
-                            <TextBlock Text="Default Volume" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="DefaultVolumeLabel" Text="Default Volume" Margin="0,0,0,8"/>
                             <Slider Minimum="0"
                                     Maximum="1"
                                     StepFrequency="0.05"
@@ -99,7 +100,7 @@
                         </StackPanel>
 
                         <!-- Default Playback Speed -->
-                        <ComboBox Header="Default Playback Speed"
+                        <ComboBox x:Name="DefaultSpeedBox" Header="Default Playback Speed"
                                   SelectedIndex="{x:Bind SpeedSelectedIndex, Mode=TwoWay}">
                             <ComboBoxItem Content="0.5x" Tag="0.5"/>
                             <ComboBoxItem Content="0.75x" Tag="0.75"/>
@@ -109,13 +110,48 @@
                             <ComboBoxItem Content="1.75x" Tag="1.75"/>
                             <ComboBoxItem Content="2.0x" Tag="2.0"/>
                         </ComboBox>
+
+                        <!-- Skip intro / skip outro (global, applied to every book) -->
+                        <StackPanel>
+                            <NumberBox x:Name="SkipIntroBox"
+                                       Header="Skip intro"
+                                       Minimum="0"
+                                       Maximum="600"
+                                       SmallChange="15"
+                                       LargeChange="30"
+                                       SpinButtonPlacementMode="Compact"
+                                       Value="{x:Bind ViewModel.SkipIntroSeconds, Mode=TwoWay}"/>
+                            <TextBlock x:Name="SkipIntroHint"
+                                       Text="Seconds skipped automatically when a book starts playing. Saved immediately — no need to press Save (0 = off)."
+                                       FontSize="12"
+                                       Opacity="0.7"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <StackPanel>
+                            <NumberBox x:Name="SkipOutroBox"
+                                       Header="Skip outro"
+                                       Minimum="0"
+                                       Maximum="600"
+                                       SmallChange="15"
+                                       LargeChange="30"
+                                       SpinButtonPlacementMode="Compact"
+                                       Value="{x:Bind ViewModel.SkipOutroSeconds, Mode=TwoWay}"/>
+                            <TextBlock x:Name="SkipOutroHint"
+                                       Text="When fewer than this many seconds remain, continue with the next chapter; on the last chapter the book is marked finished. Saved immediately (0 = off)."
+                                       FontSize="12"
+                                       Opacity="0.7"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
             </StackPanel>
 
             <!-- Downloads Settings -->
             <StackPanel>
-                <TextBlock Text="Downloads"
+                <TextBlock x:Name="DownloadsTitle" Text="Downloads"
                            Style="{StaticResource SectionTitleStyle}"
                            Margin="0,0,0,12"/>
 
@@ -132,11 +168,11 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBox Header="Download Location"
+                            <TextBox x:Name="DownloadLocationBox" Header="Download Location"
                                      Text="{x:Bind ViewModel.DownloadPath, Mode=TwoWay}"
                                      IsReadOnly="True"
                                      Grid.Column="0"/>
-                            <Button Content="Browse"
+                            <Button x:Name="BrowseButton" Content="Browse"
                                     Click="BrowseButton_Click"
                                     VerticalAlignment="Bottom"
                                     Margin="8,0,0,0"
@@ -144,7 +180,7 @@
                         </Grid>
 
                         <!-- Auto Download Covers -->
-                        <ToggleSwitch Header="Auto-download cover art"
+                        <ToggleSwitch x:Name="AutoDownloadCoversSwitch" Header="Auto-download cover art"
                                       IsOn="{x:Bind ViewModel.AutoDownloadCovers, Mode=TwoWay}"/>
                     </StackPanel>
                 </Border>
@@ -152,7 +188,7 @@
 
             <!-- Sync Settings -->
             <StackPanel>
-                <TextBlock Text="Sync"
+                <TextBlock x:Name="SyncTitle" Text="Sync"
                            Style="{StaticResource SectionTitleStyle}"
                            Margin="0,0,0,12"/>
 
@@ -164,11 +200,11 @@
                     <StackPanel Spacing="16">
 
                         <!-- Auto Sync Progress -->
-                        <ToggleSwitch Header="Auto-sync playback progress"
+                        <ToggleSwitch x:Name="AutoSyncSwitch" Header="Auto-sync playback progress"
                                       IsOn="{x:Bind ViewModel.AutoSyncProgress, Mode=TwoWay}"/>
 
                         <!-- Sync Interval -->
-                        <ComboBox Header="Sync Interval"
+                        <ComboBox x:Name="SyncIntervalBox" Header="Sync Interval"
                                   IsEnabled="{x:Bind ViewModel.AutoSyncProgress, Mode=OneWay}"
                                   SelectedIndex="{x:Bind SyncIntervalSelectedIndex, Mode=TwoWay}">
                             <ComboBoxItem Content="1 minute" Tag="1"/>
@@ -183,7 +219,7 @@
 
             <!-- Appearance -->
             <StackPanel>
-                <TextBlock Text="Appearance"
+                <TextBlock x:Name="AppearanceTitle" Text="Appearance"
                            Style="{StaticResource SectionTitleStyle}"
                            Margin="0,0,0,12"/>
 
@@ -195,19 +231,27 @@
                     <StackPanel Spacing="16">
 
                         <!-- Theme -->
-                        <ComboBox Header="Theme"
+                        <ComboBox x:Name="ThemeBox" Header="Theme"
                                   SelectedIndex="{x:Bind ThemeSelectedIndex, Mode=TwoWay}">
-                            <ComboBoxItem Content="System default" Tag="System"/>
-                            <ComboBoxItem Content="Light" Tag="Light"/>
-                            <ComboBoxItem Content="Dark" Tag="Dark"/>
+                            <ComboBoxItem loc:Loc.Content="SystemDefault" Content="System default" Tag="System"/>
+                            <ComboBoxItem loc:Loc.Content="Light" Content="Light" Tag="Light"/>
+                            <ComboBoxItem loc:Loc.Content="Dark" Content="Dark" Tag="Dark"/>
+                        </ComboBox>
+
+                        <!-- Language -->
+                        <ComboBox x:Name="LanguageComboBox" Header="Language"
+                                  SelectionChanged="LanguageComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Follow system" Tag="system"/>
+                            <ComboBoxItem Content="English" Tag="en-US"/>
+                            <ComboBoxItem Content="简体中文" Tag="zh-CN"/>
                         </ComboBox>
 
                         <!-- Start Minimized -->
-                        <ToggleSwitch Header="Start minimized"
+                        <ToggleSwitch x:Name="StartMinimizedSwitch" Header="Start minimized"
                                       IsOn="{x:Bind ViewModel.StartMinimized, Mode=TwoWay}"/>
 
                         <!-- Minimize to Tray -->
-                        <ToggleSwitch Header="Minimize to system tray"
+                        <ToggleSwitch x:Name="MinimizeToTraySwitch" Header="Minimize to system tray"
                                       IsOn="{x:Bind ViewModel.MinimizeToTray, Mode=TwoWay}"/>
                     </StackPanel>
                 </Border>
@@ -215,7 +259,7 @@
 
             <!-- Security -->
             <StackPanel>
-                <TextBlock Text="Security"
+                <TextBlock x:Name="SecurityTitle" Text="Security"
                            Style="{StaticResource SectionTitleStyle}"
                            Margin="0,0,0,12"/>
 
@@ -226,7 +270,7 @@
                         BorderThickness="1">
                     <StackPanel Spacing="16">
 
-                        <ToggleSwitch Header="Allow self-signed SSL certificates"
+                        <ToggleSwitch x:Name="AllowSelfSignedSwitch" Header="Allow self-signed SSL certificates"
                                       IsOn="{x:Bind ViewModel.AllowSelfSignedCertificates, Mode=TwoWay}"/>
 
                         <TextBlock Text="Only applies to your configured server host. Required for some self-hosted setups."
@@ -238,7 +282,7 @@
 
             <!-- Data Management -->
             <StackPanel>
-                <TextBlock Text="Data"
+                <TextBlock x:Name="DataTitle" Text="Data"
                            Style="{StaticResource SectionTitleStyle}"
                            Margin="0,0,0,12"/>
 
@@ -249,14 +293,14 @@
                         BorderThickness="1">
                     <StackPanel Spacing="16">
 
-                        <Button Content="Sync Now"
+                        <Button x:Name="SyncNowButton" Content="Sync Now"
                                 Command="{x:Bind ViewModel.ManualSyncCommand}"/>
 
                         <TextBlock Text="Rebuild local cache by syncing libraries, progress, and metadata from the server."
                                    TextWrapping="Wrap"
                                    Style="{StaticResource CaptionStyle}"/>
 
-                        <Button Content="Clear Local Cache"
+                        <Button x:Name="ClearCacheButton" Content="Clear Local Cache"
                                 Command="{x:Bind ViewModel.ClearCacheCommand}"/>
 
                         <TextBlock Text="This will remove cached library data. Downloaded audiobooks will not be affected."
@@ -268,7 +312,7 @@
 
             <!-- Diagnostics -->
             <StackPanel>
-                <TextBlock Text="Diagnostics"
+                <TextBlock x:Name="DiagnosticsTitle" Text="Diagnostics"
                            Style="{StaticResource SectionTitleStyle}"
                            Margin="0,0,0,12"/>
 
@@ -279,7 +323,7 @@
                         BorderThickness="1">
                     <StackPanel Spacing="16">
 
-                        <ToggleSwitch Header="Diagnostics mode"
+                        <ToggleSwitch x:Name="DiagnosticsModeSwitch" Header="Diagnostics mode"
                                       IsOn="{x:Bind ViewModel.DiagnosticsMode, Mode=TwoWay}"/>
 
                         <TextBlock Text="Enables verbose logging for API requests, state transitions, and playback events."
@@ -287,13 +331,13 @@
                                    Style="{StaticResource CaptionStyle}"/>
 
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="Open Logs"
+                            <Button x:Name="OpenLogsButton" Content="Open Logs"
                                     Command="{x:Bind ViewModel.OpenLogFolderCommand}"/>
 
-                            <Button Content="Export Logs"
+                            <Button x:Name="ExportLogsButton" Content="Export Logs"
                                     Command="{x:Bind ViewModel.ExportLogsCommand}"/>
 
-                            <Button Content="Open Settings Folder"
+                            <Button x:Name="OpenSettingsFolderButton" Content="Open Settings Folder"
                                     Command="{x:Bind ViewModel.OpenSettingsFolderCommand}"/>
                         </StackPanel>
                     </StackPanel>
@@ -302,7 +346,7 @@
 
             <!-- Settings Doctor -->
             <StackPanel>
-                <TextBlock Text="Settings Doctor"
+                <TextBlock x:Name="SettingsDoctorTitle" Text="Settings Doctor"
                            Style="{StaticResource SectionTitleStyle}"
                            Margin="0,0,0,12"/>
 
@@ -325,47 +369,62 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Settings file:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{x:Bind ViewModel.SettingsFilePath, Mode=OneWay}"
+                            <TextBlock Grid.Row="0" Grid.Column="0" loc:Loc.Text="DataFolder" Text="Data folder:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{x:Bind ViewModel.DataDirectory, Mode=OneWay}"
                                        FontSize="12" TextWrapping="WrapWholeWords" IsTextSelectionEnabled="True"
                                        Foreground="{StaticResource StarlightDimBrush}"/>
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Settings source:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind ViewModel.SettingsSource, Mode=OneWay}" FontSize="12"
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Settings file:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind ViewModel.SettingsFilePath, Mode=OneWay}"
+                                       FontSize="12" TextWrapping="WrapWholeWords" IsTextSelectionEnabled="True"
                                        Foreground="{StaticResource StarlightDimBrush}"/>
 
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Token source:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{x:Bind ViewModel.TokenSource, Mode=OneWay}" FontSize="12"
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Settings source:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{x:Bind ViewModel.SettingsSource, Mode=OneWay}" FontSize="12"
                                        Foreground="{StaticResource StarlightDimBrush}"/>
 
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Last loaded:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{x:Bind ViewModel.LastLoadedAt, Mode=OneWay}" FontSize="12"
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Token source:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{x:Bind ViewModel.TokenSource, Mode=OneWay}" FontSize="12"
                                        Foreground="{StaticResource StarlightDimBrush}"/>
 
-                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Session ID:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{x:Bind ViewModel.SessionId, Mode=OneWay}"
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Last loaded:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{x:Bind ViewModel.LastLoadedAt, Mode=OneWay}" FontSize="12"
+                                       Foreground="{StaticResource StarlightDimBrush}"/>
+
+                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Session ID:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="5" Grid.Column="1" Text="{x:Bind ViewModel.SessionId, Mode=OneWay}"
                                        Style="{StaticResource MonoStyle}"/>
 
-                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Server host:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="5" Grid.Column="1" Text="{x:Bind ViewModel.ServerHost, Mode=OneWay}" FontSize="12"
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Server host:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="6" Grid.Column="1" Text="{x:Bind ViewModel.ServerHost, Mode=OneWay}" FontSize="12"
+                                       Foreground="{StaticResource StarlightDimBrush}"/>
+
+                            <!-- Shows what is actually persisted, so "did my setting save?" is answerable -->
+                            <TextBlock Grid.Row="7" Grid.Column="0" Text="Playback saved:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="7" Grid.Column="1" Text="{x:Bind ViewModel.PlaybackFlags, Mode=OneWay}" FontSize="12"
                                        Foreground="{StaticResource StarlightDimBrush}"/>
                         </Grid>
 
                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
-                            <Button Content="Test Connection"
+                            <Button x:Name="DoctorTestConnectionButton" Content="Test Connection"
                                     Command="{x:Bind ViewModel.TestConnectionCommand}"/>
 
-                            <Button Content="Reset Connection"
+                            <Button x:Name="ResetConnectionButton" Content="Reset Connection"
                                     Command="{x:Bind ViewModel.ResetConnectionCommand}"/>
+
+                            <Button x:Name="OpenDataFolderButton" loc:Loc.Content="OpenDataFolder" Content="Open data folder"
+                                    Command="{x:Bind ViewModel.OpenDataFolderCommand}"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
             </StackPanel>
 
             <!-- Save Button -->
-            <Button Content="Save Settings"
+            <Button x:Name="SaveSettingsButton" Content="Save Settings"
                     Style="{ThemeResource AccentButtonStyle}"
                     Background="{StaticResource SigilGoldBrush}"
                     Foreground="{StaticResource VoidDeepBrush}"
@@ -391,7 +450,7 @@
 
             <!-- About Section -->
             <StackPanel Margin="0,16,0,32">
-                <TextBlock Text="About"
+                <TextBlock x:Name="AboutTitle" Text="About"
                            Style="{StaticResource SectionTitleStyle}"
                            Margin="0,0,0,12"/>
 
@@ -404,9 +463,9 @@
                         <TextBlock Text="Nine Lives Audio"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource StarlightDimBrush}"/>
-                        <TextBlock Text="Version 1.0.0"
+                        <TextBlock Text="{x:Bind ViewModel.AppVersion}"
                                    Foreground="{StaticResource MistBrush}"/>
-                        <TextBlock Text="A lightweight Windows client for Audiobookshelf"
+                        <TextBlock loc:Loc.Text="AboutDesc" Text="A lightweight Windows client for Audiobookshelf"
                                    Foreground="{StaticResource MistFaintBrush}"
                                    TextWrapping="Wrap"/>
                         <Border Margin="0,8,0,0" Padding="0" Background="Transparent">
@@ -426,8 +485,8 @@
                                                  FontSize="11"
                                                  Padding="0"
                                                  Foreground="{StaticResource SigilGoldDimBrush}"/>
-                                <HyperlinkButton Content="Source Code on GitHub"
-                                                 NavigateUri="https://github.com/StaticHumStudio/NineLivesAudio"
+                                <HyperlinkButton loc:Loc.Content="SourceCode" Content="Source Code on GitHub"
+                                                 NavigateUri="https://github.com/one-LN/NineLivesAudio"
                                                  FontSize="11"
                                                  Padding="0"
                                                  Margin="0,4,0,0"

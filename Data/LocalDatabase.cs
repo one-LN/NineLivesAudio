@@ -13,13 +13,14 @@ public class LocalDatabase : ILocalDatabase, IDisposable
     private readonly string _dbPath;
     private SqliteConnection? _connection;
     private bool _initialized;
+    // SqliteConnection is not thread-safe; serialize all access.
+    private readonly SemaphoreSlim _gate = new(1, 1);
 
     public LocalDatabase()
     {
-        var localFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var appFolder = Path.Combine(localFolder, "NineLivesAudio");
+        var appFolder = NineLivesAudio.Helpers.AppPaths.DataRoot;
         Directory.CreateDirectory(appFolder);
-        _dbPath = Path.Combine(appFolder, "audiobookshelf.db");
+        _dbPath = NineLivesAudio.Helpers.AppPaths.DatabaseFile;
     }
 
     /// <summary>
@@ -34,16 +35,31 @@ public class LocalDatabase : ILocalDatabase, IDisposable
     public async Task InitializeAsync()
     {
         if (_initialized) return;
-
-        if (_connection == null)
+        await _gate.WaitAsync();
+        try
         {
-            _connection = new SqliteConnection($"Data Source={_dbPath}");
-            await _connection.OpenAsync();
+            if (_initialized) return;
+            if (_connection == null)
+            {
+                _connection = new SqliteConnection($"Data Source={_dbPath};Pooling=True");
+                await _connection.OpenAsync();
+                // WAL + busy timeout: safe concurrent readers, fewer "database is locked" errors.
+                await ExecutePragmaAsync("PRAGMA journal_mode=WAL;");
+                await ExecutePragmaAsync("PRAGMA busy_timeout=5000;");
+                await ExecutePragmaAsync("PRAGMA synchronous=NORMAL;");
+            }
+            await CreateTablesAsync();
+            await MigrateAsync();
+            _initialized = true;
         }
+        finally { _gate.Release(); }
+    }
 
-        await CreateTablesAsync();
-        await MigrateAsync();
-        _initialized = true;
+    private async Task ExecutePragmaAsync(string pragma)
+    {
+        var cmd = _connection!.CreateCommand();
+        cmd.CommandText = pragma;
+        await cmd.ExecuteNonQueryAsync();
     }
 
     private async Task MigrateAsync()
@@ -173,57 +189,80 @@ public class LocalDatabase : ILocalDatabase, IDisposable
 
     public async Task<List<AudioBook>> GetAllAudioBooksAsync()
     {
-        EnsureInitialized();
-        var audioBooks = new List<AudioBook>();
-
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"SELECT * FROM {T.AudioBooks} ORDER BY Title";
-
-        using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await _gate.WaitAsync();
+        try
         {
-            audioBooks.Add(AudioBookMapper.Map((SqliteDataReader)reader));
-        }
+            EnsureInitialized();
+            var audioBooks = new List<AudioBook>();
 
-        return audioBooks;
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"SELECT * FROM {T.AudioBooks} ORDER BY Title";
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                audioBooks.Add(AudioBookMapper.Map((SqliteDataReader)reader));
+            }
+
+            return audioBooks;
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task<List<AudioBook>> GetAudioBooksByLibraryAsync(string libraryId)
     {
-        EnsureInitialized();
-        var audioBooks = new List<AudioBook>();
-
-        var command = _connection!.CreateCommand();
-        command.CommandText = "SELECT * FROM AudioBooks WHERE LibraryId = @libraryId ORDER BY Title";
-        command.Parameters.AddWithValue("@libraryId", libraryId);
-
-        using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await _gate.WaitAsync();
+        try
         {
-            audioBooks.Add(AudioBookMapper.Map((SqliteDataReader)reader));
-        }
+            EnsureInitialized();
+            var audioBooks = new List<AudioBook>();
 
-        return audioBooks;
+            var command = _connection!.CreateCommand();
+            command.CommandText = "SELECT * FROM AudioBooks WHERE LibraryId = @libraryId ORDER BY Title";
+            command.Parameters.AddWithValue("@libraryId", libraryId);
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                audioBooks.Add(AudioBookMapper.Map((SqliteDataReader)reader));
+            }
+
+            return audioBooks;
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task<AudioBook?> GetAudioBookAsync(string id)
     {
-        EnsureInitialized();
-
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"SELECT * FROM {T.AudioBooks} WHERE Id = @id";
-        command.Parameters.AddWithValue("@id", id);
-
-        using var reader = await command.ExecuteReaderAsync();
-        if (await reader.ReadAsync())
+        await _gate.WaitAsync();
+        try
         {
-            return AudioBookMapper.Map((SqliteDataReader)reader);
-        }
+            EnsureInitialized();
 
-        return null;
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"SELECT * FROM {T.AudioBooks} WHERE Id = @id";
+            command.Parameters.AddWithValue("@id", id);
+
+            using var reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                return AudioBookMapper.Map((SqliteDataReader)reader);
+            }
+
+            return null;
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task SaveAudioBookAsync(AudioBook audioBook)
+    {
+        await _gate.WaitAsync();
+        try { await SaveAudioBookCoreAsync(audioBook); }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>Ungated core: caller must already hold <see cref="_gate"/>.</summary>
+    private async Task SaveAudioBookCoreAsync(AudioBook audioBook)
     {
         EnsureInitialized();
 
@@ -242,58 +281,79 @@ public class LocalDatabase : ILocalDatabase, IDisposable
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task UpdateAudioBookAsync(AudioBook audioBook)
-    {
-        await SaveAudioBookAsync(audioBook);
-    }
+    /// <summary>Insert-or-replace; shares the gate with <see cref="SaveAudioBookAsync"/>.</summary>
+    public Task UpdateAudioBookAsync(AudioBook audioBook) => SaveAudioBookAsync(audioBook);
 
     public async Task DeleteAudioBookAsync(string id)
     {
-        EnsureInitialized();
+        await _gate.WaitAsync();
+        try
+        {
+            EnsureInitialized();
 
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"DELETE FROM {T.AudioBooks} WHERE Id = @id";
-        command.Parameters.AddWithValue("@id", id);
-        await command.ExecuteNonQueryAsync();
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"DELETE FROM {T.AudioBooks} WHERE Id = @id";
+            command.Parameters.AddWithValue("@id", id);
+            await command.ExecuteNonQueryAsync();
+        }
+        finally { _gate.Release(); }
     }
 
     // ── Libraries ───────────────────────────────────────────────────────
 
     public async Task<List<Library>> GetAllLibrariesAsync()
     {
-        EnsureInitialized();
-        var libraries = new List<Library>();
-
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"SELECT * FROM {T.Libraries} ORDER BY DisplayOrder";
-
-        using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await _gate.WaitAsync();
+        try
         {
-            libraries.Add(LibraryMapper.Map((SqliteDataReader)reader));
-        }
+            EnsureInitialized();
+            var libraries = new List<Library>();
 
-        return libraries;
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"SELECT * FROM {T.Libraries} ORDER BY DisplayOrder";
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                libraries.Add(LibraryMapper.Map((SqliteDataReader)reader));
+            }
+
+            return libraries;
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task<Library?> GetLibraryAsync(string id)
     {
-        EnsureInitialized();
-
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"SELECT * FROM {T.Libraries} WHERE Id = @id";
-        command.Parameters.AddWithValue("@id", id);
-
-        using var reader = await command.ExecuteReaderAsync();
-        if (await reader.ReadAsync())
+        await _gate.WaitAsync();
+        try
         {
-            return LibraryMapper.Map((SqliteDataReader)reader);
-        }
+            EnsureInitialized();
 
-        return null;
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"SELECT * FROM {T.Libraries} WHERE Id = @id";
+            command.Parameters.AddWithValue("@id", id);
+
+            using var reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                return LibraryMapper.Map((SqliteDataReader)reader);
+            }
+
+            return null;
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task SaveLibraryAsync(Library library)
+    {
+        await _gate.WaitAsync();
+        try { await SaveLibraryCoreAsync(library); }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>Ungated core: caller must already hold <see cref="_gate"/>.</summary>
+    private async Task SaveLibraryCoreAsync(Library library)
     {
         EnsureInitialized();
 
@@ -312,58 +372,79 @@ public class LocalDatabase : ILocalDatabase, IDisposable
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task UpdateLibraryAsync(Library library)
-    {
-        await SaveLibraryAsync(library);
-    }
+    /// <summary>Insert-or-replace; shares the gate with <see cref="SaveLibraryAsync"/>.</summary>
+    public Task UpdateLibraryAsync(Library library) => SaveLibraryAsync(library);
 
     public async Task DeleteLibraryAsync(string id)
     {
-        EnsureInitialized();
+        await _gate.WaitAsync();
+        try
+        {
+            EnsureInitialized();
 
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"DELETE FROM {T.Libraries} WHERE Id = @id";
-        command.Parameters.AddWithValue("@id", id);
-        await command.ExecuteNonQueryAsync();
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"DELETE FROM {T.Libraries} WHERE Id = @id";
+            command.Parameters.AddWithValue("@id", id);
+            await command.ExecuteNonQueryAsync();
+        }
+        finally { _gate.Release(); }
     }
 
     // ── Downloads ────────────────────────────────────────────────────────
 
     public async Task<List<DownloadItem>> GetAllDownloadItemsAsync()
     {
-        EnsureInitialized();
-        var downloads = new List<DownloadItem>();
-
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"SELECT * FROM {T.DownloadItems} ORDER BY StartedAt DESC";
-
-        using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await _gate.WaitAsync();
+        try
         {
-            downloads.Add(DownloadItemMapper.Map((SqliteDataReader)reader));
-        }
+            EnsureInitialized();
+            var downloads = new List<DownloadItem>();
 
-        return downloads;
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"SELECT * FROM {T.DownloadItems} ORDER BY StartedAt DESC";
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                downloads.Add(DownloadItemMapper.Map((SqliteDataReader)reader));
+            }
+
+            return downloads;
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task<DownloadItem?> GetDownloadItemAsync(string id)
     {
-        EnsureInitialized();
-
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"SELECT * FROM {T.DownloadItems} WHERE Id = @id";
-        command.Parameters.AddWithValue("@id", id);
-
-        using var reader = await command.ExecuteReaderAsync();
-        if (await reader.ReadAsync())
+        await _gate.WaitAsync();
+        try
         {
-            return DownloadItemMapper.Map((SqliteDataReader)reader);
-        }
+            EnsureInitialized();
 
-        return null;
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"SELECT * FROM {T.DownloadItems} WHERE Id = @id";
+            command.Parameters.AddWithValue("@id", id);
+
+            using var reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                return DownloadItemMapper.Map((SqliteDataReader)reader);
+            }
+
+            return null;
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task SaveDownloadItemAsync(DownloadItem downloadItem)
+    {
+        await _gate.WaitAsync();
+        try { await SaveDownloadItemCoreAsync(downloadItem); }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>Ungated core: caller must already hold <see cref="_gate"/>.</summary>
+    private async Task SaveDownloadItemCoreAsync(DownloadItem downloadItem)
     {
         EnsureInitialized();
 
@@ -388,231 +469,295 @@ public class LocalDatabase : ILocalDatabase, IDisposable
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task UpdateDownloadItemAsync(DownloadItem downloadItem)
-    {
-        await SaveDownloadItemAsync(downloadItem);
-    }
+    /// <summary>Insert-or-replace; shares the gate with <see cref="SaveDownloadItemAsync"/>.</summary>
+    public Task UpdateDownloadItemAsync(DownloadItem downloadItem) => SaveDownloadItemAsync(downloadItem);
 
     public async Task DeleteDownloadItemAsync(string id)
     {
-        EnsureInitialized();
+        await _gate.WaitAsync();
+        try
+        {
+            EnsureInitialized();
 
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"DELETE FROM {T.DownloadItems} WHERE Id = @id";
-        command.Parameters.AddWithValue("@id", id);
-        await command.ExecuteNonQueryAsync();
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"DELETE FROM {T.DownloadItems} WHERE Id = @id";
+            command.Parameters.AddWithValue("@id", id);
+            await command.ExecuteNonQueryAsync();
+        }
+        finally { _gate.Release(); }
     }
 
     // ── Playback Progress ───────────────────────────────────────────────
 
     public async Task SavePlaybackProgressAsync(string audioBookId, TimeSpan position, bool isFinished, DateTime? updatedAt = null)
     {
-        EnsureInitialized();
+        await _gate.WaitAsync();
+        try
+        {
+            EnsureInitialized();
 
-        var command = _connection!.CreateCommand();
-        command.CommandText = $@"
-            INSERT OR REPLACE INTO {T.PlaybackProgress} ({PP.AudioBookId}, {PP.PositionSeconds}, {PP.IsFinished}, {PP.UpdatedAt})
-            VALUES (@audioBookId, @positionSeconds, @isFinished, @updatedAt)";
+            var command = _connection!.CreateCommand();
+            command.CommandText = $@"
+                INSERT OR REPLACE INTO {T.PlaybackProgress} ({PP.AudioBookId}, {PP.PositionSeconds}, {PP.IsFinished}, {PP.UpdatedAt})
+                VALUES (@audioBookId, @positionSeconds, @isFinished, @updatedAt)";
 
-        command.Parameters.AddWithValue("@audioBookId", audioBookId);
-        command.Parameters.AddWithValue("@positionSeconds", position.TotalSeconds);
-        command.Parameters.AddWithValue("@isFinished", isFinished ? 1 : 0);
-        command.Parameters.AddWithValue("@updatedAt", (updatedAt ?? DateTime.UtcNow).ToString("O"));
+            command.Parameters.AddWithValue("@audioBookId", audioBookId);
+            command.Parameters.AddWithValue("@positionSeconds", position.TotalSeconds);
+            command.Parameters.AddWithValue("@isFinished", isFinished ? 1 : 0);
+            command.Parameters.AddWithValue("@updatedAt", (updatedAt ?? DateTime.UtcNow).ToString("O"));
 
-        await command.ExecuteNonQueryAsync();
+            await command.ExecuteNonQueryAsync();
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task<(TimeSpan position, bool isFinished)?> GetPlaybackProgressAsync(string audioBookId)
     {
-        EnsureInitialized();
-
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"SELECT {PP.PositionSeconds}, {PP.IsFinished} FROM {T.PlaybackProgress} WHERE {PP.AudioBookId} = @audioBookId";
-        command.Parameters.AddWithValue("@audioBookId", audioBookId);
-
-        using var reader = (SqliteDataReader)await command.ExecuteReaderAsync();
-        if (await reader.ReadAsync())
+        await _gate.WaitAsync();
+        try
         {
-            var positionSeconds = reader.GetDoubleOrDefault(PP.PositionSeconds);
-            var finished = reader.GetBoolFromInt(PP.IsFinished);
-            return (TimeSpan.FromSeconds(positionSeconds), finished);
-        }
+            EnsureInitialized();
 
-        return null;
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"SELECT {PP.PositionSeconds}, {PP.IsFinished} FROM {T.PlaybackProgress} WHERE {PP.AudioBookId} = @audioBookId";
+            command.Parameters.AddWithValue("@audioBookId", audioBookId);
+
+            using var reader = (SqliteDataReader)await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                var positionSeconds = reader.GetDoubleOrDefault(PP.PositionSeconds);
+                var finished = reader.GetBoolFromInt(PP.IsFinished);
+                return (TimeSpan.FromSeconds(positionSeconds), finished);
+            }
+
+            return null;
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task<(TimeSpan position, bool isFinished, DateTime updatedAt)?> GetPlaybackProgressWithTimestampAsync(string audioBookId)
     {
-        EnsureInitialized();
-
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"SELECT {PP.PositionSeconds}, {PP.IsFinished}, {PP.UpdatedAt} FROM {T.PlaybackProgress} WHERE {PP.AudioBookId} = @audioBookId";
-        command.Parameters.AddWithValue("@audioBookId", audioBookId);
-
-        using var reader = (SqliteDataReader)await command.ExecuteReaderAsync();
-        if (await reader.ReadAsync())
+        await _gate.WaitAsync();
+        try
         {
-            var positionSeconds = reader.GetDoubleOrDefault(PP.PositionSeconds);
-            var finished = reader.GetBoolFromInt(PP.IsFinished);
-            var updatedAtDt = reader.GetNullableDateTime(PP.UpdatedAt) ?? DateTime.MinValue;
-            return (TimeSpan.FromSeconds(positionSeconds), finished, updatedAtDt);
-        }
+            EnsureInitialized();
 
-        return null;
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"SELECT {PP.PositionSeconds}, {PP.IsFinished}, {PP.UpdatedAt} FROM {T.PlaybackProgress} WHERE {PP.AudioBookId} = @audioBookId";
+            command.Parameters.AddWithValue("@audioBookId", audioBookId);
+
+            using var reader = (SqliteDataReader)await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                var positionSeconds = reader.GetDoubleOrDefault(PP.PositionSeconds);
+                var finished = reader.GetBoolFromInt(PP.IsFinished);
+                var updatedAtDt = reader.GetNullableDateTime(PP.UpdatedAt) ?? DateTime.MinValue;
+                return (TimeSpan.FromSeconds(positionSeconds), finished, updatedAtDt);
+            }
+
+            return null;
+        }
+        finally { _gate.Release(); }
     }
 
     // ── Offline Progress Queue ──────────────────────────────────────────
 
     public async Task EnqueuePendingProgressAsync(string itemId, double currentTime, bool isFinished)
     {
-        EnsureInitialized();
-        var command = _connection!.CreateCommand();
-        command.CommandText = $@"
-            INSERT INTO {T.PendingProgressUpdates} ({PPU.ItemId}, {PPU.CurrentTime}, {PPU.IsFinished}, {PPU.Timestamp})
-            VALUES (@itemId, @currentTime, @isFinished, @timestamp)";
-        command.Parameters.AddWithValue("@itemId", itemId);
-        command.Parameters.AddWithValue("@currentTime", currentTime);
-        command.Parameters.AddWithValue("@isFinished", isFinished ? 1 : 0);
-        command.Parameters.AddWithValue("@timestamp", DateTime.UtcNow.ToString("O"));
-        await command.ExecuteNonQueryAsync();
+        await _gate.WaitAsync();
+        try
+        {
+            EnsureInitialized();
+            var command = _connection!.CreateCommand();
+            command.CommandText = $@"
+                INSERT INTO {T.PendingProgressUpdates} ({PPU.ItemId}, {PPU.CurrentTime}, {PPU.IsFinished}, {PPU.Timestamp})
+                VALUES (@itemId, @currentTime, @isFinished, @timestamp)";
+            command.Parameters.AddWithValue("@itemId", itemId);
+            command.Parameters.AddWithValue("@currentTime", currentTime);
+            command.Parameters.AddWithValue("@isFinished", isFinished ? 1 : 0);
+            command.Parameters.AddWithValue("@timestamp", DateTime.UtcNow.ToString("O"));
+            await command.ExecuteNonQueryAsync();
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task<List<PendingProgressEntry>> GetPendingProgressAsync()
     {
-        EnsureInitialized();
-        var entries = new List<PendingProgressEntry>();
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"SELECT {PPU.ItemId}, {PPU.CurrentTime}, {PPU.IsFinished}, {PPU.Timestamp} FROM {T.PendingProgressUpdates} ORDER BY {PPU.Timestamp} ASC";
-        using var reader = (SqliteDataReader)await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await _gate.WaitAsync();
+        try
         {
-            entries.Add(new PendingProgressEntry
+            EnsureInitialized();
+            var entries = new List<PendingProgressEntry>();
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"SELECT {PPU.ItemId}, {PPU.CurrentTime}, {PPU.IsFinished}, {PPU.Timestamp} FROM {T.PendingProgressUpdates} ORDER BY {PPU.Timestamp} ASC";
+            using var reader = (SqliteDataReader)await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
             {
-                ItemId = reader.GetString(reader.GetOrdinal(PPU.ItemId)),
-                CurrentTime = reader.GetDoubleOrDefault(PPU.CurrentTime),
-                IsFinished = reader.GetBoolFromInt(PPU.IsFinished),
-                Timestamp = reader.GetNullableDateTime(PPU.Timestamp) ?? DateTime.MinValue
-            });
+                entries.Add(new PendingProgressEntry
+                {
+                    ItemId = reader.GetString(reader.GetOrdinal(PPU.ItemId)),
+                    CurrentTime = reader.GetDoubleOrDefault(PPU.CurrentTime),
+                    IsFinished = reader.GetBoolFromInt(PPU.IsFinished),
+                    Timestamp = reader.GetNullableDateTime(PPU.Timestamp) ?? DateTime.MinValue
+                });
+            }
+            return entries;
         }
-        return entries;
+        finally { _gate.Release(); }
     }
 
     public async Task ClearPendingProgressAsync()
     {
-        EnsureInitialized();
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"DELETE FROM {T.PendingProgressUpdates}";
-        await command.ExecuteNonQueryAsync();
+        await _gate.WaitAsync();
+        try
+        {
+            EnsureInitialized();
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"DELETE FROM {T.PendingProgressUpdates}";
+            await command.ExecuteNonQueryAsync();
+        }
+        finally { _gate.Release(); }
     }
 
     public async Task ClearPendingProgressForItemsAsync(IEnumerable<string> itemIds)
     {
-        EnsureInitialized();
-        var itemIdsList = itemIds.ToList();
-        if (!itemIdsList.Any()) return;
-
-        var command = _connection!.CreateCommand();
-        var placeholders = string.Join(",", itemIdsList.Select((_, i) => $"@id{i}"));
-        command.CommandText = $"DELETE FROM {T.PendingProgressUpdates} WHERE {PPU.ItemId} IN ({placeholders})";
-        for (int i = 0; i < itemIdsList.Count; i++)
+        await _gate.WaitAsync();
+        try
         {
-            command.Parameters.AddWithValue($"@id{i}", itemIdsList[i]);
+            EnsureInitialized();
+            var itemIdsList = itemIds.ToList();
+            if (!itemIdsList.Any()) return;
+
+            var command = _connection!.CreateCommand();
+            var placeholders = string.Join(",", itemIdsList.Select((_, i) => $"@id{i}"));
+            command.CommandText = $"DELETE FROM {T.PendingProgressUpdates} WHERE {PPU.ItemId} IN ({placeholders})";
+            for (int i = 0; i < itemIdsList.Count; i++)
+            {
+                command.Parameters.AddWithValue($"@id{i}", itemIdsList[i]);
+            }
+            await command.ExecuteNonQueryAsync();
         }
-        await command.ExecuteNonQueryAsync();
+        finally { _gate.Release(); }
     }
 
     public async Task<int> GetPendingProgressCountAsync()
     {
-        EnsureInitialized();
-        var command = _connection!.CreateCommand();
-        command.CommandText = $"SELECT COUNT(*) FROM {T.PendingProgressUpdates}";
-        return Convert.ToInt32(await command.ExecuteScalarAsync());
+        await _gate.WaitAsync();
+        try
+        {
+            EnsureInitialized();
+            var command = _connection!.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM {T.PendingProgressUpdates}";
+            return Convert.ToInt32(await command.ExecuteScalarAsync());
+        }
+        finally { _gate.Release(); }
     }
 
     // ── Nine Lives (recently played) ────────────────────────────────────
 
     public async Task<List<(AudioBook Book, DateTime LastPlayedAt)>> GetRecentlyPlayedAsync(int limit = 9)
     {
-        EnsureInitialized();
-        var results = new List<(AudioBook Book, DateTime LastPlayedAt)>();
-
-        var command = _connection!.CreateCommand();
-        command.CommandText = $@"
-            SELECT ab.*, pp.{PP.UpdatedAt} AS LastPlayedAt FROM {T.AudioBooks} ab
-            INNER JOIN {T.PlaybackProgress} pp ON ab.Id = pp.{PP.AudioBookId}
-            ORDER BY pp.{PP.UpdatedAt} DESC
-            LIMIT @limit";
-        command.Parameters.AddWithValue("@limit", limit);
-
-        using var reader = (SqliteDataReader)await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await _gate.WaitAsync();
+        try
         {
-            var book = AudioBookMapper.Map(reader);
-            var lastPlayed = reader.GetNullableDateTime("LastPlayedAt") ?? DateTime.MinValue;
-            results.Add((book, lastPlayed));
-        }
+            EnsureInitialized();
+            var results = new List<(AudioBook Book, DateTime LastPlayedAt)>();
 
-        return results;
+            var command = _connection!.CreateCommand();
+            command.CommandText = $@"
+                SELECT ab.*, pp.{PP.UpdatedAt} AS LastPlayedAt FROM {T.AudioBooks} ab
+                INNER JOIN {T.PlaybackProgress} pp ON ab.Id = pp.{PP.AudioBookId}
+                ORDER BY pp.{PP.UpdatedAt} DESC
+                LIMIT @limit";
+            command.Parameters.AddWithValue("@limit", limit);
+
+            using var reader = (SqliteDataReader)await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var book = AudioBookMapper.Map(reader);
+                var lastPlayed = reader.GetNullableDateTime("LastPlayedAt") ?? DateTime.MinValue;
+                results.Add((book, lastPlayed));
+            }
+
+            return results;
+        }
+        finally { _gate.Release(); }
     }
 
     // ── Bulk operations ─────────────────────────────────────────────────
 
     public async Task SaveAudioBooksAsync(IEnumerable<AudioBook> audioBooks)
     {
-        EnsureInitialized();
-
-        using var transaction = _connection!.BeginTransaction();
+        await _gate.WaitAsync();
         try
         {
-            foreach (var audioBook in audioBooks)
+            EnsureInitialized();
+
+            using var transaction = _connection!.BeginTransaction();
+            try
             {
-                await SaveAudioBookAsync(audioBook);
+                foreach (var audioBook in audioBooks)
+                {
+                    await SaveAudioBookCoreAsync(audioBook);
+                }
+                transaction.Commit();
             }
-            transaction.Commit();
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
         }
-        catch
-        {
-            transaction.Rollback();
-            throw;
-        }
+        finally { _gate.Release(); }
     }
 
     public async Task SaveLibrariesAsync(IEnumerable<Library> libraries)
     {
-        EnsureInitialized();
-
-        using var transaction = _connection!.BeginTransaction();
+        await _gate.WaitAsync();
         try
         {
-            foreach (var library in libraries)
+            EnsureInitialized();
+
+            using var transaction = _connection!.BeginTransaction();
+            try
             {
-                await SaveLibraryAsync(library);
+                foreach (var library in libraries)
+                {
+                    await SaveLibraryCoreAsync(library);
+                }
+                transaction.Commit();
             }
-            transaction.Commit();
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
         }
-        catch
-        {
-            transaction.Rollback();
-            throw;
-        }
+        finally { _gate.Release(); }
     }
 
     public async Task ClearAllDataAsync()
     {
-        EnsureInitialized();
+        await _gate.WaitAsync();
+        try
+        {
+            EnsureInitialized();
 
-        var command = _connection!.CreateCommand();
-        command.CommandText = $@"
-            DELETE FROM {T.AudioBooks};
-            DELETE FROM {T.Libraries};
-            DELETE FROM {T.DownloadItems};
-            DELETE FROM {T.PlaybackProgress};
-        ";
-        await command.ExecuteNonQueryAsync();
+            var command = _connection!.CreateCommand();
+            command.CommandText = $@"
+                DELETE FROM {T.AudioBooks};
+                DELETE FROM {T.Libraries};
+                DELETE FROM {T.DownloadItems};
+                DELETE FROM {T.PlaybackProgress};
+            ";
+            await command.ExecuteNonQueryAsync();
+        }
+        finally { _gate.Release(); }
     }
 
     public void Dispose()
     {
+        _gate.Dispose();
         _connection?.Dispose();
     }
 }

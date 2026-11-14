@@ -52,15 +52,18 @@ public class PlaybackSourceResolver : IPlaybackSourceResolver
     private readonly IAudioBookshelfApiService _apiService;
     private readonly ISettingsService _settingsService;
     private readonly ILoggingService _logger;
+    private readonly ILocalizationService _localization;
 
     public PlaybackSourceResolver(
         IAudioBookshelfApiService apiService,
         ISettingsService settingsService,
-        ILoggingService loggingService)
+        ILoggingService loggingService,
+        ILocalizationService localization)
     {
         _apiService = apiService;
         _settingsService = settingsService;
         _logger = loggingService;
+        _localization = localization;
     }
 
     public PlaybackSource ResolveSource(AudioBook audioBook)
@@ -68,7 +71,7 @@ public class PlaybackSourceResolver : IPlaybackSourceResolver
         if (audioBook == null)
         {
             _logger.LogWarning("[PlaybackSourceResolver] AudioBook is null");
-            return PlaybackSource.Unavailable("No audiobook provided");
+            return PlaybackSource.Unavailable(_localization.GetString("NoAudiobookProvided"));
         }
 
         // Check for local downloaded file first
@@ -87,7 +90,7 @@ public class PlaybackSourceResolver : IPlaybackSourceResolver
         }
 
         _logger.LogWarning($"[PlaybackSourceResolver] UNAVAILABLE - not downloaded and not authenticated for '{audioBook.Title}'");
-        return PlaybackSource.Unavailable("Book is not downloaded and you're not connected to the server.");
+        return PlaybackSource.Unavailable(_localization.GetString("BookNotDownloaded"));
     }
 
     private PlaybackSource? TryResolveLocalSource(AudioBook audioBook)

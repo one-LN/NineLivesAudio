@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:loc="using:NineLivesAudio.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     Loaded="Page_Loaded">
@@ -70,7 +71,7 @@
             <Button Click="BackButton_Click" Background="Transparent" BorderThickness="0" HorizontalAlignment="Left">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="&#xE72B;" FontSize="16" Foreground="{StaticResource MistFaintBrush}"/>
-                    <TextBlock x:Name="BackButtonLabel" Text="Back to Library" VerticalAlignment="Center"
+                    <TextBlock x:Name="BackButtonLabel" loc:Loc.Text="BackToLibrary" Text="Back to Library" VerticalAlignment="Center"
                                Foreground="{StaticResource MistFaintBrush}"/>
                 </StackPanel>
             </Button>
@@ -141,7 +142,7 @@
                                 <TextBlock x:Name="ProgressText" FontSize="14" VerticalAlignment="Center"
                                            Foreground="{StaticResource StarlightDimBrush}"/>
                                 <ToggleSwitch x:Name="ChapterToggle" Grid.Column="1"
-                                              Header="By Chapter" OnContent="" OffContent=""
+                                              loc:Loc.Header="ByChapter" Header="By Chapter" OnContent="" OffContent=""
                                               Toggled="ChapterToggle_Toggled"
                                               Visibility="Collapsed"
                                               Margin="12,0,0,0" MinWidth="0"/>
@@ -176,7 +177,7 @@
                                 HorizontalAlignment="Left" Margin="0,8,0,0" Visibility="Collapsed">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{StaticResource MistBrush}"/>
-                                <TextBlock Text="Downloaded" Foreground="{StaticResource MistBrush}" FontSize="12"/>
+                                <TextBlock loc:Loc.Text="Downloaded" Text="Downloaded" Foreground="{StaticResource MistBrush}" FontSize="12"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -238,7 +239,7 @@
                                            TextAlignment="Center" VerticalAlignment="Center"
                                            Foreground="{StaticResource StarlightDimBrush}"/>
                                 <ToggleSwitch x:Name="ChapterToggleNarrow" Grid.Column="1"
-                                              Header="By Chapter" OnContent="" OffContent=""
+                                              loc:Loc.Header="ByChapter" Header="By Chapter" OnContent="" OffContent=""
                                               Toggled="ChapterToggle_Toggled"
                                               Visibility="Collapsed"
                                               Margin="12,0,0,0" MinWidth="0"/>
@@ -255,7 +256,7 @@
                                 HorizontalAlignment="Center" Margin="0,4,0,0" Visibility="Collapsed">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{StaticResource MistBrush}"/>
-                                <TextBlock Text="Downloaded" Foreground="{StaticResource MistBrush}" FontSize="12"/>
+                                <TextBlock loc:Loc.Text="Downloaded" Text="Downloaded" Foreground="{StaticResource MistBrush}" FontSize="12"/>
                             </StackPanel>
                         </Border>
 
@@ -286,13 +287,13 @@
                             Background="{StaticResource VoidSurfaceBrush}"
                             CornerRadius="8" Padding="16"
                             BorderBrush="{StaticResource DustBrush}" BorderThickness="1">
-                    <TextBlock Text="Details" Style="{StaticResource SectionTitleStyle}"/>
+                    <TextBlock x:Name="DetailsTitleText" Text="Details" Style="{StaticResource SectionTitleStyle}"/>
                     <StackPanel x:Name="MetadataItemsPanel" Spacing="8"/>
                 </StackPanel>
 
                 <!-- Genres -->
                 <StackPanel x:Name="GenresPanel" Spacing="8" Visibility="Collapsed">
-                    <TextBlock Text="Genres" Style="{StaticResource SectionTitleStyle}"/>
+                    <TextBlock x:Name="GenresTitleText" Text="Genres" Style="{StaticResource SectionTitleStyle}"/>
                     <ItemsRepeater x:Name="GenresRepeater">
                         <ItemsRepeater.Layout>
                             <StackLayout Orientation="Horizontal" Spacing="8"/>
@@ -311,7 +312,7 @@
 
                 <!-- Tags -->
                 <StackPanel x:Name="TagsPanel" Spacing="8" Visibility="Collapsed">
-                    <TextBlock Text="Tags" Style="{StaticResource SectionTitleStyle}"/>
+                    <TextBlock x:Name="TagsTitleText" Text="Tags" Style="{StaticResource SectionTitleStyle}"/>
                     <ItemsRepeater x:Name="TagsRepeater">
                         <ItemsRepeater.Layout>
                             <StackLayout Orientation="Horizontal" Spacing="8"/>
@@ -330,7 +331,7 @@
 
                 <!-- Description -->
                 <StackPanel x:Name="DescriptionPanel" Spacing="8" Visibility="Collapsed">
-                    <TextBlock Text="Description" Style="{StaticResource SectionTitleStyle}"/>
+                    <TextBlock x:Name="DescriptionTitleText" Text="Description" Style="{StaticResource SectionTitleStyle}"/>
                     <TextBlock x:Name="DescriptionText" TextWrapping="Wrap"
                                Foreground="{StaticResource MistBrush}" LineHeight="24"/>
                 </StackPanel>

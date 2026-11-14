@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:loc="using:NineLivesAudio.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:models="using:NineLivesAudio.Models"
     xmlns:controls="using:CommunityToolkit.WinUI.Controls"
@@ -78,7 +79,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <TextBlock Text="Library" Style="{StaticResource PageTitleStyle}"/>
+            <TextBlock x:Name="LibraryTitleText" Text="Library" Style="{StaticResource PageTitleStyle}"/>
 
             <!-- Status Pill -->
             <Border x:Name="StatusPill" Grid.Column="1" Style="{StaticResource StatusPillStyle}"
@@ -106,7 +107,7 @@
                       ItemsSource="{x:Bind ViewModel.Libraries}"
                       SelectedItem="{x:Bind ViewModel.SelectedLibrary, Mode=TwoWay}"
                       DisplayMemberPath="Name"
-                      PlaceholderText="Select Library"/>
+                      loc:Loc.Placeholder="SelectLibrary" PlaceholderText="Select Library"/>
 
             <!-- Search Box -->
             <AutoSuggestBox x:Name="SearchBox"
@@ -143,7 +144,7 @@
                           ItemsSource="{x:Bind ViewModel.Libraries}"
                           SelectedItem="{x:Bind ViewModel.SelectedLibrary, Mode=TwoWay}"
                           DisplayMemberPath="Name"
-                          PlaceholderText="Select Library"/>
+                          loc:Loc.Placeholder="SelectLibrary" PlaceholderText="Select Library"/>
 
                 <Button Grid.Column="1"
                         Style="{StaticResource IconButtonStyle}"
@@ -166,13 +167,13 @@
 
         <!-- View Mode Buttons -->
         <StackPanel x:Name="ViewModePanel" Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,0,0,16">
-            <Button Content="All" Click="ViewModeAll_Click" x:Name="ViewModeAllButton"
+            <Button loc:Loc.Content="ViewAll" Content="All" Click="ViewModeAll_Click" x:Name="ViewModeAllButton"
                     Style="{StaticResource CircularButtonStyle}" Width="Auto" Padding="16,8" CornerRadius="16"/>
-            <Button Content="Series" Click="ViewModeSeries_Click" x:Name="ViewModeSeriesButton"
+            <Button loc:Loc.Content="ViewSeries" Content="Series" Click="ViewModeSeries_Click" x:Name="ViewModeSeriesButton"
                     Style="{StaticResource CircularButtonStyle}" Width="Auto" Padding="16,8" CornerRadius="16"/>
-            <Button Content="Authors" Click="ViewModeAuthor_Click" x:Name="ViewModeAuthorButton"
+            <Button loc:Loc.Content="ViewAuthors" Content="Authors" Click="ViewModeAuthor_Click" x:Name="ViewModeAuthorButton"
                     Style="{StaticResource CircularButtonStyle}" Width="Auto" Padding="16,8" CornerRadius="16"/>
-            <Button Content="Genres" Click="ViewModeGenre_Click" x:Name="ViewModeGenreButton"
+            <Button loc:Loc.Content="ViewGenres" Content="Genres" Click="ViewModeGenre_Click" x:Name="ViewModeGenreButton"
                     Style="{StaticResource CircularButtonStyle}" Width="Auto" Padding="16,8" CornerRadius="16"/>
         </StackPanel>
 
@@ -201,7 +202,7 @@
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16">
                 <ProgressRing IsActive="True" Width="48" Height="48"
                               Foreground="{StaticResource SigilGoldDimBrush}"/>
-                <TextBlock Text="Loading library..." Style="{StaticResource SubtitleStyle}" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="LoadingLibraryText" Text="Loading library..." Style="{StaticResource SubtitleStyle}" HorizontalAlignment="Center"/>
             </StackPanel>
         </Grid>
 
@@ -217,21 +218,21 @@
                             HorizontalAlignment="Left" Margin="0,0,0,12"
                             VerticalAlignment="Center">
                     <ComboBox x:Name="SortComboBox"
-                              PlaceholderText="Sort" MinWidth="110"
+                              loc:Loc.Placeholder="Sort" PlaceholderText="Sort" MinWidth="110"
                               SelectionChanged="SortComboBox_SelectionChanged"
                               VerticalAlignment="Center">
-                        <ComboBoxItem Content="Default" Tag="Default" IsSelected="True"/>
-                        <ComboBoxItem Content="Title" Tag="Title"/>
-                        <ComboBoxItem Content="Author" Tag="Author"/>
-                        <ComboBoxItem Content="Progress" Tag="Progress"/>
-                        <ComboBoxItem Content="Recent" Tag="RecentProgress"/>
+                        <ComboBoxItem loc:Loc.Content="SortDefault" Content="Default" Tag="Default" IsSelected="True"/>
+                        <ComboBoxItem loc:Loc.Content="SortTitle" Content="Title" Tag="Title"/>
+                        <ComboBoxItem loc:Loc.Content="SortAuthor" Content="Author" Tag="Author"/>
+                        <ComboBoxItem loc:Loc.Content="SortProgress" Content="Progress" Tag="Progress"/>
+                        <ComboBoxItem loc:Loc.Content="SortRecent" Content="Recent" Tag="RecentProgress"/>
                     </ComboBox>
                     <ToggleSwitch x:Name="HideFinishedToggle"
-                                  Header="Hide Finished" OnContent="" OffContent=""
+                                  loc:Loc.Header="HideFinished" Header="Hide Finished" OnContent="" OffContent=""
                                   Toggled="HideFinishedToggle_Toggled"
                                   MinWidth="0" VerticalAlignment="Center" Margin="0,-4,0,0"/>
                     <ToggleSwitch x:Name="DownloadedOnlyToggle"
-                                  Header="Downloaded" OnContent="" OffContent=""
+                                  loc:Loc.Header="Downloaded" Header="Downloaded" OnContent="" OffContent=""
                                   Toggled="DownloadedOnlyToggle_Toggled"
                                   MinWidth="0" VerticalAlignment="Center" Margin="0,-4,0,0"/>
                 </StackPanel>
@@ -287,7 +288,7 @@
                                         Visibility="{x:Bind IsDownloaded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
                                     <StackPanel Orientation="Horizontal" Spacing="4">
                                         <FontIcon Glyph="&#xE73E;" FontSize="10"/>
-                                        <TextBlock Text="Local" Style="{StaticResource BadgeTextStyle}"/>
+                                        <TextBlock loc:Loc.Text="Local" Text="Local" Style="{StaticResource BadgeTextStyle}"/>
                                     </StackPanel>
                                 </Border>
 
@@ -373,7 +374,7 @@
                        Style="{StaticResource EmptyStateTitleStyle}"/>
             <TextBlock Text="{x:Bind ViewModel.EmptyStateSubtitle, Mode=OneWay}"
                        Style="{StaticResource EmptyStateSubtitleStyle}"/>
-            <Button Content="Refresh" Command="{x:Bind ViewModel.RefreshCommand}"
+            <Button loc:Loc.Content="Refresh" Content="Refresh" Command="{x:Bind ViewModel.RefreshCommand}"
                     Style="{ThemeResource AccentButtonStyle}" Margin="0,16,0,0"/>
         </StackPanel>
     </Grid>

@@ -48,32 +48,40 @@ public class AudioBook
             {
                 var idx = GetCurrentChapterIndex();
                 if (idx >= 0)
-                    return $"{bookPct} \u2022 Ch {idx + 1}/{Chapters.Count}";
+                {
+                    var chLabel = Helpers.AppLanguage.IsChinese
+                        ? $"第{idx + 1}/{Chapters.Count}章"
+                        : $"Ch {idx + 1}/{Chapters.Count}";
+                    return $"{bookPct} \u2022 {chLabel}";
+                }
             }
             return bookPct;
         }
     }
 
-    /// <summary>Find the current chapter based on CurrentTime.</summary>
+    /// <summary>Find the current chapter based on CurrentTime (binary search).</summary>
     public Chapter? GetCurrentChapter()
     {
-        if (Chapters.Count == 0) return null;
-        var posSeconds = CurrentTime.TotalSeconds;
-        return Chapters.FirstOrDefault(c => posSeconds >= c.Start && posSeconds < c.End)
-               ?? (posSeconds >= Chapters.Last().End ? Chapters.Last() : null);
+        var idx = GetCurrentChapterIndex();
+        return idx >= 0 ? Chapters[idx] : null;
     }
 
-    /// <summary>Get current chapter index (0-based), or -1 if none.</summary>
+    /// <summary>Get current chapter index (0-based), or -1 if none. Binary search O(log n).</summary>
     public int GetCurrentChapterIndex()
     {
         if (Chapters.Count == 0) return -1;
         var posSeconds = CurrentTime.TotalSeconds;
-        for (int i = 0; i < Chapters.Count; i++)
+        if (posSeconds >= Chapters[^1].End) return Chapters.Count - 1;
+        if (posSeconds < Chapters[0].Start) return -1;
+        int lo = 0, hi = Chapters.Count - 1;
+        while (lo <= hi)
         {
-            if (posSeconds >= Chapters[i].Start && posSeconds < Chapters[i].End)
-                return i;
+            int mid = lo + (hi - lo) / 2;
+            if (posSeconds < Chapters[mid].Start) hi = mid - 1;
+            else if (posSeconds >= Chapters[mid].End) lo = mid + 1;
+            else return mid;
         }
-        return posSeconds >= Chapters.Last().End ? Chapters.Count - 1 : -1;
+        return -1;
     }
 
     /// <summary>Progress within the current chapter as 0-100.</summary>

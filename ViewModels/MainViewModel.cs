@@ -59,7 +59,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
         WeakReferenceMessenger.Default.Register<SyncStartedMessage>(this, (r, m) =>
             ((MainViewModel)r).IsSyncing = true);
         WeakReferenceMessenger.Default.Register<SyncCompletedMessage>(this, (r, m) =>
-            ((MainViewModel)r).IsSyncing = false);
+        {
+            var vm = (MainViewModel)r;
+            vm.IsSyncing = false;
+            // A completed sync means the credentials work: a server added on this run of the
+            // app must flip the shell out of its "not connected" state, not on next restart.
+            vm.IsAuthenticated = vm._apiService.IsAuthenticated;
+        });
         WeakReferenceMessenger.Default.Register<SyncFailedMessage>(this, (r, m) =>
             ((MainViewModel)r).IsSyncing = false);
 

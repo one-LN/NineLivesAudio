@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:loc="using:NineLivesAudio.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:models="using:NineLivesAudio.Models"
     mc:Ignorable="d"
@@ -21,7 +22,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <TextBlock Text="Downloads" Style="{StaticResource PageTitleStyle}"/>
+            <TextBlock x:Name="DownloadsTitleText" Text="Downloads" Style="{StaticResource PageTitleStyle}"/>
 
             <Button Grid.Column="1"
                     Command="{x:Bind ViewModel.ClearCompletedCommand}"
@@ -30,7 +31,7 @@
                     Style="{StaticResource IconButtonStyle}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="&#xE74D;" FontSize="14"/>
-                    <TextBlock Text="Clear Completed"/>
+                    <TextBlock x:Name="ClearCompletedText" Text="Clear Completed"/>
                 </StackPanel>
             </Button>
         </Grid>
@@ -52,7 +53,7 @@
 
                 <!-- Active Downloads Section -->
                 <StackPanel Visibility="{x:Bind HasActiveDownloads, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Text="Active Downloads"
+                    <TextBlock x:Name="ActiveDownloadsText" Text="Active Downloads"
                                Style="{StaticResource SectionTitleStyle}"
                                Margin="0,0,0,12"/>
 
@@ -128,7 +129,7 @@
 
                 <!-- Completed Downloads Section -->
                 <StackPanel Visibility="{x:Bind HasCompletedDownloads, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Text="Completed"
+                    <TextBlock x:Name="CompletedText" Text="Completed"
                                Style="{StaticResource SectionTitleStyle}"
                                Margin="0,0,0,12"/>
 
@@ -190,11 +191,11 @@
                 <StackPanel Visibility="{x:Bind ShowEmptyState, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                             Style="{StaticResource EmptyStateContainerStyle}">
                     <FontIcon Glyph="&#xE896;" Style="{StaticResource EmptyStateIconStyle}"/>
-                    <TextBlock Text="No downloads"
+                    <TextBlock x:Name="NoDownloadsText" Text="No downloads"
                                Style="{StaticResource EmptyStateTitleStyle}"/>
-                    <TextBlock Text="Download audiobooks from your library for offline listening"
+                    <TextBlock x:Name="NoDownloadsSubtitleText" Text="Download audiobooks from your library for offline listening"
                                Style="{StaticResource EmptyStateSubtitleStyle}"/>
-                    <Button Content="Go to Library" Click="GoToLibrary_Click"
+                    <Button loc:Loc.Content="GoToLibrary" Content="Go to Library" Click="GoToLibrary_Click"
                             Style="{ThemeResource AccentButtonStyle}" Margin="0,16,0,0"/>
                 </StackPanel>
 

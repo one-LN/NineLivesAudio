@@ -16,6 +16,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     private readonly ISyncService _syncService;
     private readonly Data.ILocalDatabase _database;
     private readonly ITrackManager _trackManager;
+    private readonly ILocalizationService _localization;
 
     // NAudio for local file playback
     private WaveOutEvent? _outputDevice;
@@ -47,8 +48,10 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     private PeriodicTimer? _sessionSyncTimer;
     private CancellationTokenSource? _sessionSyncCts;
     private DateTime _sessionStartTime;
-    private double _accumulatedListenTime;
+    private double _accumulatedListenTime;   // total reported to the server this session
+    private double _pendingListenSeconds;    // played but not sent yet (delta on next sync)
     private DateTime _lastSyncTickTime;
+    private DateTime _lastListenTick;
 
     // Multi-track state
     private List<string> _trackPaths = new();     // local file paths for multi-track
@@ -60,6 +63,10 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     // Chapter state
     private List<Chapter> _chapters = new();
     private int _currentChapterIndex = -1;
+
+    // Skip intro / outro (global settings, see AppSettings.SkipIntroSeconds/SkipOutroSeconds);
+    // the per-chapter bookkeeping lives next to the methods themselves.
+    private bool _outroSkipInProgress;
 
     private enum StartupProgressStatus
     {
@@ -123,7 +130,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         INotificationService notifications,
         ISyncService syncService,
         Data.ILocalDatabase database,
-        ITrackManager trackManager)
+        ITrackManager trackManager,
+        ILocalizationService localization)
     {
         _apiService = apiService;
         _settingsService = settingsService;
@@ -133,6 +141,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         _syncService = syncService;
         _database = database;
         _trackManager = trackManager;
+        _localization = localization;
 
         _positionTimer = new System.Timers.Timer(500);
         _positionTimer.Elapsed += OnPositionTimerElapsed;
@@ -140,12 +149,17 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
     private void OnPositionTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
     {
-        WeakReferenceMessenger.Default.Send(new PositionChangedMessage(Position));
+        var position = Position;
+        WeakReferenceMessenger.Default.Send(new PositionChangedMessage(position));
         UpdateCurrentChapter();
+        DetectPlaybackStall(position.TotalSeconds);
+        TrackListeningTime();
+        _ = ApplyChapterSkipsAsync();
     }
 
     public async Task<bool> LoadAudioBookAsync(AudioBook audioBook)
     {
+        _uiDispatcher ??= Windows.System.DispatcherQueue.GetForCurrentThread();
         // Cancel any previous load and dispose old CTS
         _loadCts?.Cancel();
         _loadCts?.Dispose();
@@ -162,12 +176,16 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             _isLocalFile = false;
             _currentTrackIndex = 0;
             _accumulatedListenTime = 0;
+            _pendingListenSeconds = 0;
+            _lastListenTick = DateTime.UtcNow;
             _trackPaths.Clear();
             _streamTracks.Clear();
             _trackDurations.Clear();
             _autoAdvancing = false;
             _chapters = audioBook.Chapters.OrderBy(c => c.Start).ToList();
             _currentChapterIndex = -1;
+            ResetChapterSkipState(-1);
+            _outroSkipInProgress = false;
             _startupProgressStatus = StartupProgressStatus.Unknown;
 
             var progressResolved = await ResolveInitialProgressAsync(audioBook, ct);
@@ -254,7 +272,11 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                     _logger.Log($"[Playback] Pipeline: LOCAL file {source.LocalFilePath}");
                     _isLocalFile = true;
                     BuildLocalTrackList(audioBook, source.LocalFilePath!);
+                    await NormalizeResumePositionAsync(audioBook);
+                    NormalizeChapterUnits();
+                    AlignChaptersToTracks();
                     DetermineStartingTrack(audioBook.CurrentTime);
+                    LogLoadSummary(audioBook);
                     var localLoaded = await LoadLocalFileAsync(_trackPaths[_currentTrackIndex], audioBook, ct);
                     if (localLoaded) SetupSmtc(audioBook);
                     return localLoaded;
@@ -266,7 +288,11 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                     {
                         _streamTracks = _currentSession.AudioTracks.OrderBy(t => t.Index).ToList();
                         BuildStreamTrackDurations();
+                        await NormalizeResumePositionAsync(audioBook);
+                        NormalizeChapterUnits();
+                        AlignChaptersToTracks();
                         DetermineStartingTrack(audioBook.CurrentTime);
+                        LogLoadSummary(audioBook);
 
                         var track = _streamTracks[_currentTrackIndex];
                         _logger.Log($"[Playback] Stream URL obtained, {_streamTracks.Count} tracks");
@@ -284,8 +310,9 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                     if (_currentSession == null || _currentSession.AudioTracks.Count == 0)
                     {
                         _logger.LogWarning("[Playback] No playback session or tracks available");
-                        SetState(PlaybackState.Stopped, "No audio tracks available");
-                        _notifications.ShowError("No audio tracks available", "Playback Error");
+                        var noTracks = _localization.GetString("NoAudioTracks");
+                        SetState(PlaybackState.Stopped, noTracks);
+                        _notifications.ShowError(noTracks, _localization.GetString("PlaybackError"));
                         return false;
                     }
 
@@ -298,7 +325,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 default:
                     _logger.LogWarning($"[Playback] Source unavailable: {source.ErrorMessage}");
                     SetState(PlaybackState.Stopped, source.ErrorMessage);
-                    _notifications.ShowWarning(source.ErrorMessage ?? "Cannot play this book", "Playback");
+                    _notifications.ShowWarning(source.ErrorMessage ?? _localization.GetString("CannotPlayBook"), _localization.GetString("Playback"));
                     return false;
             }
         }
@@ -311,8 +338,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         catch (Exception ex)
         {
             _logger.LogError("[Playback] Load failed", ex);
-            SetState(PlaybackState.Stopped, $"Failed to load: {ex.Message}");
-            _notifications.ShowError(ex.Message, "Playback Error");
+            SetState(PlaybackState.Stopped, _localization.Format("FailedLoadDetail", ex.Message));
+            _notifications.ShowError(ex.Message, _localization.GetString("PlaybackError"));
             return false;
         }
     }
@@ -335,6 +362,9 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         _outputDevice.Init(_audioFileReader);
         _outputDevice.Volume = _volume;
         WireNAudioEvents();
+
+        RescaleTimelineIfNeeded(_currentTrackIndex, _audioFileReader.TotalTime);
+        ReconcileTrackDuration(_currentTrackIndex, _audioFileReader.TotalTime);
 
         // Seek within the current track (not overall position)
         var withinTrackOffset = GetWithinTrackOffset(audioBook.CurrentTime);
@@ -364,6 +394,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         _outputDevice.Volume = _volume;
         WireNAudioEvents();
 
+        ReconcileTrackDuration(_currentTrackIndex, _audioFileReader.TotalTime);
+
         if (autoPlay)
         {
             SetState(PlaybackState.Playing);
@@ -387,8 +419,11 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             ct.ThrowIfCancellationRequested();
             _isStreaming = true;
 
-            // Unwire old events before disposing to prevent leak
+            // Unwire old events before disposing to prevent leak. Pausing first matters:
+            // disposing a MediaPlayer that is still playing can block the media thread and
+            // take the whole window down with it.
             UnwireMediaPlayerEvents();
+            try { _mediaPlayer?.Pause(); } catch { /* already gone */ }
             _mediaPlayer?.Dispose();
             _mediaPlayer = null;
 
@@ -430,6 +465,13 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
             WireMediaPlayerEvents();
 
+            // Same self-healing as local playback: the stream knows its own length.
+            if (_trackDurations.Count > 1)
+            {
+                RescaleTimelineIfNeeded(_currentTrackIndex, _mediaPlayer.PlaybackSession.NaturalDuration);
+                ReconcileTrackDuration(_currentTrackIndex, _mediaPlayer.PlaybackSession.NaturalDuration);
+            }
+
             if (seekToPosition)
             {
                 var withinTrack = GetWithinTrackOffset(audioBook.CurrentTime);
@@ -453,7 +495,9 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
     private async Task<bool> LoadTempDownloadAsync(string url, AudioBook audioBook, CancellationToken ct)
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), "NineLivesAudio");
+        // Inside the app's own data folder, not %TEMP%: a downloaded stream file can be
+        // hundreds of megabytes and must not be left behind on the system drive.
+        var tempDir = Path.Combine(NineLivesAudio.Helpers.AppPaths.DataRoot, "stream-cache");
         Directory.CreateDirectory(tempDir);
         var tempPath = Path.Combine(tempDir, $"abs_stream_{audioBook.Id}.tmp");
 
@@ -508,7 +552,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         return await LoadLocalFileAsync(tempPath, audioBook, ct);
     }
 
-    public Task PlayAsync()
+    public async Task PlayAsync()
     {
         if (_isStreaming && _mediaPlayer != null)
         {
@@ -529,7 +573,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         StartSessionSyncTimer();
         UpdateSmtcPlaybackState(true);
 
-        return Task.CompletedTask;
+        // Chapter intro skipping happens from UpdateCurrentChapter, which knows which
+        // chapter the position belongs to.
     }
 
     public Task PauseAsync()
@@ -559,6 +604,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     {
         StopSessionSyncTimer();
         _positionTimer?.Stop();
+        ResetChapterSkipState(-1);
 
         // Flush final progress before stopping
         if (_currentAudioBook != null)
@@ -603,7 +649,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         // Dispose NAudio resources
         if (_outputDevice != null)
         {
-            try { _outputDevice.Stop(); } catch { }
+            try { _outputDevice.Stop(); } catch { /* best-effort: ignore */ }
             _outputDevice.Dispose();
             _outputDevice = null;
         }
@@ -619,7 +665,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 _smtcPlayer.Pause();
                 _smtcPlayer.Source = null;
             }
-            catch { }
+            catch { /* best-effort: ignore */ }
             finally
             {
                 _smtcPlayer.Dispose();
@@ -656,13 +702,30 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 WeakReferenceMessenger.Default.Send(new TrackChangedMessage(_currentTrackIndex));
                 var wasPlaying = _state == PlaybackState.Playing;
 
+                var trackLoaded = false;
+
                 if (_isStreaming && _streamTracks.Count > targetTrack && _currentAudioBook != null)
                 {
-                    await LoadStreamAsync(_streamTracks[targetTrack].ContentUrl, _currentAudioBook, CancellationToken.None);
+                    // seekToPosition: false — we set the exact offset right below, so the
+                    // track must not first jump to the saved book progress.
+                    trackLoaded = await LoadStreamAsync(_streamTracks[targetTrack].ContentUrl, _currentAudioBook,
+                        CancellationToken.None, seekToPosition: false);
                 }
                 else if (!_isStreaming && _trackPaths.Count > targetTrack)
                 {
-                    await LoadLocalTrackAsync(_trackPaths[targetTrack], CancellationToken.None, wasPlaying);
+                    // Never auto-play before the offset is applied: that produced an
+                    // audible blip from second 0 of the new file.
+                    trackLoaded = await LoadLocalTrackAsync(_trackPaths[targetTrack], CancellationToken.None, autoPlay: false);
+                }
+
+                if (!trackLoaded)
+                {
+                    // Opening the target file failed (network, expired session, bad URL).
+                    // Bailing out silently left the player sitting on the old position with
+                    // no explanation, which reads exactly like "the jump button does nothing".
+                    _logger.LogWarning($"[Playback] Cross-file seek aborted: could not open track {targetTrack + 1}");
+                    _notifications.ShowWarning(_localization.GetString("JumpFailed"), _localization.GetString("Playback"));
+                    return;
                 }
 
                 var withinTrack = GetWithinTrackOffset(position);
@@ -928,13 +991,29 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         {
             try
             {
-                var now = DateTime.UtcNow;
-                var tickElapsed = (now - _lastSyncTickTime).TotalSeconds;
-                _lastSyncTickTime = now;
-                _accumulatedListenTime += tickElapsed * _playbackSpeed;
-                await _apiService.SyncSessionProgressAsync(
-                    _currentSession.Id, currentTime, duration, _accumulatedListenTime);
-                _logger.LogDebug($"[Playback] Session sync: {currentTime:F1}s, listened: {_accumulatedListenTime:F0}s");
+                // The Audiobookshelf API defines timeListened as "the time listened since the
+                // last session sync" and the server ADDS it to the session total. Sending the
+                // running total (the old behaviour) made every sync add the whole session
+                // again, which is why daily listening stats exploded into hundreds of hours.
+                var delta = Math.Clamp(_pendingListenSeconds, 0, 120);
+                _lastSyncTickTime = DateTime.UtcNow;
+
+                var sent = await _apiService.SyncSessionProgressAsync(
+                    _currentSession.Id, currentTime, duration, Math.Round(delta, 1));
+
+                if (sent)
+                {
+                    _pendingListenSeconds = Math.Max(0, _pendingListenSeconds - delta);
+                    _accumulatedListenTime += delta;
+                }
+                else
+                {
+                    // Keep it for the next attempt; the cap above stops it from growing forever.
+                    _logger.LogDebug("[Playback] Session sync rejected — keeping listening time for the next tick");
+                }
+
+                _logger.LogDebug($"[Playback] Session sync: {currentTime:F1}s, +{delta:F0}s " +
+                                 $"(session total {_accumulatedListenTime:F0}s)");
             }
             catch (Exception ex)
             {
@@ -949,6 +1028,58 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         }
     }
 
+    /// <summary>
+    /// Counts how long audio actually played, for the <c>timeListened</c> delta the server
+    /// expects on every session sync. Wall-clock time while paused or buffering must not
+    /// count — it would be reported as listening.
+    /// </summary>
+    private void TrackListeningTime()
+    {
+        var now = DateTime.UtcNow;
+
+        if (_state != PlaybackState.Playing)
+        {
+            _lastListenTick = now;
+            return;
+        }
+
+        var elapsed = (now - _lastListenTick).TotalSeconds;
+        _lastListenTick = now;
+
+        // Guard against a stalled tick or a clock jump being credited as listening.
+        if (elapsed is > 0 and < 5)
+            _pendingListenSeconds += elapsed * Math.Max(0.5, _playbackSpeed);
+    }
+
+    /// <summary>
+    /// Logs when the position stops moving while the player claims to be playing — that is
+    /// exactly what a wedged media session looks like, and without this line it is invisible.
+    /// </summary>
+    private void DetectPlaybackStall(double positionSeconds)
+    {
+        if (_state != PlaybackState.Playing)
+        {
+            _lastTickPosition = positionSeconds;
+            _lastProgressAt = DateTime.UtcNow;
+            return;
+        }
+
+        if (Math.Abs(positionSeconds - _lastTickPosition) > 0.05)
+        {
+            _lastTickPosition = positionSeconds;
+            _lastProgressAt = DateTime.UtcNow;
+            return;
+        }
+
+        var stalled = DateTime.UtcNow - _lastProgressAt;
+        if (stalled.TotalSeconds < 8) return;
+        if ((DateTime.UtcNow - _lastStallLogAt).TotalSeconds < 60) return;
+
+        _lastStallLogAt = DateTime.UtcNow;
+        _logger.LogWarning($"[Playback] Position has not moved for {stalled.TotalSeconds:F0}s " +
+                           $"(state {_state}, position {positionSeconds:F1}s, track {_currentTrackIndex + 1}/{TotalTracks})");
+    }
+
     // Chapter helpers
     private void UpdateCurrentChapter()
     {
@@ -956,34 +1087,547 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
         var posSeconds = Position.TotalSeconds;
 
-        // Fast path: ~80% of 500ms ticks land in the same chapter — skip search entirely
+        // Fast path: ~80% of 500ms ticks land in the same chapter — skip search entirely.
+        // Half a second of tolerance: right at a boundary the reported position can sit on
+        // the next chapter's start while the audio still belongs to the current one (track
+        // switching flips between 61512.9 and 61513.0), which made the chapter label flicker
+        // back and forth between two chapters.
+        const double BoundaryToleranceSeconds = 0.5;
         if (_currentChapterIndex >= 0 && _currentChapterIndex < _chapters.Count)
         {
             var current = _chapters[_currentChapterIndex];
-            if (posSeconds >= current.Start && posSeconds < current.End)
+            if (posSeconds >= current.Start - BoundaryToleranceSeconds &&
+                posSeconds < current.End + BoundaryToleranceSeconds)
                 return; // Still in the same chapter, no change
         }
 
         // Slow path: binary search for the chapter containing this position
         int newIndex = BinarySearchChapter(posSeconds);
 
+        // Chapters do not always cover the whole timeline (intro/outro outside any
+        // chapter, or a gap between files). Keep showing the chapter that is still
+        // playing instead of dropping the whole chapter context mid-book.
+        if (newIndex < 0)
+            newIndex = FindPreviousChapterIndex(posSeconds);
+
         if (newIndex != _currentChapterIndex)
         {
             _currentChapterIndex = newIndex;
+            var chapter = CurrentChapter;
+            _logger.LogDebug($"[Playback] Chapter -> #{newIndex + 1}/{_chapters.Count} at {posSeconds:F0}s " +
+                             $"(bounds {chapter?.Start:F0}s–{chapter?.End:F0}s) '{chapter?.Title}'");
             WeakReferenceMessenger.Default.Send(new ChapterChangedMessage(CurrentChapter));
+
+            // Every chapter gets its intro trimmed, not just the first one of the book.
+            // ApplyChapterSkipsAsync (position timer) does the work: it also covers jumps
+            // that never raise a change event, e.g. a seek straight into a new chapter.
+            ResetChapterSkipState(newIndex);
         }
     }
 
     private int BinarySearchChapter(double posSeconds)
         => _trackManager.FindChapterForPosition(_chapters, posSeconds);
 
+    /// <summary>Index of the last chapter whose start is at or before <paramref name="posSeconds"/>.</summary>
+    private int FindPreviousChapterIndex(double posSeconds)
+    {
+        var index = -1;
+        for (var i = 0; i < _chapters.Count; i++)
+        {
+            if (_chapters[i].Start > posSeconds) break;
+            index = i;
+        }
+        return index;
+    }
+
     public async Task SeekToChapterAsync(int chapterIndex)
     {
         if (chapterIndex < 0 || chapterIndex >= _chapters.Count) return;
         var chapter = _chapters[chapterIndex];
+        _logger.Log($"[Playback] Chapter jump #{chapterIndex + 1}/{_chapters.Count} '{chapter.Title}' " +
+                    $"-> {TimeSpan.FromSeconds(chapter.Start)} (raw start {chapter.Start:0.###}s, " +
+                    $"book duration {Duration})");
         await SeekAsync(TimeSpan.FromSeconds(chapter.Start));
         _currentChapterIndex = chapterIndex;
+        ResetChapterSkipState(chapterIndex);
         WeakReferenceMessenger.Default.Send(new ChapterChangedMessage(chapter));
+
+        // Jumping into a chapter counts as entering it: trim its intro immediately
+        // instead of waiting for the next timer tick (that would leak 0.5 s of it).
+        await ApplyChapterIntroSkipAsync(chapter, chapterIndex);
+    }
+
+    // ── Skip intro / skip outro ────────────────────────────────────────────────
+    // Both settings are per chapter: a multi-file audiobook repeats its opening and
+    // closing on every file, so "35 / 15" has to apply at chapter 700 just like at 7.
+    //
+    // IMPORTANT: this runs on the position timer (a pool thread, twice a second) and must
+    // never reload the media player. Disposing a MediaPlayer that is still playing from a
+    // pool thread froze the whole window ("未响应") at the 14-second mark of a chapter, so
+    // skipping only ever moves the playback position *inside the track that is loaded*:
+    //   · skip intro → jump forward, same track;
+    //   · skip outro → jump to the end of the file and let the existing MediaEnded
+    //     auto-advance (the path that has always worked) switch to the next chapter.
+
+    private Windows.System.DispatcherQueue? _uiDispatcher;
+    private int _skipCheckQueued;
+    private double _lastTickPosition = -1;
+    private DateTime _lastProgressAt = DateTime.UtcNow;
+    private DateTime _lastStallLogAt = DateTime.MinValue;
+
+    private int _skipChapterIndex = -1;
+    private int _introSkipAttempts;
+    private bool _introSkipDone;
+    private bool _outroSkipDone;
+    private bool _introSkipBusy;
+
+    private void ResetChapterSkipState(int chapterIndex)
+    {
+        _skipChapterIndex = chapterIndex;
+        _introSkipAttempts = 0;
+        _introSkipDone = false;
+        _outroSkipDone = false;
+    }
+
+    /// <summary>Absolute position where the currently loaded track ends.</summary>
+    private double CurrentTrackEndSeconds =>
+        _currentTrackIndex >= 0 && _currentTrackIndex < _trackDurations.Count
+            ? _trackDurations[_currentTrackIndex]
+            : Duration.TotalSeconds;
+
+    /// <summary>Absolute position where the currently loaded track starts.</summary>
+    private double CurrentTrackStartSeconds =>
+        _currentTrackIndex > 0 && _currentTrackIndex <= _trackDurations.Count
+            ? _trackDurations[_currentTrackIndex - 1]
+            : 0;
+
+    /// <summary>
+    /// Seeks inside the track that is already loaded — never triggers a cross-file load.
+    /// Returns false when the media session is not ready (the caller retries later).
+    /// </summary>
+    private bool SeekWithinCurrentTrack(double absoluteSeconds)
+    {
+        var trackEnd = CurrentTrackEndSeconds;
+        var target = Math.Min(absoluteSeconds, trackEnd - 0.35);
+        target = Math.Max(target, CurrentTrackStartSeconds);
+        var within = GetWithinTrackOffset(TimeSpan.FromSeconds(target));
+
+        try
+        {
+            if (_isStreaming && _mediaPlayer != null)
+            {
+                _mediaPlayer.PlaybackSession.Position = within;
+            }
+            else if (_audioFileReader != null)
+            {
+                _audioFileReader.CurrentTime = within;
+            }
+            else
+            {
+                return false;
+            }
+
+            WeakReferenceMessenger.Default.Send(new PositionChangedMessage(TimeSpan.FromSeconds(target)));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning($"[Playback] In-track seek failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Entry point from the position timer (twice a second): trims the intro of the chapter
+    /// that is playing, and leaves it as soon as fewer than N seconds are left.
+    /// </summary>
+    private async Task ApplyChapterSkipsAsync()
+    {
+        try
+        {
+            // The timer fires on a pool thread. Anything that touches the player or sends a
+            // message from there can freeze the window, so hop to the UI thread once.
+            var dispatcher = _uiDispatcher;
+            if (dispatcher != null && !dispatcher.HasThreadAccess)
+            {
+                if (Interlocked.Exchange(ref _skipCheckQueued, 1) == 0)
+                {
+                    var queued = dispatcher.TryEnqueue(() =>
+                    {
+                        Interlocked.Exchange(ref _skipCheckQueued, 0);
+                        _ = ApplyChapterSkipsAsync();
+                    });
+                    if (!queued) Interlocked.Exchange(ref _skipCheckQueued, 0);
+                }
+                return;
+            }
+
+            if (_state != PlaybackState.Playing && _state != PlaybackState.Buffering) return;
+            if (_chapters.Count == 0 || _currentChapterIndex < 0) return;
+
+            var chapter = CurrentChapter;
+            if (chapter == null) return;
+
+            if (_skipChapterIndex != _currentChapterIndex)
+                ResetChapterSkipState(_currentChapterIndex);
+
+            await ApplyChapterIntroSkipAsync(chapter, _currentChapterIndex);
+            await TrySkipOutroAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("[Playback] Chapter skip check failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// Trims the first <see cref="AppSettings.SkipIntroSeconds"/> seconds of one chapter.
+    /// Only while the position is still inside that window, at most a few times per chapter,
+    /// and only when the target lies in the loaded track (otherwise the next tick, after the
+    /// normal track change, takes care of it).
+    /// </summary>
+    private async Task ApplyChapterIntroSkipAsync(Chapter chapter, int chapterIndex)
+    {
+        var skip = Math.Max(0, _settingsService.Settings.SkipIntroSeconds);
+        if (skip <= 0 || _introSkipBusy || _introSkipDone || chapterIndex < 0) return;
+
+        // Never eat a chapter that is barely long enough to hold the skip window.
+        if (chapter.Duration.TotalSeconds <= skip * 1.5) return;
+
+        var introEnd = chapter.Start + skip;
+        var position = Position.TotalSeconds;
+        if (position < chapter.Start - 1) return;   // not in this chapter yet
+        if (position >= introEnd - 1) { _introSkipDone = true; return; }  // already past it
+
+        // The target must be inside the loaded file, otherwise skip from the timer would
+        // have to open another file (that is what froze the app).
+        if (introEnd > CurrentTrackEndSeconds - 0.35)
+        {
+            _introSkipDone = true;
+            _logger.LogDebug($"[Playback] Skip intro deferred: target {introEnd:F0}s is in the next file");
+            return;
+        }
+
+        if (_introSkipAttempts >= 10)
+        {
+            if (_introSkipAttempts == 10)
+            {
+                _introSkipAttempts++;
+                _logger.LogWarning($"[Playback] Skip intro gave up on chapter #{chapterIndex + 1} " +
+                                   $"(position {position:F0}s)");
+            }
+            return;
+        }
+
+        _introSkipAttempts++;
+        _introSkipBusy = true;
+        try
+        {
+            _logger.Log($"[Playback] Skip intro: {position:F0}s -> {introEnd:F0}s " +
+                        $"(chapter #{chapterIndex + 1}, skip {skip}s)");
+            if (SeekWithinCurrentTrack(introEnd))
+                _introSkipDone = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("[Playback] Skip intro failed", ex);
+        }
+        finally
+        {
+            _introSkipBusy = false;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Leaves the current chapter once fewer than <see cref="AppSettings.SkipOutroSeconds"/>
+    /// seconds remain: jumps to the end of the loaded file and lets the normal track change
+    /// go on to the next chapter (finishing the book from the last chapter).
+    /// </summary>
+    private async Task TrySkipOutroAsync()
+    {
+        if (_outroSkipDone || _outroSkipInProgress) return;
+
+        var skip = Math.Max(0, _settingsService.Settings.SkipOutroSeconds);
+        if (skip <= 0) return; // feature off
+
+        var chapter = CurrentChapter;
+        if (chapter == null || _currentChapterIndex < 0) return;
+
+        var chapterLength = chapter.Duration.TotalSeconds;
+        if (chapterLength <= 0 || chapterLength <= skip * 1.5) return; // don't gut a short chapter
+
+        var position = Position.TotalSeconds;
+        var remaining = chapter.End - position;
+        if (remaining > skip || remaining < -2) return;
+
+        _outroSkipInProgress = true;
+        try
+        {
+            var trackEnd = CurrentTrackEndSeconds;
+
+            if (_currentChapterIndex + 1 >= _chapters.Count && chapter.End >= trackEnd - 1)
+            {
+                _outroSkipDone = true;
+                _logger.Log("[Playback] Skip outro: last chapter reached — finishing book");
+                await FinishCurrentBookAsync();
+                return;
+            }
+
+            // Chapter ends mid-file: jump to its end, the intro skip takes over from there.
+            // Chapter ends with the file: jump just before the end so MediaEnded advances.
+            var target = chapter.End >= trackEnd - 0.5 ? trackEnd - 0.35 : chapter.End;
+
+            if (target <= position + 0.25)
+            {
+                _outroSkipDone = true;   // already there — the normal track change will run
+                return;
+            }
+
+            _logger.Log($"[Playback] Skip outro: {position:F0}s -> {target:F0}s " +
+                        $"({remaining:F0}s left of chapter #{_currentChapterIndex + 1})");
+            if (SeekWithinCurrentTrack(target))
+                _outroSkipDone = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("[Playback] Skip outro failed", ex);
+        }
+        finally
+        {
+            _outroSkipInProgress = false;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    /// <summary>Stops playback and reports the book as finished (end of last chapter).</summary>
+    private async Task FinishCurrentBookAsync()
+    {
+        _positionTimer?.Stop();
+        StopSessionSyncTimer();
+
+        try
+        {
+            if (_isStreaming && _mediaPlayer != null)
+                _mediaPlayer.Pause();
+            else
+                _outputDevice?.Pause();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug($"[Playback] Finish pause failed: {ex.Message}");
+        }
+
+        SetState(PlaybackState.Stopped);
+        UpdateSmtcPlaybackState(false);
+
+        if (_currentAudioBook != null)
+        {
+            var total = Duration.TotalSeconds;
+            await _syncService.FlushPlaybackProgressAsync(
+                _currentAudioBook.Id, total, total, isFinished: true);
+        }
+
+        if (_currentSession != null)
+            await CloseSessionAsync();
+    }
+
+    /// <summary>
+    /// A resume position can arrive in the wrong unit or be plain corrupt (a previous
+    /// build saved milliseconds, a third-party client wrote garbage). Trusting it makes
+    /// the book open at an impossible time, which also hides the current chapter.
+    /// Runs as soon as the real book duration is known.
+    /// </summary>
+    private async Task NormalizeResumePositionAsync(AudioBook audioBook)
+    {
+        var position = audioBook.CurrentTime.TotalSeconds;
+        if (position <= 0) return;
+
+        var duration = Duration.TotalSeconds;
+        if (duration <= 0)
+        {
+            _logger.LogDebug($"[Playback] Resume position {position:F0}s kept (book duration unknown)");
+            return;
+        }
+
+        // A little overshoot is metadata rounding, not a unit problem.
+        if (position <= duration * 1.02) return;
+
+        TimeSpan corrected;
+        if (position / 1000.0 <= duration * 1.02)
+        {
+            corrected = TimeSpan.FromSeconds(position / 1000.0);
+            _logger.LogWarning($"[Playback] Resume position looked like MILLISECONDS " +
+                               $"({position:F0}s vs book {duration:F0}s) -> using {corrected}");
+        }
+        else
+        {
+            corrected = TimeSpan.Zero;
+            _logger.LogWarning($"[Playback] Resume position {position:F0}s exceeds book duration " +
+                               $"{duration:F0}s -> restarting from the beginning");
+        }
+
+        audioBook.CurrentTime = corrected;
+        _notifications.ShowWarning(_localization.GetString("PositionCorrected"), _localization.GetString("Playback"));
+        try
+        {
+            await _database.SavePlaybackProgressAsync(audioBook.Id, corrected, isFinished: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug($"[Playback] Persisting corrected position failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Chapters are supposed to be whole-book seconds. Libraries touched by older
+    /// tooling can store them in milliseconds, which makes every jump land 1000x too
+    /// far. Detect it against the book duration and rescale once.
+    /// </summary>
+    private void NormalizeChapterUnits()
+    {
+        if (_chapters.Count == 0) return;
+
+        var duration = Duration.TotalSeconds;
+        if (duration <= 0) return;
+
+        var lastEnd = _chapters.Max(c => c.End > 0 ? c.End : c.Start);
+        if (lastEnd <= duration * 1.02) return;
+        if (lastEnd / 1000.0 > duration * 1.02) return; // genuinely inconsistent, leave it
+
+        foreach (var chapter in _chapters)
+        {
+            chapter.Start /= 1000.0;
+            chapter.End /= 1000.0;
+        }
+
+        _logger.LogWarning($"[Playback] Chapter times looked like milliseconds " +
+                           $"(last end {lastEnd:F0} vs book {duration:F0}s) — rescaled");
+    }
+
+    private void LogLoadSummary(AudioBook audioBook)
+    {
+        var firstChapter = _chapters.Count > 0 ? _chapters[0].Start.ToString("0") : "-";
+        var lastChapter = _chapters.Count > 0 ? _chapters[^1].Start.ToString("0") : "-";
+        _logger.Log($"[Playback] Loaded '{audioBook.Title}': book {Duration}, " +
+                    $"resume {audioBook.CurrentTime}, start track {_currentTrackIndex + 1}/{Math.Max(1, _trackDurations.Count)}, " +
+                    $"chapters {_chapters.Count} (first {firstChapter}s, last {lastChapter}s)");
+    }
+
+    /// <summary>
+    /// The saved track table (and the progress stitched to it) can be off by exactly
+    /// 1000x when older builds or another client wrote milliseconds. One decoded file
+    /// is enough to tell: if the expected length of this track is 1000x the real one,
+    /// rescale the whole timeline so resume, chapters and durations agree again.
+    /// </summary>
+    private void RescaleTimelineIfNeeded(int trackIndex, TimeSpan actualDuration)
+    {
+        var actualSeconds = actualDuration.TotalSeconds;
+        if (actualSeconds <= 0) return;
+        if (trackIndex < 0 || trackIndex >= _trackDurations.Count) return;
+
+        var previous = trackIndex == 0 ? 0 : _trackDurations[trackIndex - 1];
+        var expected = _trackDurations[trackIndex] - previous;
+        if (expected <= 0) return;
+
+        var ratio = expected / actualSeconds;
+        if (ratio < 100 || ratio > 10000) return; // not a unit mismatch
+
+        for (var i = 0; i < _trackDurations.Count; i++)
+            _trackDurations[i] /= 1000.0;
+
+        foreach (var chapter in _chapters)
+        {
+            chapter.Start /= 1000.0;
+            chapter.End /= 1000.0;
+        }
+
+        if (_currentAudioBook != null)
+        {
+            var fixedResume = TimeSpan.FromSeconds(_currentAudioBook.CurrentTime.TotalSeconds / 1000.0);
+            _logger.LogWarning($"[Playback] Timeline looked 1000x too long (expected {expected:F0}s for a " +
+                               $"{actualSeconds:F0}s track) — rescaled. Resume {_currentAudioBook.CurrentTime} -> {fixedResume}");
+            _currentAudioBook.CurrentTime = fixedResume;
+            _ = PersistCorrectedProgressAsync();
+        }
+
+        _logger.Log($"[Playback] Rescaled book duration: {Duration}");
+    }
+
+    /// <summary>Writes a self-healed resume position back so the book is not re-broken on next open.</summary>
+    private async Task PersistCorrectedProgressAsync()
+    {
+        try
+        {
+            if (_currentAudioBook == null) return;
+            await _database.SavePlaybackProgressAsync(_currentAudioBook.Id, _currentAudioBook.CurrentTime, isFinished: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug($"[Playback] Persisting corrected progress failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Chapter times and the per-file track table are two independent estimates of the same
+    /// timeline. On a multi-file book (typically one file per chapter) integer rounding drifts
+    /// a second or two per file, so by chapter 300 the two disagree by minutes — a jump then
+    /// looks like it lands in the wrong chapter. When the counts line up 1:1 the files are the
+    /// ground truth (they are what the player actually seeks in), so use them.
+    /// </summary>
+    private void AlignChaptersToTracks()
+    {
+        if (_chapters.Count == 0 || _trackDurations.Count == 0) return;
+        if (_chapters.Count != _trackDurations.Count) return;
+
+        var changed = 0;
+        for (var i = 0; i < _chapters.Count; i++)
+        {
+            var start = i == 0 ? 0 : _trackDurations[i - 1];
+            var end = _trackDurations[i];
+
+            if (Math.Abs(_chapters[i].Start - start) > 0.5 || Math.Abs(_chapters[i].End - end) > 0.5)
+                changed++;
+
+            _chapters[i].Start = start;
+            _chapters[i].End = end;
+        }
+
+        if (changed > 0)
+            _logger.Log($"[Playback] Chapters aligned to the file table: {_chapters.Count} rows, " +
+                        $"{changed} differed by more than 0.5s");
+        else
+            _logger.LogDebug("[Playback] Chapters already match the file table");
+    }
+
+    /// <summary>
+    /// The cumulative track table is built from DB metadata, which can be missing or
+    /// stale (many library endpoints omit per-file duration). The decoder knows the
+    /// truth for the file we just opened, so shift the remaining entries by the delta —
+    /// that keeps both the total duration and every chapter offset honest.
+    /// </summary>
+    private void ReconcileTrackDuration(int trackIndex, TimeSpan actualDuration)
+    {
+        if (actualDuration.TotalSeconds <= 0) return;
+        if (trackIndex < 0 || trackIndex >= _trackDurations.Count) return;
+
+        var previous = trackIndex == 0 ? 0 : _trackDurations[trackIndex - 1];
+        var expected = previous + actualDuration.TotalSeconds;
+        var delta = expected - _trackDurations[trackIndex];
+
+        if (Math.Abs(delta) < 1.0) return; // already right within a second
+
+        for (var i = trackIndex; i < _trackDurations.Count; i++)
+            _trackDurations[i] += delta;
+
+        // Chapter times were derived from this table, so they have to follow it.
+        if (_chapters.Count == _trackDurations.Count)
+            AlignChaptersToTracks();
+
+        _logger.Log($"[Playback] Track {trackIndex + 1} duration corrected by {delta:+0.0;-0.0}s " +
+                    $"(book total now {TimeSpan.FromSeconds(_trackDurations.Last())})");
     }
 
     // Multi-track helpers — delegate to ITrackManager
@@ -996,7 +1640,52 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         _trackPaths.AddRange(result.Paths);
         _trackDurations.AddRange(result.CumulativeDurations);
 
-        _logger.Log($"[Playback] Built track list: {_trackPaths.Count} local files");
+        // Metadata from the server often omits per-file duration. A zero/duplicate step
+        // makes every offset (starting track, chapter seek, total duration) wrong, so
+        // probe the real durations from the files themselves before anything else runs.
+        if (_trackDurations.Count > 1 && HasBrokenDurations(_trackDurations))
+            RebuildDurationsFromFiles();
+
+        _logger.Log($"[Playback] Built track list: {_trackPaths.Count} local files, total {Duration}");
+    }
+
+    private static bool HasBrokenDurations(IReadOnlyList<double> cumulative)
+    {
+        var previous = 0.0;
+        foreach (var value in cumulative)
+        {
+            if (value <= previous) return true; // not strictly increasing
+            previous = value;
+        }
+        return false;
+    }
+
+    /// <summary>Reads real track lengths with the decoder and rebuilds the cumulative table.</summary>
+    private void RebuildDurationsFromFiles()
+    {
+        var rebuilt = new List<double>(_trackPaths.Count);
+        double cumulative = 0;
+
+        foreach (var path in _trackPaths)
+        {
+            double seconds = 0;
+            try
+            {
+                using var reader = new AudioFileReader(path);
+                seconds = reader.TotalTime.TotalSeconds;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug($"[Playback] Duration probe failed for {Path.GetFileName(path)}: {ex.Message}");
+            }
+
+            cumulative += Math.Max(0, seconds);
+            rebuilt.Add(cumulative);
+        }
+
+        _trackDurations.Clear();
+        _trackDurations.AddRange(rebuilt);
+        _logger.Log($"[Playback] Rebuilt {rebuilt.Count} track durations from disk (total {Duration})");
     }
 
     private void BuildStreamTrackDurations()
@@ -1021,6 +1710,21 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         if (_currentSession == null) return;
         try
         {
+            // Flush the last partial interval first: a session's listening time is the sum of
+            // the deltas it already received, so whatever is pending would otherwise be lost.
+            var pending = Math.Clamp(_pendingListenSeconds, 0, 120);
+            if (pending >= 1 && _apiService.IsAuthenticated)
+            {
+                var currentTime = Position.TotalSeconds;
+                var duration = Duration.TotalSeconds;
+                if (await _apiService.SyncSessionProgressAsync(
+                        _currentSession.Id, currentTime, duration, Math.Round(pending, 1)))
+                {
+                    _pendingListenSeconds = Math.Max(0, _pendingListenSeconds - pending);
+                    _accumulatedListenTime += pending;
+                }
+            }
+
             await _apiService.ClosePlaybackSessionAsync(_currentSession.Id);
             _logger.Log($"[Playback] Session closed");
         }
@@ -1249,7 +1953,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         // Dispose NAudio
         if (_outputDevice != null)
         {
-            try { _outputDevice.Stop(); } catch { }
+            try { _outputDevice.Stop(); } catch { /* best-effort: ignore */ }
             _outputDevice.Dispose();
             _outputDevice = null;
         }
@@ -1264,7 +1968,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 _mediaPlayer.Pause();
                 _mediaPlayer.Source = null;
             }
-            catch { }
+            catch { /* best-effort: ignore */ }
             _mediaPlayer.Dispose();
             _mediaPlayer = null;
         }
@@ -1276,7 +1980,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 _smtcPlayer.Pause();
                 _smtcPlayer.Source = null;
             }
-            catch { }
+            catch { /* best-effort: ignore */ }
             _smtcPlayer.Dispose();
             _smtcPlayer = null;
         }

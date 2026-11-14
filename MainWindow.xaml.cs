@@ -26,6 +26,8 @@ namespace NineLivesAudio
         private readonly IConnectivityService _connectivity;
         private readonly INavigationService _navigationService;
         private readonly MainViewModel _mainViewModel;
+        private readonly ILocalizationService _localization;
+        private readonly ITrayIconService _tray;
         private DateTime _lastMiniPlayerUpdate = DateTime.MinValue;
 
         // Window reference for preset sizing
@@ -42,7 +44,12 @@ namespace NineLivesAudio
             var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
             _appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
             _appWindow?.Resize(new Windows.Graphics.SizeInt32(550, 660)); // 10% larger than minimum
-            _appWindow?.SetIcon("Assets\\app-icon.ico"); // Taskbar + title bar icon
+            try
+            {
+                var windowIcon = Path.Combine(AppContext.BaseDirectory, "Assets", "app-icon.ico");
+                if (File.Exists(windowIcon)) _appWindow?.SetIcon(windowIcon); // Taskbar + title bar icon
+            }
+            catch { /* Non-fatal — icon is cosmetic */ }
 
             // Set title bar icon via Win32 (SetIcon doesn't reliably set the small icon)
             try
@@ -88,7 +95,13 @@ namespace NineLivesAudio
             _connectivity = App.Services.GetRequiredService<IConnectivityService>();
             _navigationService = App.Services.GetRequiredService<INavigationService>();
             _mainViewModel = App.Services.GetRequiredService<MainViewModel>();
+            _localization = App.Services.GetRequiredService<ILocalizationService>();
             this.Closed += MainWindow_Closed;
+
+            // Minimize-to-tray: the service swallows WM_SYSCOMMAND/SC_MINIMIZE while the
+            // setting is on, hides the window and keeps a notification-area icon around.
+            _tray = App.Services.GetRequiredService<ITrayIconService>();
+            _tray.Attach(this);
 
             // Wire MiniPlayer to playback events via Messenger
             WeakReferenceMessenger.Default.Register<PlaybackStateChangedMessage>(this, (r, m) =>
@@ -127,7 +140,7 @@ namespace NineLivesAudio
                 InitOverlay.Visibility = Visibility.Visible;
                 InitErrorPanel.Visibility = Visibility.Collapsed;
                 AppContent.Visibility = Visibility.Collapsed;
-                InitStatusText.Text = "Initializing...";
+                InitStatusText.Text = _localization.GetString("Initializing");
 
                 await _initializer.InitializeAsync();
 
@@ -137,7 +150,7 @@ namespace NineLivesAudio
                 }
                 else
                 {
-                    ShowInitError(_initializer.ErrorMessage ?? "Unknown initialization error");
+                    ShowInitError(_initializer.ErrorMessage ?? _localization.GetString("UnknownInitError"));
                 }
             }
             catch (Exception ex)
@@ -149,6 +162,9 @@ namespace NineLivesAudio
 
         private void ShowApp()
         {
+            ApplyLocalization();
+            _localization.LanguageChanged -= ApplyLocalization;
+            _localization.LanguageChanged += ApplyLocalization;
             InitOverlay.Visibility = Visibility.Collapsed;
             InitErrorPanel.Visibility = Visibility.Collapsed;
             AppContent.Visibility = Visibility.Visible;
@@ -181,9 +197,7 @@ namespace NineLivesAudio
         {
             try
             {
-                var logDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "NineLivesAudio", "Logs");
+                var logDir = NineLivesAudio.Helpers.AppPaths.LogsDirectory;
                 Process.Start(new ProcessStartInfo { FileName = logDir, UseShellExecute = true });
             }
             catch (Exception ex)
@@ -226,19 +240,19 @@ namespace NineLivesAudio
             if (!isOnline)
             {
                 ConnectivityIcon.Foreground = (Brush)Application.Current.Resources["RitualErrorBrush"];
-                ConnectivityText.Text = "Offline";
+                ConnectivityText.Text = _localization.GetString("Offline");
                 ConnectivityText.Foreground = (Brush)Application.Current.Resources["MistFaintBrush"];
             }
             else if (!isServerReachable)
             {
                 ConnectivityIcon.Foreground = (Brush)Application.Current.Resources["RitualWarningBrush"];
-                ConnectivityText.Text = "Server unreachable";
+                ConnectivityText.Text = _localization.GetString("ServerUnreachable");
                 ConnectivityText.Foreground = (Brush)Application.Current.Resources["MistFaintBrush"];
             }
             else
             {
                 ConnectivityIcon.Foreground = (Brush)Application.Current.Resources["RitualSuccessBrush"];
-                ConnectivityText.Text = "Connected";
+                ConnectivityText.Text = _localization.GetString("Connected");
                 ConnectivityText.Foreground = (Brush)Application.Current.Resources["StarlightBrush"];
             }
         }
@@ -481,10 +495,31 @@ namespace NineLivesAudio
             WeakReferenceMessenger.Default.UnregisterAll(this);
             this.Closed -= MainWindow_Closed;
 
+            // Never leave an icon behind in the notification area.
+            _tray?.Dispose();
+
             if (_mainViewModel is IDisposable disposable)
             {
                 disposable.Dispose();
             }
         }
+        private void ApplyLocalization()
+        {
+            if (NavHomeItem != null) NavHomeItem.Content = _localization.GetString("NavHome");
+            if (NavLibraryItem != null) NavLibraryItem.Content = _localization.GetString("NavLibrary");
+            if (NavPlayerItem != null) NavPlayerItem.Content = _localization.GetString("NavPlayer");
+            if (NavDownloadsItem != null) NavDownloadsItem.Content = _localization.GetString("NavDownloads");
+            if (RetryButton != null) RetryButton.Content = _localization.GetString("Retry");
+            if (OpenLogsButton != null) OpenLogsButton.Content = _localization.GetString("OpenLogs");
+            if (ResetButton != null) ResetButton.Content = _localization.GetString("ResetConnection");
+
+            // Mini-player bar tooltips
+            if (MiniRewindBtn != null) ToolTipService.SetToolTip(MiniRewindBtn, _localization.GetString("SkipBackTip"));
+            if (MiniForwardBtn != null) ToolTipService.SetToolTip(MiniForwardBtn, _localization.GetString("SkipForwardTip"));
+            if (MiniPlayPauseBtn != null) ToolTipService.SetToolTip(MiniPlayPauseBtn, _localization.GetString("PlayPauseTip"));
+            // Re-render the status dot text in the new language.
+            UpdateConnectivityUI(_connectivity.IsOnline, _connectivity.IsServerReachable);
+        }
+
     }
 }

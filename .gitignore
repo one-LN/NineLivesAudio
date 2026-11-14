@@ -31,3 +31,8 @@ appsettings.Development.json
 *.key
 *.crt
 *.cer
+
+# App runtime data (local only)
+Logs/
+Exports/
+*.log
