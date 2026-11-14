@@ -57,6 +57,9 @@ public class AppInitializer : IAppInitializer
             // Apply persisted UI language now that settings are loaded.
             _localization.RefreshFromSettings();
             _logger.Log($"AppInitializer: database + settings ready (server={_settingsService.Settings.ServerUrl})");
+            var skipSettings = _settingsService.Settings;
+            _logger.Log($"AppInitializer: skip settings — intro {skipSettings.SkipIntroSeconds}s, " +
+                        $"outro {skipSettings.SkipOutroSeconds}s (applied to every chapter)");
 
             // Stage 2: Validate token with timeout — transition to Ready quickly
             if (!string.IsNullOrEmpty(_settingsService.Settings.ServerUrl))

@@ -83,6 +83,37 @@ public class LoggingService : ILoggingService, IDisposable
 
         Log($"=== Session {SessionId} started ===");
         Log($"Log file: {_logPath}");
+        Log($"Build: {DescribeBuild()}");
+    }
+
+    /// <summary>
+    /// "1.0.1.0 (compiled 2026-11-14 06:41)" — the compiled date comes from the PE header, so
+    /// a log can always be matched to the build it was produced by (the packaged exe would
+    /// otherwise only show the time it was copied into Program Files).
+    /// </summary>
+    public static string DescribeBuild()
+    {
+        var version = typeof(LoggingService).Assembly.GetName().Version?.ToString() ?? "unknown";
+        try
+        {
+            var path = typeof(LoggingService).Assembly.Location;
+            if (string.IsNullOrEmpty(path))
+                path = Environment.ProcessPath ?? string.Empty;
+            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+            {
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var reader = new BinaryReader(stream);
+                stream.Seek(0x3C, SeekOrigin.Begin);
+                var peOffset = reader.ReadInt32();
+                stream.Seek(peOffset + 8, SeekOrigin.Begin);
+                var seconds = reader.ReadUInt32();
+                var compiled = DateTimeOffset.FromUnixTimeSeconds(seconds).ToLocalTime();
+                if (compiled.Year is > 2020 and < 2100)
+                    return $"{version} (compiled {compiled:yyyy-MM-dd HH:mm})";
+            }
+        }
+        catch { /* version-only fallback */ }
+        return version;
     }
 
     public void Log(string message, LogLevel level = LogLevel.Info)
