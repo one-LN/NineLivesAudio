@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Single-file launcher.
+
+    WinUI 3 / Windows App SDK cannot be published with PublishSingleFile (the native
+    WinAppSDK DLLs must sit next to the executable for WinRT activation), so "one file"
+    is delivered the other way round: this ~4 MB loader embeds the real publish output as
+    a compressed payload, unpacks it next to itself on first run and then starts it.
+
+    Data lives in <folder of this exe>\data (the launcher exports NINELIVES_DATA_DIR), so
+    the whole app is one exe plus a data folder you can copy around.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RootNamespace>NineLivesAudio.Launcher</RootNamespace>
+    <AssemblyName>NineLivesAudio</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <StripSymbols>true</StripSymbols>
+    <UseAppHost>true</UseAppHost>
+    <Version>1.0.3</Version>
+    <FileVersion>1.0.3.0</FileVersion>
+    <Company>Static Hum Studio</Company>
+    <Product>Nine Lives Audio</Product>
+    <Description>Single-file starter for Nine Lives Audio.</Description>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('payload.zip')">
+    <EmbeddedResource Include="payload.zip" LogicalName="payload.zip" />
+  </ItemGroup>
+
+</Project>
