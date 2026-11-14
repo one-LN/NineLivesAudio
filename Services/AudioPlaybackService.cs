@@ -48,8 +48,10 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     private PeriodicTimer? _sessionSyncTimer;
     private CancellationTokenSource? _sessionSyncCts;
     private DateTime _sessionStartTime;
-    private double _accumulatedListenTime;
+    private double _accumulatedListenTime;   // total reported to the server this session
+    private double _pendingListenSeconds;    // played but not sent yet (delta on next sync)
     private DateTime _lastSyncTickTime;
+    private DateTime _lastListenTick;
 
     // Multi-track state
     private List<string> _trackPaths = new();     // local file paths for multi-track
@@ -151,6 +153,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         WeakReferenceMessenger.Default.Send(new PositionChangedMessage(position));
         UpdateCurrentChapter();
         DetectPlaybackStall(position.TotalSeconds);
+        TrackListeningTime();
         _ = ApplyChapterSkipsAsync();
     }
 
@@ -173,6 +176,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             _isLocalFile = false;
             _currentTrackIndex = 0;
             _accumulatedListenTime = 0;
+            _pendingListenSeconds = 0;
+            _lastListenTick = DateTime.UtcNow;
             _trackPaths.Clear();
             _streamTracks.Clear();
             _trackDurations.Clear();
@@ -986,13 +991,29 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         {
             try
             {
-                var now = DateTime.UtcNow;
-                var tickElapsed = (now - _lastSyncTickTime).TotalSeconds;
-                _lastSyncTickTime = now;
-                _accumulatedListenTime += tickElapsed * _playbackSpeed;
-                await _apiService.SyncSessionProgressAsync(
-                    _currentSession.Id, currentTime, duration, _accumulatedListenTime);
-                _logger.LogDebug($"[Playback] Session sync: {currentTime:F1}s, listened: {_accumulatedListenTime:F0}s");
+                // The Audiobookshelf API defines timeListened as "the time listened since the
+                // last session sync" and the server ADDS it to the session total. Sending the
+                // running total (the old behaviour) made every sync add the whole session
+                // again, which is why daily listening stats exploded into hundreds of hours.
+                var delta = Math.Clamp(_pendingListenSeconds, 0, 120);
+                _lastSyncTickTime = DateTime.UtcNow;
+
+                var sent = await _apiService.SyncSessionProgressAsync(
+                    _currentSession.Id, currentTime, duration, Math.Round(delta, 1));
+
+                if (sent)
+                {
+                    _pendingListenSeconds = Math.Max(0, _pendingListenSeconds - delta);
+                    _accumulatedListenTime += delta;
+                }
+                else
+                {
+                    // Keep it for the next attempt; the cap above stops it from growing forever.
+                    _logger.LogDebug("[Playback] Session sync rejected — keeping listening time for the next tick");
+                }
+
+                _logger.LogDebug($"[Playback] Session sync: {currentTime:F1}s, +{delta:F0}s " +
+                                 $"(session total {_accumulatedListenTime:F0}s)");
             }
             catch (Exception ex)
             {
@@ -1005,6 +1026,29 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             await _syncService.ReportPlaybackPositionAsync(
                 _currentAudioBook.Id, currentTime, duration);
         }
+    }
+
+    /// <summary>
+    /// Counts how long audio actually played, for the <c>timeListened</c> delta the server
+    /// expects on every session sync. Wall-clock time while paused or buffering must not
+    /// count — it would be reported as listening.
+    /// </summary>
+    private void TrackListeningTime()
+    {
+        var now = DateTime.UtcNow;
+
+        if (_state != PlaybackState.Playing)
+        {
+            _lastListenTick = now;
+            return;
+        }
+
+        var elapsed = (now - _lastListenTick).TotalSeconds;
+        _lastListenTick = now;
+
+        // Guard against a stalled tick or a clock jump being credited as listening.
+        if (elapsed is > 0 and < 5)
+            _pendingListenSeconds += elapsed * Math.Max(0.5, _playbackSpeed);
     }
 
     /// <summary>
@@ -1666,6 +1710,21 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         if (_currentSession == null) return;
         try
         {
+            // Flush the last partial interval first: a session's listening time is the sum of
+            // the deltas it already received, so whatever is pending would otherwise be lost.
+            var pending = Math.Clamp(_pendingListenSeconds, 0, 120);
+            if (pending >= 1 && _apiService.IsAuthenticated)
+            {
+                var currentTime = Position.TotalSeconds;
+                var duration = Duration.TotalSeconds;
+                if (await _apiService.SyncSessionProgressAsync(
+                        _currentSession.Id, currentTime, duration, Math.Round(pending, 1)))
+                {
+                    _pendingListenSeconds = Math.Max(0, _pendingListenSeconds - pending);
+                    _accumulatedListenTime += pending;
+                }
+            }
+
             await _apiService.ClosePlaybackSessionAsync(_currentSession.Id);
             _logger.Log($"[Playback] Session closed");
         }

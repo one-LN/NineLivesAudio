@@ -95,23 +95,7 @@ public static class AppPaths
         try
         {
             if (string.Equals(DataRoot, LegacyRoot, StringComparison.OrdinalIgnoreCase)) return;
-
-            // Possible previous homes, newest layout first:
-            //  · install folder\data   (1.0.2 installed version, installer default location)
-            //  · %LOCALAPPDATA%\NineLivesAudio (1.0.1 and older)
-            var programs = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var candidates = new[]
-            {
-                Path.Combine(programs, "Programs", "Nine Lives Audio", "data"),
-                Path.Combine(programs, "Programs", "NineLivesAudio", "data"),
-                LegacyRoot
-            };
-
-            var source = candidates.FirstOrDefault(dir =>
-                !string.Equals(Path.GetFullPath(dir), Path.GetFullPath(DataRoot), StringComparison.OrdinalIgnoreCase) &&
-                File.Exists(Path.Combine(dir, "settings.json")));
-
-            if (source == null) return;
+            if (!Directory.Exists(LegacyRoot)) return;
 
             var copied = new List<string>();
             foreach (var name in new[]
@@ -120,12 +104,12 @@ public static class AppPaths
                          "audiobookshelf.db", "audiobookshelf.db-wal", "audiobookshelf.db-shm"
                      })
             {
-                var from = Path.Combine(source!, name);
+                var source = Path.Combine(LegacyRoot, name);
                 var target = Path.Combine(DataRoot, name);
-                if (!File.Exists(from) || File.Exists(target)) continue;
+                if (!File.Exists(source) || File.Exists(target)) continue;
                 try
                 {
-                    File.Copy(from, target);
+                    File.Copy(source, target);
                     copied.Add(name);
                 }
                 catch { /* skip this one, keep the rest */ }
@@ -134,7 +118,7 @@ public static class AppPaths
             // Logs are only history, but having them in the same folder is the point of the move.
             try
             {
-                var oldLogs = Path.Combine(source, "Logs");
+                var oldLogs = Path.Combine(LegacyRoot, "Logs");
                 if (Directory.Exists(oldLogs))
                 {
                     var newLogs = LogsDirectory;
@@ -151,7 +135,7 @@ public static class AppPaths
             if (copied.Count > 0)
             {
                 LoggingService.LogStatic(LogLevel.Info,
-                    $"[Paths] Data folder: {DataRoot} — imported {string.Join(", ", copied)} from {source}");
+                    $"[Paths] Data folder: {DataRoot} — imported {string.Join(", ", copied)} from {LegacyRoot}");
             }
         }
         catch { /* migration is best effort; services recreate what is missing */ }

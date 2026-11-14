@@ -23,9 +23,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <DefaultLanguage>en-US</DefaultLanguage>
-    <Version>1.0.3</Version>
-    <AssemblyVersion>1.0.3.0</AssemblyVersion>
-    <FileVersion>1.0.3.0</FileVersion>
+    <Version>1.0.4</Version>
+    <AssemblyVersion>1.0.4.0</AssemblyVersion>
+    <FileVersion>1.0.4.0</FileVersion>
     <Company>Static Hum Studio</Company>
     <Product>Nine Lives Audio</Product>
     <Description>Native Windows client for Audiobookshelf with offline downloads and sync.</Description>
@@ -35,17 +35,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="NineLivesAudio.Tests" />
-  </ItemGroup>
-
-  <!-- The single-file launcher is its own project (see launcher/). Keep the wildcard globs
-       of this project away from it: two entry points in one assembly would not compile. -->
-  <ItemGroup>
-    <Compile Remove="launcher\**" />
-    <Page Remove="launcher\**" />
-    <None Remove="launcher\**" />
-    <Content Remove="launcher\**" />
-    <EmbeddedResource Remove="launcher\**" />
-    <PRIResource Remove="launcher\**" />
   </ItemGroup>
 
   <ItemGroup>

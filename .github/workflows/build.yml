@@ -83,34 +83,6 @@ jobs:
             Write-Host "No stray language folders."
           }
 
-      # ── Single-file build ────────────────────────────────────────────────────────
-      # WinUI 3 cannot be published with PublishSingleFile (WinAppSDK native DLLs have to be
-      # on disk), so the publish output is embedded into a small AOT launcher that unpacks it
-      # next to itself on first run. Result: one exe the user can copy anywhere.
-      - name: Package payload for the single-file build
-        shell: pwsh
-        run: Compress-Archive -Path binpublish/* -DestinationPath launcher/payload.zip -Force
-
-      - name: Publish single-file launcher
-        shell: pwsh
-        run: dotnet publish launcher/NineLivesAudio.Launcher.csproj -c Release -r win-x64 -o launcher_out
-
-      - name: Single-file summary
-        shell: pwsh
-        run: |
-          $exe = 'launcher_out/NineLivesAudio.exe'
-          if (-not (Test-Path $exe)) { Write-Error 'launcher_out/NineLivesAudio.exe was not produced'; exit 1 }
-          $size = [math]::Round(((Get-Item $exe).Length / 1MB), 1)
-          Write-Host "Single file: $exe · $size MB"
-
-      - name: Upload single-file build
-        uses: actions/upload-artifact@v4
-        with:
-          name: NineLivesAudio-single-exe
-          path: launcher_out/NineLivesAudio.exe
-          if-no-files-found: error
-          retention-days: 30
-
       # Optional: the runner image ships Inno Setup 6, so a setup.exe is produced too.
       # A missing ISCC.exe must not fail the portable build.
       - name: Compile installer (Inno Setup)
@@ -162,9 +134,8 @@ jobs:
           {
             echo "Automated build of \`$SHA\` from \`$REF\`."
             echo ""
-            echo "- **NineLivesAudio.exe** — single file: put it in any folder, double-click; the first start unpacks once."
-            echo "- **NineLivesAudio-win-x64-portable.zip** — the same app as a plain folder, if you prefer no unpacking."
-            echo "- The installer (NineLivesAudioSetup.exe) is still built as a CI artifact for the Start Menu / uninstall path."
+            echo "- Installer: **NineLivesAudioSetup.exe**"
+            echo "- Portable: **NineLivesAudio-win-x64-portable.zip** (unzip anywhere, run NineLivesAudio.exe)"
             echo ""
             echo "Every new build replaces the assets of this release."
           } > release-notes.md
@@ -174,6 +145,6 @@ jobs:
           else
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
           fi
-          gh release upload "$TAG" launcher_out/NineLivesAudio.exe \
+          gh release upload "$TAG" installer_output/NineLivesAudioSetup.exe \
             NineLivesAudio-win-x64-portable.zip --clobber --repo "$GITHUB_REPOSITORY"
           echo "Download: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
