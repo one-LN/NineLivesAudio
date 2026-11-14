@@ -25,6 +25,7 @@ public sealed partial class PlayerPage : Page
     private readonly IAudioBookshelfApiService _apiService;
     private readonly ILocalizationService _localization;
     private readonly ISettingsService _settingsService;
+    private readonly INotificationService _notifications;
     private bool _isUserSeeking = false;
     private Flyout? _chapterFlyout;
     private bool _isChapterMode = false;
@@ -46,6 +47,7 @@ public sealed partial class PlayerPage : Page
         _apiService = App.Services.GetRequiredService<IAudioBookshelfApiService>();
         _localization = App.Services.GetRequiredService<ILocalizationService>();
         _settingsService = App.Services.GetRequiredService<ISettingsService>();
+        _notifications = App.Services.GetRequiredService<INotificationService>();
         this.InitializeComponent();
         RegisterChapterAccelerators();
     }
@@ -217,6 +219,7 @@ public sealed partial class PlayerPage : Page
 
         // Track indicator (multi-file)
         UpdateTrackIndicator();
+        UpdateChapterBoundsText();
 
         // Chapter UI
         UpdateChapterUI();
@@ -280,6 +283,7 @@ public sealed partial class PlayerPage : Page
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            UpdateChapterBoundsText();
             UpdateChapterUI();
             if (_isChapterMode)
             {
@@ -288,12 +292,32 @@ public sealed partial class PlayerPage : Page
         });
     }
 
+    /// <summary>
+    /// Shows where the current chapter sits on the book timeline ("starts 16:39:39 ·
+    /// ends 16:47:42"), so the chapter's own beginning and end are visible without
+    /// opening anything.
+    /// </summary>
+    private void UpdateChapterBoundsText()
+    {
+        var chapter = _playbackService.CurrentChapter;
+        if (chapter == null || chapter.End <= chapter.Start)
+        {
+            ChapterBoundsText.Text = string.Empty;
+            return;
+        }
+
+        ChapterBoundsText.Text = string.Format(
+            _localization.GetString("ChapterBounds"),
+            TimeFormatHelper.FormatDuration(chapter.StartTime),
+            TimeFormatHelper.FormatDuration(chapter.EndTime));
+    }
+
     private void UpdateChapterUI()
     {
         var chapters = _playbackService.Chapters;
         var hasChapters = chapters.Count > 0;
 
-        ChapterNameText.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
+        ChapterNameButton.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
         PrevChapterButton.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
         NextChapterButton.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
         ChaptersButtonPanel.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
@@ -301,6 +325,8 @@ public sealed partial class PlayerPage : Page
 
         // Show/hide chapter mode toggle
         ChapterModePanel.Visibility = hasChapters ? Visibility.Visible : Visibility.Collapsed;
+
+        UpdateChapterBoundsText();
 
         // If no chapters and chapter mode was on, turn it off for this book only —
         // the saved preference must survive a book that simply has no chapters.
@@ -336,6 +362,7 @@ public sealed partial class PlayerPage : Page
     private async Task SeekToChapterAsync(int chapterIndex)
     {
         var chapters = _playbackService.Chapters;
+        _logger.Log($"[Player] Chapter jump requested: index {chapterIndex} of {chapters.Count - 1}");
         if (chapterIndex < 0 || chapterIndex >= chapters.Count) return;
 
         try
@@ -365,7 +392,21 @@ public sealed partial class PlayerPage : Page
 
     private void ChaptersButton_Click(object sender, RoutedEventArgs e)
     {
+        try
+        {
+            ShowChapterPicker();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("[Player] Chapter picker failed to open", ex);
+            _notifications.ShowError(ex.Message, _localization.GetString("Playback"));
+        }
+    }
+
+    private void ShowChapterPicker()
+    {
         var chapters = _playbackService.Chapters;
+        _logger.Log($"[Player] Chapter picker opened: {chapters.Count} chapters, current index {_playbackService.CurrentChapterIndex}");
         if (chapters.Count == 0) return;
 
         var currentIndex = _playbackService.CurrentChapterIndex;

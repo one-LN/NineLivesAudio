@@ -1013,6 +1013,9 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         if (newIndex != _currentChapterIndex)
         {
             _currentChapterIndex = newIndex;
+            var chapter = CurrentChapter;
+            _logger.LogDebug($"[Playback] Chapter -> #{newIndex + 1}/{_chapters.Count} at {posSeconds:F0}s " +
+                             $"(bounds {chapter?.Start:F0}s–{chapter?.End:F0}s) '{chapter?.Title}'");
             WeakReferenceMessenger.Default.Send(new ChapterChangedMessage(CurrentChapter));
         }
     }

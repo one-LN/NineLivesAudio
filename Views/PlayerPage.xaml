@@ -179,15 +179,31 @@
                            Opacity="0.6"
                            Visibility="Collapsed"/>
 
-                <!-- Chapter Name -->
-                <TextBlock x:Name="ChapterNameText"
-                           Style="{StaticResource CaptionStyle}"
-                           TextAlignment="Center"
-                           Margin="0,4,0,0"
-                           Opacity="0.8"
-                           TextTrimming="CharacterEllipsis"
-                           MaxLines="1"
-                           Visibility="Collapsed"/>
+                <!-- Chapter name + its exact start/end on the book timeline.
+                     Tapping it opens the chapter picker, so the title itself works as the
+                     "show me the chapters" affordance. -->
+                <Button x:Name="ChapterNameButton"
+                        Click="ChaptersButton_Click"
+                        HorizontalAlignment="Center"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="8,0"
+                        Margin="0,2,0,0"
+                        Visibility="Collapsed">
+                    <StackPanel Spacing="1">
+                        <TextBlock x:Name="ChapterNameText"
+                                   Style="{StaticResource CaptionStyle}"
+                                   TextAlignment="Center"
+                                   Opacity="0.8"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxLines="1"/>
+                        <TextBlock x:Name="ChapterBoundsText"
+                                   Style="{StaticResource CaptionStyle}"
+                                   TextAlignment="Center"
+                                   FontSize="11"
+                                   Opacity="0.55"/>
+                    </StackPanel>
+                </Button>
 
                 <!-- Progress Slider -->
                 <Grid Margin="0,12,0,0">
