@@ -63,7 +63,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     private int _currentChapterIndex = -1;
 
     // Skip intro / outro (global settings, see AppSettings.SkipIntroSeconds/SkipOutroSeconds)
-    private bool _introSkipApplied;
+    private int _introSkippedChapterIndex = -1;
     private bool _outroSkipInProgress;
 
     private enum StartupProgressStatus
@@ -176,7 +176,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             _autoAdvancing = false;
             _chapters = audioBook.Chapters.OrderBy(c => c.Start).ToList();
             _currentChapterIndex = -1;
-            _introSkipApplied = false;
+            _introSkippedChapterIndex = -1;
             _outroSkipInProgress = false;
             _startupProgressStatus = StartupProgressStatus.Unknown;
 
@@ -560,7 +560,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         StartSessionSyncTimer();
         UpdateSmtcPlaybackState(true);
 
-        await ApplyIntroSkipAsync();
+        // Chapter intro skipping happens from UpdateCurrentChapter, which knows which
+        // chapter the position belongs to.
     }
 
     public Task PauseAsync()
@@ -590,7 +591,7 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     {
         StopSessionSyncTimer();
         _positionTimer?.Stop();
-        _introSkipApplied = false;
+        _introSkippedChapterIndex = -1;
 
         // Flush final progress before stopping
         if (_currentAudioBook != null)
@@ -1035,6 +1036,10 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             _logger.LogDebug($"[Playback] Chapter -> #{newIndex + 1}/{_chapters.Count} at {posSeconds:F0}s " +
                              $"(bounds {chapter?.Start:F0}s–{chapter?.End:F0}s) '{chapter?.Title}'");
             WeakReferenceMessenger.Default.Send(new ChapterChangedMessage(CurrentChapter));
+
+            // Every chapter gets its intro trimmed, not just the first one of the book.
+            if (chapter != null)
+                _ = ApplyChapterIntroSkipAsync(chapter, newIndex);
         }
     }
 
@@ -1069,45 +1074,55 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     /// Jumps past the configured intro once per book load. Only applies while the
     /// position is still inside the intro, so resuming mid-book never jumps backwards.
     /// </summary>
-    private async Task ApplyIntroSkipAsync()
+    /// <summary>
+    /// "Skip the first N seconds" applies to <b>every chapter</b>, not just the opening of
+    /// the book: multi-file audiobooks repeat their intro (recap, credits, intro music) on
+    /// each chapter, and that is what the setting is for.
+    /// <para>
+    /// Runs once per chapter entry — a manual rewind inside the same chapter is respected.
+    /// </para>
+    /// </summary>
+    private async Task ApplyChapterIntroSkipAsync(Chapter chapter, int chapterIndex)
     {
-        if (_introSkipApplied) return;
-        _introSkipApplied = true;
-
         var skip = Math.Max(0, _settingsService.Settings.SkipIntroSeconds);
-        if (skip <= 0)
+        if (skip <= 0) return;
+        if (chapterIndex < 0 || _introSkippedChapterIndex == chapterIndex) return;
+
+        // Never eat a chapter that is barely longer than the skip window.
+        if (chapter.Duration.TotalSeconds <= skip * 1.5)
         {
-            _logger.LogDebug("[Playback] Skip intro disabled (SkipIntroSeconds = 0)");
+            _logger.LogDebug($"[Playback] Chapter intro skip ignored: chapter is only {chapter.Duration.TotalSeconds:F0}s long");
             return;
         }
 
-        var duration = Duration.TotalSeconds;
-        if (duration > 0 && duration <= skip * 2)
-        {
-            _logger.LogDebug($"[Playback] Skip intro ignored: book is only {duration:F0}s long");
-            return;
-        }
+        var target = chapter.Start + skip;
+        var position = Position.TotalSeconds;
 
-        if (Position.TotalSeconds >= skip - 1)
-        {
-            _logger.LogDebug($"[Playback] Skip intro not needed: position {Position.TotalSeconds:F0}s >= {skip}s");
-            return;
-        }
+        if (position >= target - 1) return;              // already past the intro
+        if (position < chapter.Start - 1) return;        // not in this chapter yet
 
-        _logger.Log($"[Playback] Skipping intro: {Position.TotalSeconds:F0}s -> {skip}s");
+        _introSkippedChapterIndex = chapterIndex;
+        _logger.Log($"[Playback] Skipping chapter intro: {position:F0}s -> {target:F0}s " +
+                    $"(chapter #{chapterIndex + 1}, skip {skip}s)");
+
         try
         {
-            await SeekAsync(TimeSpan.FromSeconds(skip));
+            await SeekAsync(TimeSpan.FromSeconds(target));
         }
         catch (Exception ex)
         {
-            _logger.LogError("[Playback] Skip intro failed", ex);
+            _logger.LogError("[Playback] Chapter intro skip failed", ex);
         }
     }
 
     /// <summary>
     /// When fewer than <see cref="AppSettings.SkipOutroSeconds"/> remain, continue with the
     /// next chapter; on the last chapter the book is finished instead.
+    /// </summary>
+    /// <summary>
+    /// "Skip the last N seconds" is per chapter too: when fewer than N seconds remain in the
+    /// chapter that is playing, continue with the next one (and finish the book from the last
+    /// chapter). Uses the chapter's own end, so it works at chapter 700 just as well as at 7.
     /// </summary>
     private async Task TrySkipOutroAsync()
     {
@@ -1116,43 +1131,34 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         var skip = Math.Max(0, _settingsService.Settings.SkipOutroSeconds);
         if (skip <= 0) return; // feature off
 
-        // The live duration can still be 0 (stream not opened yet, or a book whose
-        // per-file metadata has no length) — fall back to the book's own duration so a
-        // correctly configured outro is not silently ignored.
-        var duration = Duration.TotalSeconds;
-        if (duration <= 0)
-            duration = _currentAudioBook?.Duration.TotalSeconds ?? 0;
+        var chapter = CurrentChapter;
+        if (chapter == null || _currentChapterIndex < 0) return;
 
-        if (duration <= 0 || duration <= skip * 2) return; // misconfigured for a short book
+        var chapterLength = chapter.Duration.TotalSeconds;
+        if (chapterLength <= 0 || chapterLength <= skip * 1.5) return; // don't gut a short chapter
 
-        if (duration - Position.TotalSeconds > skip) return;
+        var remaining = chapter.End - Position.TotalSeconds;
+        if (remaining > skip || remaining < -1) return;
 
         _outroSkipInProgress = true;
         try
         {
-            var position = Position.TotalSeconds;
-            Chapter? next = null;
-            foreach (var chapter in _chapters)
+            var nextIndex = _currentChapterIndex + 1;
+            if (nextIndex < _chapters.Count)
             {
-                if (chapter.Start > position + 0.5) { next = chapter; break; }
-            }
-
-            if (next != null)
-            {
-                _logger.Log($"[Playback] Skip outro: continuing with '{next.Title}' at {next.Start:F0}s");
-                await SeekAsync(TimeSpan.FromSeconds(next.Start));
-                _currentChapterIndex = _chapters.IndexOf(next);
-                WeakReferenceMessenger.Default.Send(new ChapterChangedMessage(next));
+                _logger.Log($"[Playback] Skip chapter outro ({remaining:F0}s left of #{_currentChapterIndex + 1}) " +
+                            $"— continuing with chapter #{nextIndex + 1}");
+                await SeekToChapterAsync(nextIndex);
             }
             else
             {
-                _logger.Log("[Playback] Skip outro: last chapter reached — finishing book");
+                _logger.Log("[Playback] Skip chapter outro: last chapter reached — finishing book");
                 await FinishCurrentBookAsync();
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError("[Playback] Skip outro failed", ex);
+            _logger.LogError("[Playback] Chapter outro skip failed", ex);
         }
         finally
         {

@@ -90,10 +90,10 @@ public sealed class LocalizationService : ILocalizationService
         ["en-US"] = new Dictionary<string, string>
         {
             // Navigation
-            ["SkipIntro"] = "Skip intro",
-            ["SkipIntroHint"] = "Seconds skipped automatically when a book starts playing. Saved immediately — no need to press Save (0 = off).",
-            ["SkipOutro"] = "Skip outro",
-            ["SkipOutroHint"] = "When fewer than this many seconds remain, continue with the next chapter; on the last chapter the book is marked finished. Saved immediately (0 = off).",
+            ["SkipIntro"] = "Skip chapter intro",
+            ["SkipIntroHint"] = "Seconds skipped at the start of every chapter (recap, credits, intro music). Saved immediately (0 = off).",
+            ["SkipOutro"] = "Skip chapter outro",
+            ["SkipOutroHint"] = "When fewer than this many seconds remain in the current chapter, jump to the next one; on the last chapter the book is marked finished. Saved immediately (0 = off).",
             ["StartingUp"] = "Starting up...",
             ["Initializing"] = "Initializing...",
             ["StartupFailed"] = "Startup Failed",
@@ -371,10 +371,10 @@ public sealed class LocalizationService : ILocalizationService
         ["zh-CN"] = new Dictionary<string, string>
         {
             // 导航
-            ["SkipIntro"] = "跳过开头",
-            ["SkipIntroHint"] = "书籍开始播放时自动跳过的秒数。修改即时生效，无需点保存（0 = 关闭）。",
-            ["SkipOutro"] = "跳过结尾",
-            ["SkipOutroHint"] = "剩余不足这么多秒时自动跳到下一章；最后一章则直接标记为已听完。修改即时生效（0 = 关闭）。",
+            ["SkipIntro"] = "每章跳过开头",
+            ["SkipIntroHint"] = "每一章开始时自动跳过的秒数（片头、报幕、片头音乐）。修改即时生效，无需点保存（0 = 关闭）。",
+            ["SkipOutro"] = "每章跳过结尾",
+            ["SkipOutroHint"] = "本章剩余不足这么多秒时自动跳到下一章；最后一章则直接标记为已听完。修改即时生效（0 = 关闭）。",
             ["StartingUp"] = "正在启动...",
             ["Initializing"] = "正在初始化...",
             ["StartupFailed"] = "启动失败",
