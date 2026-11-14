@@ -27,7 +27,6 @@ public sealed partial class PlayerPage : Page
     private readonly ISettingsService _settingsService;
     private readonly INotificationService _notifications;
     private bool _isUserSeeking = false;
-    private Flyout? _chapterFlyout;
     private bool _isChapterMode = false;
 
     // Set while the toggle is changed by code (restore / "this book has no chapters")
@@ -308,8 +307,8 @@ public sealed partial class PlayerPage : Page
 
         ChapterBoundsText.Text = string.Format(
             _localization.GetString("ChapterBounds"),
-            TimeFormatHelper.FormatDuration(chapter.StartTime),
-            TimeFormatHelper.FormatDuration(chapter.EndTime));
+            TimeFormatHelper.FormatTimeSpan(chapter.StartTime),
+            TimeFormatHelper.FormatTimeSpan(chapter.EndTime));
     }
 
     private void UpdateChapterUI()
@@ -362,17 +361,44 @@ public sealed partial class PlayerPage : Page
     private async Task SeekToChapterAsync(int chapterIndex)
     {
         var chapters = _playbackService.Chapters;
-        _logger.Log($"[Player] Chapter jump requested: index {chapterIndex} of {chapters.Count - 1}");
-        if (chapterIndex < 0 || chapterIndex >= chapters.Count) return;
+        var before = _playbackService.Position;
+        _logger.Log($"[Player] Chapter jump requested: index {chapterIndex} of {chapters.Count - 1} (from {before})");
+
+        if (chapterIndex < 0 || chapterIndex >= chapters.Count)
+        {
+            _logger.LogWarning($"[Player] Chapter jump ignored: index {chapterIndex} is out of range");
+            return;
+        }
+
+        var target = chapters[chapterIndex].StartTime;
+
+        // A cross-file jump has to open a new stream, which takes a second or two. Without
+        // this the button looked dead for that whole time.
+        _notifications.ShowInfo(
+            string.Format(_localization.GetString("JumpingToChapter"), chapterIndex + 1),
+            _localization.GetString("Chapter"));
 
         try
         {
             await _playbackService.SeekToChapterAsync(chapterIndex);
+
+            var after = _playbackService.Position;
+            var landed = after >= target - TimeSpan.FromSeconds(5) &&
+                         after <= target + TimeSpan.FromSeconds(30);
+
+            _logger.Log($"[Player] Chapter jump finished: {before} -> {after} (target {target}, ok={landed})");
+            if (!landed)
+            {
+                _logger.LogWarning($"[Player] Chapter jump did not land on {target} (now {after})");
+                _notifications.ShowWarning(_localization.GetString("JumpFailed"), _localization.GetString("Chapter"));
+            }
+
             RefreshProgressDisplay();
         }
         catch (Exception ex)
         {
             _logger.LogError($"[Player] Chapter seek failed (index={chapterIndex})", ex);
+            _notifications.ShowError(_localization.GetString("JumpFailed"), _localization.GetString("Chapter"));
         }
     }
 
@@ -390,11 +416,11 @@ public sealed partial class PlayerPage : Page
             await SeekToChapterAsync(next);
     }
 
-    private void ChaptersButton_Click(object sender, RoutedEventArgs e)
+    private async void ChaptersButton_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            ShowChapterPicker();
+            await ShowChapterPickerAsync();
         }
         catch (Exception ex)
         {
@@ -403,7 +429,12 @@ public sealed partial class PlayerPage : Page
         }
     }
 
-    private void ShowChapterPicker()
+    /// <summary>
+    /// The picker is a modal dialog rather than a Flyout: a ListView inside a Flyout does
+    /// not reliably deliver taps (that is why jump-on-click silently did nothing), while a
+    /// dialog hosts the same virtualised list and is reliable.
+    /// </summary>
+    private async Task ShowChapterPickerAsync()
     {
         var chapters = _playbackService.Chapters;
         var currentIndex = _playbackService.CurrentChapterIndex;
@@ -418,7 +449,7 @@ public sealed partial class PlayerPage : Page
             {
                 Index = i + 1,
                 Title = string.IsNullOrWhiteSpace(chapter.Title) ? $"#{i + 1}" : chapter.Title,
-                StartTime = TimeFormatHelper.FormatDuration(chapter.StartTime),
+                StartTime = TimeFormatHelper.FormatTimeSpan(chapter.StartTime),
                 Duration = TimeFormatHelper.FormatDuration(chapter.Duration),
                 IsCurrent = i == currentIndex,
                 Status = i < currentIndex ? "done" : i == currentIndex ? "current" : "upcoming"
@@ -439,23 +470,6 @@ public sealed partial class PlayerPage : Page
         };
 
         var jumped = false;
-        async Task ActivateRowAsync(object? item)
-        {
-            if (jumped || item is not ChapterDisplayItem row) return;
-            jumped = true;
-
-            _logger.Log($"[Player] Chapter row activated: #{row.Index} '{row.Title}' at {row.StartTime}");
-            try { _chapterFlyout?.Hide(); } catch { /* already closed */ }
-
-            await SeekToChapterAsync(row.Index - 1);
-        }
-
-        list.ItemClick += async (_, args) => await ActivateRowAsync(args.ClickedItem);
-        list.SelectionChanged += async (_, args) =>
-        {
-            if (args.AddedItems.Count == 0) return;
-            await ActivateRowAsync(args.AddedItems[0]);
-        };
 
         var search = new TextBox
         {
@@ -482,30 +496,46 @@ public sealed partial class PlayerPage : Page
             if (current != null) list.ScrollIntoView(current);
         };
 
-        var panel = new StackPanel { Width = 340 };
+        var panel = new StackPanel { Width = 360 };
         panel.Children.Add(search);
         panel.Children.Add(list);
 
-        _chapterFlyout?.Hide();
-        _chapterFlyout = new Flyout
+        var dialog = new ContentDialog
         {
+            Title = _localization.GetString("Chapters"),
             Content = panel,
-            Placement = FlyoutPlacementMode.Top,
-            FlyoutPresenterStyle = new Style(typeof(FlyoutPresenter))
-            {
-                Setters =
-                {
-                    new Setter(Control.MaxHeightProperty, 520.0),
-                    new Setter(Control.PaddingProperty, new Thickness(8))
-                }
-            }
+            PrimaryButtonText = _localization.GetString("Close"),
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = this.XamlRoot
         };
 
-        _chapterFlyout.ShowAt(ChaptersButton);
+        // Rebind: rows must close the dialog *and* jump.
+        list.ItemClick += async (_, args) =>
+        {
+            await ActivateFromDialogAsync(args.ClickedItem);
+        };
+        list.SelectionChanged += async (_, args) =>
+        {
+            if (args.AddedItems.Count == 0) return;
+            await ActivateFromDialogAsync(args.AddedItems[0]);
+        };
+
+        async Task ActivateFromDialogAsync(object? item)
+        {
+            if (jumped || item is not ChapterDisplayItem row) return;
+            jumped = true;
+
+            _logger.Log($"[Player] Chapter dialog row activated: #{row.Index} '{row.Title}' at {row.StartTime}");
+            dialog.Hide();
+
+            await SeekToChapterAsync(row.Index - 1);
+        }
 
         // Land on the chapter that is playing right now.
         var currentRow = allRows.FirstOrDefault(r => r.IsCurrent);
         if (currentRow != null) list.ScrollIntoView(currentRow);
+
+        await dialog.ShowAsync();
     }
 
     private void UpdateVolumeIcon()

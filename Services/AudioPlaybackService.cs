@@ -688,18 +688,30 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 WeakReferenceMessenger.Default.Send(new TrackChangedMessage(_currentTrackIndex));
                 var wasPlaying = _state == PlaybackState.Playing;
 
+                var trackLoaded = false;
+
                 if (_isStreaming && _streamTracks.Count > targetTrack && _currentAudioBook != null)
                 {
                     // seekToPosition: false — we set the exact offset right below, so the
                     // track must not first jump to the saved book progress.
-                    await LoadStreamAsync(_streamTracks[targetTrack].ContentUrl, _currentAudioBook,
+                    trackLoaded = await LoadStreamAsync(_streamTracks[targetTrack].ContentUrl, _currentAudioBook,
                         CancellationToken.None, seekToPosition: false);
                 }
                 else if (!_isStreaming && _trackPaths.Count > targetTrack)
                 {
                     // Never auto-play before the offset is applied: that produced an
                     // audible blip from second 0 of the new file.
-                    await LoadLocalTrackAsync(_trackPaths[targetTrack], CancellationToken.None, autoPlay: false);
+                    trackLoaded = await LoadLocalTrackAsync(_trackPaths[targetTrack], CancellationToken.None, autoPlay: false);
+                }
+
+                if (!trackLoaded)
+                {
+                    // Opening the target file failed (network, expired session, bad URL).
+                    // Bailing out silently left the player sitting on the old position with
+                    // no explanation, which reads exactly like "the jump button does nothing".
+                    _logger.LogWarning($"[Playback] Cross-file seek aborted: could not open track {targetTrack + 1}");
+                    _notifications.ShowWarning(_localization.GetString("JumpFailed"), _localization.GetString("Playback"));
+                    return;
                 }
 
                 var withinTrack = GetWithinTrackOffset(position);
