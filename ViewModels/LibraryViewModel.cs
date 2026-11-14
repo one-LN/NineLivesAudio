@@ -155,6 +155,11 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         // user staring at a cached/empty shelf until they hit refresh.
         WeakReferenceMessenger.Default.Register<ConnectivityChangedMessage>(this, (r, m) =>
             ((LibraryViewModel)r).OnConnectivityChanged(m.Value));
+
+        // A full sync (first connect, "Sync now", 5-minute tick) can bring in new libraries
+        // and progress. Reload afterwards so the shelf stops showing the pre-connect state.
+        WeakReferenceMessenger.Default.Register<SyncCompletedMessage>(this, (r, m) =>
+            ((LibraryViewModel)r).OnSyncCompleted());
     }
 
     private void OnConnectivityChanged(ConnectivityChangedEventArgs e)
@@ -169,6 +174,36 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         }
 
         _ = ReloadAfterReconnectAsync();
+    }
+
+    private void OnSyncCompleted()
+    {
+        var dispatcher = _dispatcherQueue;
+        if (dispatcher != null && !dispatcher.HasThreadAccess)
+        {
+            dispatcher.TryEnqueue(() => _ = ReloadAfterSyncAsync());
+            return;
+        }
+
+        _ = ReloadAfterSyncAsync();
+    }
+
+    /// <summary>Refresh the shelf after a completed sync (no extra sync is triggered here).</summary>
+    private async Task ReloadAfterSyncAsync()
+    {
+        if (IsLoading) return;
+
+        try
+        {
+            await LoadLibrariesAsync();
+            if (SelectedLibrary != null)
+                await LoadAudioBooksAsync();
+            _logger.Log("[Library] Shelf refreshed after sync");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("[Library] Post-sync refresh failed", ex);
+        }
     }
 
     private async Task ReloadAfterReconnectAsync()

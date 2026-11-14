@@ -197,9 +197,7 @@ namespace NineLivesAudio
         {
             try
             {
-                var logDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "NineLivesAudio", "Logs");
+                var logDir = NineLivesAudio.Helpers.AppPaths.LogsDirectory;
                 Process.Start(new ProcessStartInfo { FileName = logDir, UseShellExecute = true });
             }
             catch (Exception ex)

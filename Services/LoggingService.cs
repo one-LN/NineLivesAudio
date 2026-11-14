@@ -50,8 +50,7 @@ public class LoggingService : ILoggingService, IDisposable
         string logDir;
         try
         {
-            var localFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            logDir = Path.Combine(localFolder, "NineLivesAudio", "Logs");
+            logDir = NineLivesAudio.Helpers.AppPaths.LogsDirectory;
             Directory.CreateDirectory(logDir);
         }
         catch
@@ -114,6 +113,23 @@ public class LoggingService : ILoggingService, IDisposable
         }
         catch { /* version-only fallback */ }
         return version;
+    }
+
+    /// <summary>
+    /// Writes one line straight to the current log file. Used before the DI container exists
+    /// (folder resolution, legacy data import) where <see cref="Log"/> cannot be called yet.
+    /// </summary>
+    public static void LogStatic(LogLevel level, string message)
+    {
+        try
+        {
+            var dir = NineLivesAudio.Helpers.AppPaths.LogsDirectory;
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, $"app_{DateTime.Now:yyyy-MM-dd}.log");
+            var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [startup] [{level.ToString().ToUpper().PadRight(5)}] {message}";
+            File.AppendAllText(path, line + Environment.NewLine);
+        }
+        catch { /* logging must never throw */ }
     }
 
     public void Log(string message, LogLevel level = LogLevel.Info)

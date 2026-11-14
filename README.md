@@ -4,7 +4,7 @@
 
 A beautiful, native Windows desktop client for [Audiobookshelf](https://www.audiobookshelf.org/). Built with WinUI 3 and .NET 9, Nine Lives brings your audiobook library to life with a cosmic dark theme, offline downloads, and seamless sync across all your devices.
 
-[![Release](https://img.shields.io/github/v/release/StaticHumStudio/NineLivesAudio)](https://github.com/StaticHumStudio/NineLivesAudio/releases/latest)
+[![Release](https://img.shields.io/github/v/release/one-LN/NineLivesAudio)](https://github.com/one-LN/NineLivesAudio/releases/latest)
 [![License](https://img.shields.io/badge/license-Private-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/9.0)
 
@@ -27,7 +27,7 @@ A beautiful, native Windows desktop client for [Audiobookshelf](https://www.audi
 
 ### Installation
 
-1. **Download the installer** from the [latest release](https://github.com/StaticHumStudio/NineLivesAudio/releases/latest)
+1. **Download the installer** from the [latest release](https://github.com/one-LN/NineLivesAudio/releases/latest)
 2. **Run `NineLivesAudioSetup.exe`**
 
 > ⚠️ **Windows SmartScreen Warning?** You'll likely see "Windows protected your PC" because this app uses a self-signed certificate. This is completely normal for open-source projects. Here's how to proceed safely:
@@ -149,7 +149,7 @@ Want to hack on Nine Lives? Here's how:
 ### Build & Run
 ```bash
 # Clone the repo
-git clone https://github.com/StaticHumStudio/NineLivesAudio.git
+git clone https://github.com/one-LN/NineLivesAudio.git
 cd NineLivesAudio
 
 # Build
@@ -353,9 +353,9 @@ Private project by [Static Hum Studio](https://github.com/StaticHumStudio).
 
 ## 💬 Support
 
-- 🐛 [Report a bug](https://github.com/StaticHumStudio/NineLivesAudio/issues)
-- 💡 [Request a feature](https://github.com/StaticHumStudio/NineLivesAudio/issues)
-- 📖 [View documentation](https://github.com/StaticHumStudio/NineLivesAudio/wiki)
+- 🐛 [Report a bug](https://github.com/one-LN/NineLivesAudio/issues)
+- 💡 [Request a feature](https://github.com/one-LN/NineLivesAudio/issues)
+- 📖 [View documentation](https://github.com/one-LN/NineLivesAudio/wiki)
 
 ---
 
@@ -365,7 +365,7 @@ Private project by [Static Hum Studio](https://github.com/StaticHumStudio).
 
 *Because every book deserves nine lives worth of listening.*
 
-[Download Now](https://github.com/StaticHumStudio/NineLivesAudio/releases/latest) • [Report Issue](https://github.com/StaticHumStudio/NineLivesAudio/issues) • [View Source](https://github.com/StaticHumStudio/NineLivesAudio)
+[Download Now](https://github.com/one-LN/NineLivesAudio/releases/latest) • [Report Issue](https://github.com/one-LN/NineLivesAudio/issues) • [View Source](https://github.com/one-LN/NineLivesAudio)
 
 </div>
 

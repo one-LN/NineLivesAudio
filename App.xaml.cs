@@ -24,6 +24,11 @@ public partial class App : Application
         // Migrate legacy "AudioBookshelfApp" folders/vault to "NineLivesAudio"
         LegacyMigrationHelper.MigrateIfNeeded();
 
+        // Runtime data now lives in <exe folder>\data. On the first start of such a build
+        // the settings/database/logs from %LOCALAPPDATA% are imported, so the library,
+        // saved progress and the server login carry over.
+        AppPaths.MigrateLegacyDataIfNeeded();
+
         // Build dependency injection container
         _host = Host.CreateDefaultBuilder()
             .ConfigureServices((context, services) =>

@@ -484,7 +484,9 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
     private async Task<bool> LoadTempDownloadAsync(string url, AudioBook audioBook, CancellationToken ct)
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), "NineLivesAudio");
+        // Inside the app's own data folder, not %TEMP%: a downloaded stream file can be
+        // hundreds of megabytes and must not be left behind on the system drive.
+        var tempDir = Path.Combine(NineLivesAudio.Helpers.AppPaths.DataRoot, "stream-cache");
         Directory.CreateDirectory(tempDir);
         var tempPath = Path.Combine(tempDir, $"abs_stream_{audioBook.Id}.tmp");
 

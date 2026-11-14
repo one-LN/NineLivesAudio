@@ -370,36 +370,42 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Settings file:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{x:Bind ViewModel.SettingsFilePath, Mode=OneWay}"
+                            <TextBlock Grid.Row="0" Grid.Column="0" loc:Loc.Text="DataFolder" Text="Data folder:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{x:Bind ViewModel.DataDirectory, Mode=OneWay}"
                                        FontSize="12" TextWrapping="WrapWholeWords" IsTextSelectionEnabled="True"
                                        Foreground="{StaticResource StarlightDimBrush}"/>
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Settings source:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind ViewModel.SettingsSource, Mode=OneWay}" FontSize="12"
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Settings file:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind ViewModel.SettingsFilePath, Mode=OneWay}"
+                                       FontSize="12" TextWrapping="WrapWholeWords" IsTextSelectionEnabled="True"
                                        Foreground="{StaticResource StarlightDimBrush}"/>
 
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Token source:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{x:Bind ViewModel.TokenSource, Mode=OneWay}" FontSize="12"
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Settings source:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{x:Bind ViewModel.SettingsSource, Mode=OneWay}" FontSize="12"
                                        Foreground="{StaticResource StarlightDimBrush}"/>
 
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Last loaded:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{x:Bind ViewModel.LastLoadedAt, Mode=OneWay}" FontSize="12"
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Token source:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{x:Bind ViewModel.TokenSource, Mode=OneWay}" FontSize="12"
                                        Foreground="{StaticResource StarlightDimBrush}"/>
 
-                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Session ID:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{x:Bind ViewModel.SessionId, Mode=OneWay}"
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Last loaded:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{x:Bind ViewModel.LastLoadedAt, Mode=OneWay}" FontSize="12"
+                                       Foreground="{StaticResource StarlightDimBrush}"/>
+
+                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Session ID:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="5" Grid.Column="1" Text="{x:Bind ViewModel.SessionId, Mode=OneWay}"
                                        Style="{StaticResource MonoStyle}"/>
 
-                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Server host:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="5" Grid.Column="1" Text="{x:Bind ViewModel.ServerHost, Mode=OneWay}" FontSize="12"
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Server host:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="6" Grid.Column="1" Text="{x:Bind ViewModel.ServerHost, Mode=OneWay}" FontSize="12"
                                        Foreground="{StaticResource StarlightDimBrush}"/>
 
                             <!-- Shows what is actually persisted, so "did my setting save?" is answerable -->
-                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Playback saved:" Style="{StaticResource CaptionStyle}"/>
-                            <TextBlock Grid.Row="6" Grid.Column="1" Text="{x:Bind ViewModel.PlaybackFlags, Mode=OneWay}" FontSize="12"
+                            <TextBlock Grid.Row="7" Grid.Column="0" Text="Playback saved:" Style="{StaticResource CaptionStyle}"/>
+                            <TextBlock Grid.Row="7" Grid.Column="1" Text="{x:Bind ViewModel.PlaybackFlags, Mode=OneWay}" FontSize="12"
                                        Foreground="{StaticResource StarlightDimBrush}"/>
                         </Grid>
 
@@ -409,6 +415,9 @@
 
                             <Button x:Name="ResetConnectionButton" Content="Reset Connection"
                                     Command="{x:Bind ViewModel.ResetConnectionCommand}"/>
+
+                            <Button x:Name="OpenDataFolderButton" loc:Loc.Content="OpenDataFolder" Content="Open data folder"
+                                    Command="{x:Bind ViewModel.OpenDataFolderCommand}"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -454,7 +463,7 @@
                         <TextBlock Text="Nine Lives Audio"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource StarlightDimBrush}"/>
-                        <TextBlock Text="Version 1.0.0"
+                        <TextBlock Text="{x:Bind ViewModel.AppVersion}"
                                    Foreground="{StaticResource MistBrush}"/>
                         <TextBlock loc:Loc.Text="AboutDesc" Text="A lightweight Windows client for Audiobookshelf"
                                    Foreground="{StaticResource MistFaintBrush}"
@@ -477,7 +486,7 @@
                                                  Padding="0"
                                                  Foreground="{StaticResource SigilGoldDimBrush}"/>
                                 <HyperlinkButton loc:Loc.Content="SourceCode" Content="Source Code on GitHub"
-                                                 NavigateUri="https://github.com/StaticHumStudio/NineLivesAudio"
+                                                 NavigateUri="https://github.com/one-LN/NineLivesAudio"
                                                  FontSize="11"
                                                  Padding="0"
                                                  Margin="0,4,0,0"

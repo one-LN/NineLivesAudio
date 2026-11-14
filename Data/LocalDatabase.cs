@@ -18,10 +18,9 @@ public class LocalDatabase : ILocalDatabase, IDisposable
 
     public LocalDatabase()
     {
-        var localFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var appFolder = Path.Combine(localFolder, "NineLivesAudio");
+        var appFolder = NineLivesAudio.Helpers.AppPaths.DataRoot;
         Directory.CreateDirectory(appFolder);
-        _dbPath = Path.Combine(appFolder, "audiobookshelf.db");
+        _dbPath = NineLivesAudio.Helpers.AppPaths.DatabaseFile;
     }
 
     /// <summary>

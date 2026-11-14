@@ -30,13 +30,12 @@ public class SettingsService : ISettingsService
 
     public SettingsService()
     {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        _appFolder = Path.Combine(localAppData, "NineLivesAudio");
+        _appFolder = NineLivesAudio.Helpers.AppPaths.DataRoot;
         Directory.CreateDirectory(_appFolder);
 
-        _settingsPath = Path.Combine(_appFolder, SettingsFile);
-        _tokenPath = Path.Combine(_appFolder, TokenFile);
-        _migratedPath = Path.Combine(_appFolder, MigratedFlag);
+        _settingsPath = NineLivesAudio.Helpers.AppPaths.SettingsFile;
+        _tokenPath = NineLivesAudio.Helpers.AppPaths.TokenFile;
+        _migratedPath = NineLivesAudio.Helpers.AppPaths.MigratedFlag;
     }
 
     public async Task LoadSettingsAsync()

@@ -185,8 +185,39 @@ public partial class SettingsViewModel : ObservableObject
         DiagnosticsMode = settings.DiagnosticsMode;
     }
 
+    /// <summary>Where the app keeps settings, database and logs — shown in Settings › Diagnostics.</summary>
+    [ObservableProperty]
+    private string _dataDirectory = string.Empty;
+
+    [ObservableProperty]
+    private bool _isSyncingNow;
+
+    /// <summary>Real assembly version, so the About box cannot drift from the build again.</summary>
+    public string AppVersion { get; } = "Version " + LoggingService.DescribeBuild();
+
+    [RelayCommand]
+    private void OpenDataFolder()
+    {
+        try
+        {
+            var dir = NineLivesAudio.Helpers.AppPaths.DataRoot;
+            Directory.CreateDirectory(dir);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = dir,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            HasError = true;
+        }
+    }
+
     private void LoadDoctorInfo()
     {
+        DataDirectory = NineLivesAudio.Helpers.AppPaths.Describe();
         SettingsFilePath = _settingsService.SettingsFilePath;
         SettingsSource = _settingsService.SettingsSource;
         TokenSource = _settingsService.TokenSource;
@@ -312,6 +343,10 @@ public partial class SettingsViewModel : ObservableObject
 
                 await SaveSettingsAsync();
                 LoadDoctorInfo();
+
+                // Adding a server used to leave the shelf and every progress entry empty until
+                // the next 5-minute tick (or a restart). Pull the server data right away.
+                await RunInitialSyncAsync();
             }
             else
             {
@@ -331,6 +366,37 @@ public partial class SettingsViewModel : ObservableObject
         finally
         {
             IsConnecting = false;
+        }
+    }
+
+    /// <summary>
+    /// Syncs libraries + progress right after a successful connect and reports how it went.
+    /// Runs in the background so the settings page stays usable while the first download happens.
+    /// </summary>
+    private async Task RunInitialSyncAsync()
+    {
+        try
+        {
+            IsSyncingNow = true;
+            SuccessMessage = _localization.GetString("FirstSyncRunning");
+            HasSuccess = true;
+
+            await _syncService.SyncNowAsync();
+            LoadDoctorInfo();
+
+            SuccessMessage = _localization.GetString("FirstSyncDone");
+            HasSuccess = true;
+            _logger.Log("[Settings] Initial sync after connect finished");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("[Settings] Initial sync after connect failed", ex);
+            ErrorMessage = _localization.Format("SyncFailed", ex.Message);
+            HasError = true;
+        }
+        finally
+        {
+            IsSyncingNow = false;
         }
     }
 
@@ -542,9 +608,7 @@ public partial class SettingsViewModel : ObservableObject
     {
         try
         {
-            var logDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "NineLivesAudio", "Logs");
+            var logDir = NineLivesAudio.Helpers.AppPaths.LogsDirectory;
             Directory.CreateDirectory(logDir);
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {

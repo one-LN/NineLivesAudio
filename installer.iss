@@ -3,9 +3,9 @@
 ; Compile: Run ISCC.exe installer.iss (or open in Inno Setup GUI)
 
 #define MyAppName "Nine Lives Audio"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "Static Hum Studio"
-#define MyAppURL "https://github.com/StaticHumStudio/NineLivesAudio"
+#define MyAppURL "https://github.com/one-LN/NineLivesAudio"
 #define MyAppExeName "NineLivesAudio.exe"
 #define MyAppSourceDir "binpublish"
 
@@ -16,7 +16,10 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
-DefaultDirName={autopf}\{#MyAppName}
+; Per-user location even when the setup is run elevated: the app keeps its data in
+; {app}\data, so the install folder has to stay writable. Upgrades keep the previous
+; folder (UsePreviousAppDir defaults to yes), so the data folder survives them.
+DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=installer_output
