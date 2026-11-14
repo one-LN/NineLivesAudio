@@ -406,16 +406,15 @@ public sealed partial class PlayerPage : Page
     private void ShowChapterPicker()
     {
         var chapters = _playbackService.Chapters;
-        _logger.Log($"[Player] Chapter picker opened: {chapters.Count} chapters, current index {_playbackService.CurrentChapterIndex}");
+        var currentIndex = _playbackService.CurrentChapterIndex;
+        _logger.Log($"[Player] Chapter picker opened: {chapters.Count} chapters, current index {currentIndex}");
         if (chapters.Count == 0) return;
 
-        var currentIndex = _playbackService.CurrentChapterIndex;
-
-        var rows = new List<ChapterDisplayItem>(chapters.Count);
+        var allRows = new List<ChapterDisplayItem>(chapters.Count);
         for (var i = 0; i < chapters.Count; i++)
         {
             var chapter = chapters[i];
-            rows.Add(new ChapterDisplayItem
+            allRows.Add(new ChapterDisplayItem
             {
                 Index = i + 1,
                 Title = string.IsNullOrWhiteSpace(chapter.Title) ? $"#{i + 1}" : chapter.Title,
@@ -426,36 +425,78 @@ public sealed partial class PlayerPage : Page
             });
         }
 
-        // A ListView virtualises: a 2555-chapter book opens instantly, and the row template
-        // shows each chapter's start time so the jump target is visible before clicking.
+        // Virtualised: a 2555-chapter book opens instantly. Both ItemClick and
+        // SelectionChanged are wired — a ListView inside a Flyout does not always raise
+        // ItemClick, and that was why tapping a row used to do nothing at all.
         var list = new ListView
         {
-            ItemsSource = rows,
+            ItemsSource = allRows,
             ItemTemplate = (DataTemplate)Resources["ChapterRowTemplate"],
             SelectionMode = ListViewSelectionMode.Single,
             IsItemClickEnabled = true,
-            MaxHeight = 460,
-            Width = 320
+            MaxHeight = 400,
+            Width = 340
         };
 
-        list.ItemClick += async (_, args) =>
+        var jumped = false;
+        async Task ActivateRowAsync(object? item)
         {
-            if (args.ClickedItem is not ChapterDisplayItem row) return;
-            _chapterFlyout?.Hide();
+            if (jumped || item is not ChapterDisplayItem row) return;
+            jumped = true;
+
+            _logger.Log($"[Player] Chapter row activated: #{row.Index} '{row.Title}' at {row.StartTime}");
+            try { _chapterFlyout?.Hide(); } catch { /* already closed */ }
+
             await SeekToChapterAsync(row.Index - 1);
+        }
+
+        list.ItemClick += async (_, args) => await ActivateRowAsync(args.ClickedItem);
+        list.SelectionChanged += async (_, args) =>
+        {
+            if (args.AddedItems.Count == 0) return;
+            await ActivateRowAsync(args.AddedItems[0]);
         };
+
+        var search = new TextBox
+        {
+            PlaceholderText = _localization.GetString("SearchChapters"),
+            Width = 340,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        search.TextChanged += (_, _) =>
+        {
+            var query = search.Text?.Trim() ?? string.Empty;
+            IReadOnlyList<ChapterDisplayItem> filtered = allRows;
+
+            if (query.Length > 0)
+            {
+                filtered = allRows
+                    .Where(r => r.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
+                                || r.Index.ToString() == query
+                                || r.Index.ToString().StartsWith(query, StringComparison.Ordinal))
+                    .ToList();
+            }
+
+            list.ItemsSource = filtered;
+            var current = filtered.FirstOrDefault(r => r.IsCurrent) ?? filtered.FirstOrDefault();
+            if (current != null) list.ScrollIntoView(current);
+        };
+
+        var panel = new StackPanel { Width = 340 };
+        panel.Children.Add(search);
+        panel.Children.Add(list);
 
         _chapterFlyout?.Hide();
         _chapterFlyout = new Flyout
         {
-            Content = list,
+            Content = panel,
             Placement = FlyoutPlacementMode.Top,
             FlyoutPresenterStyle = new Style(typeof(FlyoutPresenter))
             {
                 Setters =
                 {
                     new Setter(Control.MaxHeightProperty, 520.0),
-                    new Setter(Control.PaddingProperty, new Thickness(4))
+                    new Setter(Control.PaddingProperty, new Thickness(8))
                 }
             }
         };
@@ -463,7 +504,7 @@ public sealed partial class PlayerPage : Page
         _chapterFlyout.ShowAt(ChaptersButton);
 
         // Land on the chapter that is playing right now.
-        var currentRow = rows.FirstOrDefault(r => r.IsCurrent);
+        var currentRow = allRows.FirstOrDefault(r => r.IsCurrent);
         if (currentRow != null) list.ScrollIntoView(currentRow);
     }
 

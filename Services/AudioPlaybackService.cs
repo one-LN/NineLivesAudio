@@ -993,11 +993,17 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
         var posSeconds = Position.TotalSeconds;
 
-        // Fast path: ~80% of 500ms ticks land in the same chapter — skip search entirely
+        // Fast path: ~80% of 500ms ticks land in the same chapter — skip search entirely.
+        // Half a second of tolerance: right at a boundary the reported position can sit on
+        // the next chapter's start while the audio still belongs to the current one (track
+        // switching flips between 61512.9 and 61513.0), which made the chapter label flicker
+        // back and forth between two chapters.
+        const double BoundaryToleranceSeconds = 0.5;
         if (_currentChapterIndex >= 0 && _currentChapterIndex < _chapters.Count)
         {
             var current = _chapters[_currentChapterIndex];
-            if (posSeconds >= current.Start && posSeconds < current.End)
+            if (posSeconds >= current.Start - BoundaryToleranceSeconds &&
+                posSeconds < current.End + BoundaryToleranceSeconds)
                 return; // Still in the same chapter, no change
         }
 
