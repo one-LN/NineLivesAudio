@@ -17,6 +17,8 @@ jobs:
 
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write   # needed to publish the download release below
     steps:
       - uses: actions/checkout@v4
 
@@ -112,3 +114,37 @@ jobs:
           path: installer_output/*.exe
           if-no-files-found: warn
           retention-days: 30
+
+      # A plain download link, no GitHub login required: the artifact above needs a
+      # signed-in browser, which is useless if all you want is the installer.
+      - name: Package portable zip
+        shell: pwsh
+        run: Compress-Archive -Path binpublish/* -DestinationPath NineLivesAudio-win-x64-portable.zip -Force
+
+      - name: Publish download release
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref_name }}
+          TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest-build' }}
+        run: |
+          set -e
+          {
+            echo "Automated build of \`$SHA\` from \`$REF\`."
+            echo ""
+            echo "- Installer: **NineLivesAudioSetup.exe**"
+            echo "- Portable: **NineLivesAudio-win-x64-portable.zip** (unzip anywhere, run NineLivesAudio.exe)"
+            echo ""
+            echo "Every new build replaces the assets of this release."
+          } > release-notes.md
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "NineLivesAudio — latest build" --notes-file release-notes.md
+          else
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
+          fi
+          gh release upload "$TAG" installer_output/NineLivesAudioSetup.exe \
+            NineLivesAudio-win-x64-portable.zip --clobber --repo "$GITHUB_REPOSITORY"
+          echo "Download: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
