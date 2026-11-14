@@ -112,6 +112,12 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
     public RangeObservableCollection<AudioBook> FilteredAudioBooks { get; } = new();
     public ObservableCollection<string> AvailableGroups { get; } = new();
 
+    // A page load, a library switch and a reconnect can all ask for a refresh at the
+    // same moment. Running them one after another meant the shelf was rebuilt two or
+    // three times (and the spinner stayed up through every network round-trip).
+    private Task? _booksLoadInFlight;
+    private Task? _librariesLoadInFlight;
+
     public LibraryViewModel(
         IAudioBookshelfApiService apiService,
         ILocalDatabase database,
@@ -281,7 +287,16 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private async Task LoadLibrariesAsync()
+    private Task LoadLibrariesAsync()
+    {
+        if (_librariesLoadInFlight is { IsCompleted: false })
+            return _librariesLoadInFlight;
+
+        _librariesLoadInFlight = LoadLibrariesCoreAsync();
+        return _librariesLoadInFlight;
+    }
+
+    private async Task LoadLibrariesCoreAsync()
     {
         try
         {
@@ -356,8 +371,34 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>True when both lists hold the same books in the same order (id-only compare).</summary>
+    private static bool HasSameBooks(IReadOnlyList<AudioBook> current, IReadOnlyList<AudioBook> candidate)
+    {
+        if (current.Count != candidate.Count) return false;
+
+        for (var i = 0; i < current.Count; i++)
+        {
+            if (!string.Equals(current[i].Id, candidate[i].Id, StringComparison.Ordinal))
+                return false;
+        }
+
+        return true;
+    }
+
     [RelayCommand]
-    private async Task LoadAudioBooksAsync()
+    private Task LoadAudioBooksAsync()
+    {
+        if (_booksLoadInFlight is { IsCompleted: false })
+        {
+            _logger.LogDebug("[Library] Books load already running — joining it");
+            return _booksLoadInFlight;
+        }
+
+        _booksLoadInFlight = LoadAudioBooksCoreAsync();
+        return _booksLoadInFlight;
+    }
+
+    private async Task LoadAudioBooksCoreAsync()
     {
         // Never bail out silently: pick a library when one exists, otherwise show
         // the empty state so the user sees *why* the shelf is blank.
@@ -383,11 +424,19 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             _normalizedCache.Clear();
 
             // Load from local database first (filtered by selected library)
-            _logger.Log("Loading audiobooks from local database...");
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             var localBooks = await _database.GetAudioBooksByLibraryAsync(SelectedLibrary.Id);
-            _logger.Log($"Loaded {localBooks.Count} audiobooks from database");
+            _logger.Log($"[Library] Local load: {localBooks.Count} books in {stopwatch.ElapsedMilliseconds} ms");
 
             AudioBooks.ReplaceRange(localBooks);
+            UpdateAvailableGroups();
+            ApplyFilterInternal();
+
+            // Stop the spinner here: from now on the shelf is usable and everything
+            // below is a background refresh. An empty cache keeps the spinner up so the
+            // first paint is not a "no books" empty state.
+            if (AudioBooks.Count > 0)
+                IsLoading = false;
 
             // If online, delegate to SyncService for server refresh + merge.
             // SyncService handles LocalPath preservation with robust matching.
@@ -396,12 +445,24 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
                 try
                 {
                     _logger.Log("Triggering SyncService for fresh server data...");
+                    var syncStopwatch = System.Diagnostics.Stopwatch.StartNew();
                     await _syncService.SyncLibrariesAsync();
+                    _logger.Log($"[Library] Server sync finished in {syncStopwatch.ElapsedMilliseconds} ms");
 
-                    // Reload from DB after sync (SyncService saved the merged data)
+                    // Reload from DB after sync (SyncService saved the merged data).
+                    // Skipped when the ids did not change: re-binding 309 cards costs more
+                    // than the query itself.
                     var refreshedBooks = await _database.GetAudioBooksByLibraryAsync(SelectedLibrary.Id);
-                    AudioBooks.ReplaceRange(refreshedBooks);
-                    _logger.Log($"Reloaded {AudioBooks.Count} audiobooks from database after sync");
+                    if (!HasSameBooks(AudioBooks, refreshedBooks))
+                    {
+                        AudioBooks.ReplaceRange(refreshedBooks);
+                        UpdateAvailableGroups();
+                        _logger.Log($"[Library] Server data changed — {AudioBooks.Count} books re-bound");
+                    }
+                    else
+                    {
+                        _logger.LogDebug("[Library] Server data unchanged — keeping the current list");
+                    }
 
                     // The server answered: drop the offline-only filter again (unless the
                     // user picked it themselves) and refresh the empty state accordingly.
@@ -423,11 +484,9 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
                 }
             }
 
-            _logger.Log("Updating available groups...");
-            UpdateAvailableGroups();
-            _logger.Log("Applying filter...");
-            ApplyFilterInternal();
-            _logger.Log($"LoadAudioBooksAsync completed. Total books: {AudioBooks.Count}, Filtered: {FilteredAudioBooks.Count}");
+            IsLoading = false;
+            _logger.Log($"[Library] Load completed in {stopwatch.ElapsedMilliseconds} ms. " +
+                        $"Total books: {AudioBooks.Count}, Filtered: {FilteredAudioBooks.Count}");
         }
         catch (Exception ex)
         {
