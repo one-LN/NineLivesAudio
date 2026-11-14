@@ -147,13 +147,16 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
     private void OnPositionTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
     {
-        WeakReferenceMessenger.Default.Send(new PositionChangedMessage(Position));
+        var position = Position;
+        WeakReferenceMessenger.Default.Send(new PositionChangedMessage(position));
         UpdateCurrentChapter();
+        DetectPlaybackStall(position.TotalSeconds);
         _ = ApplyChapterSkipsAsync();
     }
 
     public async Task<bool> LoadAudioBookAsync(AudioBook audioBook)
     {
+        _uiDispatcher ??= Windows.System.DispatcherQueue.GetForCurrentThread();
         // Cancel any previous load and dispose old CTS
         _loadCts?.Cancel();
         _loadCts?.Dispose();
@@ -411,8 +414,11 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             ct.ThrowIfCancellationRequested();
             _isStreaming = true;
 
-            // Unwire old events before disposing to prevent leak
+            // Unwire old events before disposing to prevent leak. Pausing first matters:
+            // disposing a MediaPlayer that is still playing can block the media thread and
+            // take the whole window down with it.
             UnwireMediaPlayerEvents();
+            try { _mediaPlayer?.Pause(); } catch { /* already gone */ }
             _mediaPlayer?.Dispose();
             _mediaPlayer = null;
 
@@ -1001,6 +1007,35 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         }
     }
 
+    /// <summary>
+    /// Logs when the position stops moving while the player claims to be playing — that is
+    /// exactly what a wedged media session looks like, and without this line it is invisible.
+    /// </summary>
+    private void DetectPlaybackStall(double positionSeconds)
+    {
+        if (_state != PlaybackState.Playing)
+        {
+            _lastTickPosition = positionSeconds;
+            _lastProgressAt = DateTime.UtcNow;
+            return;
+        }
+
+        if (Math.Abs(positionSeconds - _lastTickPosition) > 0.05)
+        {
+            _lastTickPosition = positionSeconds;
+            _lastProgressAt = DateTime.UtcNow;
+            return;
+        }
+
+        var stalled = DateTime.UtcNow - _lastProgressAt;
+        if (stalled.TotalSeconds < 8) return;
+        if ((DateTime.UtcNow - _lastStallLogAt).TotalSeconds < 60) return;
+
+        _lastStallLogAt = DateTime.UtcNow;
+        _logger.LogWarning($"[Playback] Position has not moved for {stalled.TotalSeconds:F0}s " +
+                           $"(state {_state}, position {positionSeconds:F1}s, track {_currentTrackIndex + 1}/{TotalTracks})");
+    }
+
     // Chapter helpers
     private void UpdateCurrentChapter()
     {
@@ -1081,15 +1116,81 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     // ── Skip intro / skip outro ────────────────────────────────────────────────
     // Both settings are per chapter: a multi-file audiobook repeats its opening and
     // closing on every file, so "35 / 15" has to apply at chapter 700 just like at 7.
+    //
+    // IMPORTANT: this runs on the position timer (a pool thread, twice a second) and must
+    // never reload the media player. Disposing a MediaPlayer that is still playing from a
+    // pool thread froze the whole window ("未响应") at the 14-second mark of a chapter, so
+    // skipping only ever moves the playback position *inside the track that is loaded*:
+    //   · skip intro → jump forward, same track;
+    //   · skip outro → jump to the end of the file and let the existing MediaEnded
+    //     auto-advance (the path that has always worked) switch to the next chapter.
 
-    private int _skipStateChapterIndex = -1;
+    private Windows.System.DispatcherQueue? _uiDispatcher;
+    private int _skipCheckQueued;
+    private double _lastTickPosition = -1;
+    private DateTime _lastProgressAt = DateTime.UtcNow;
+    private DateTime _lastStallLogAt = DateTime.MinValue;
+
+    private int _skipChapterIndex = -1;
     private int _introSkipAttempts;
+    private bool _introSkipDone;
+    private bool _outroSkipDone;
     private bool _introSkipBusy;
 
     private void ResetChapterSkipState(int chapterIndex)
     {
-        _skipStateChapterIndex = chapterIndex;
+        _skipChapterIndex = chapterIndex;
         _introSkipAttempts = 0;
+        _introSkipDone = false;
+        _outroSkipDone = false;
+    }
+
+    /// <summary>Absolute position where the currently loaded track ends.</summary>
+    private double CurrentTrackEndSeconds =>
+        _currentTrackIndex >= 0 && _currentTrackIndex < _trackDurations.Count
+            ? _trackDurations[_currentTrackIndex]
+            : Duration.TotalSeconds;
+
+    /// <summary>Absolute position where the currently loaded track starts.</summary>
+    private double CurrentTrackStartSeconds =>
+        _currentTrackIndex > 0 && _currentTrackIndex <= _trackDurations.Count
+            ? _trackDurations[_currentTrackIndex - 1]
+            : 0;
+
+    /// <summary>
+    /// Seeks inside the track that is already loaded — never triggers a cross-file load.
+    /// Returns false when the media session is not ready (the caller retries later).
+    /// </summary>
+    private bool SeekWithinCurrentTrack(double absoluteSeconds)
+    {
+        var trackEnd = CurrentTrackEndSeconds;
+        var target = Math.Min(absoluteSeconds, trackEnd - 0.35);
+        target = Math.Max(target, CurrentTrackStartSeconds);
+        var within = GetWithinTrackOffset(TimeSpan.FromSeconds(target));
+
+        try
+        {
+            if (_isStreaming && _mediaPlayer != null)
+            {
+                _mediaPlayer.PlaybackSession.Position = within;
+            }
+            else if (_audioFileReader != null)
+            {
+                _audioFileReader.CurrentTime = within;
+            }
+            else
+            {
+                return false;
+            }
+
+            WeakReferenceMessenger.Default.Send(new PositionChangedMessage(TimeSpan.FromSeconds(target)));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning($"[Playback] In-track seek failed: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>
@@ -1100,13 +1201,30 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     {
         try
         {
+            // The timer fires on a pool thread. Anything that touches the player or sends a
+            // message from there can freeze the window, so hop to the UI thread once.
+            var dispatcher = _uiDispatcher;
+            if (dispatcher != null && !dispatcher.HasThreadAccess)
+            {
+                if (Interlocked.Exchange(ref _skipCheckQueued, 1) == 0)
+                {
+                    var queued = dispatcher.TryEnqueue(() =>
+                    {
+                        Interlocked.Exchange(ref _skipCheckQueued, 0);
+                        _ = ApplyChapterSkipsAsync();
+                    });
+                    if (!queued) Interlocked.Exchange(ref _skipCheckQueued, 0);
+                }
+                return;
+            }
+
             if (_state != PlaybackState.Playing && _state != PlaybackState.Buffering) return;
             if (_chapters.Count == 0 || _currentChapterIndex < 0) return;
 
             var chapter = CurrentChapter;
             if (chapter == null) return;
 
-            if (_skipStateChapterIndex != _currentChapterIndex)
+            if (_skipChapterIndex != _currentChapterIndex)
                 ResetChapterSkipState(_currentChapterIndex);
 
             await ApplyChapterIntroSkipAsync(chapter, _currentChapterIndex);
@@ -1120,25 +1238,14 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
 
     /// <summary>
     /// Trims the first <see cref="AppSettings.SkipIntroSeconds"/> seconds of one chapter.
-    /// Only while the position is still inside that window, and at most a few times per
-    /// chapter, so a manual rewind is respected and a failed seek cannot loop.
+    /// Only while the position is still inside that window, at most a few times per chapter,
+    /// and only when the target lies in the loaded track (otherwise the next tick, after the
+    /// normal track change, takes care of it).
     /// </summary>
     private async Task ApplyChapterIntroSkipAsync(Chapter chapter, int chapterIndex)
     {
         var skip = Math.Max(0, _settingsService.Settings.SkipIntroSeconds);
-        if (skip <= 0 || _introSkipBusy || chapterIndex < 0) return;
-        // A cross-file load can swallow the first seek, so keep trying while the position is
-        // still inside the intro — but bounded, so a permanently failing seek cannot spin.
-        if (_introSkipAttempts >= 10)
-        {
-            if (_introSkipAttempts == 10)
-            {
-                _introSkipAttempts++;
-                _logger.LogWarning($"[Playback] Skip intro gave up on chapter #{chapterIndex + 1} " +
-                                   $"after 10 attempts (position {Position.TotalSeconds:F0}s)");
-            }
-            return;
-        }
+        if (skip <= 0 || _introSkipBusy || _introSkipDone || chapterIndex < 0) return;
 
         // Never eat a chapter that is barely long enough to hold the skip window.
         if (chapter.Duration.TotalSeconds <= skip * 1.5) return;
@@ -1146,15 +1253,36 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         var introEnd = chapter.Start + skip;
         var position = Position.TotalSeconds;
         if (position < chapter.Start - 1) return;   // not in this chapter yet
-        if (position >= introEnd - 1) return;       // already past the intro
+        if (position >= introEnd - 1) { _introSkipDone = true; return; }  // already past it
+
+        // The target must be inside the loaded file, otherwise skip from the timer would
+        // have to open another file (that is what froze the app).
+        if (introEnd > CurrentTrackEndSeconds - 0.35)
+        {
+            _introSkipDone = true;
+            _logger.LogDebug($"[Playback] Skip intro deferred: target {introEnd:F0}s is in the next file");
+            return;
+        }
+
+        if (_introSkipAttempts >= 10)
+        {
+            if (_introSkipAttempts == 10)
+            {
+                _introSkipAttempts++;
+                _logger.LogWarning($"[Playback] Skip intro gave up on chapter #{chapterIndex + 1} " +
+                                   $"(position {position:F0}s)");
+            }
+            return;
+        }
 
         _introSkipAttempts++;
         _introSkipBusy = true;
-        _logger.Log($"[Playback] Skip intro: {position:F0}s -> {introEnd:F0}s " +
-                    $"(chapter #{chapterIndex + 1}, skip {skip}s)");
         try
         {
-            await SeekAsync(TimeSpan.FromSeconds(introEnd));
+            _logger.Log($"[Playback] Skip intro: {position:F0}s -> {introEnd:F0}s " +
+                        $"(chapter #{chapterIndex + 1}, skip {skip}s)");
+            if (SeekWithinCurrentTrack(introEnd))
+                _introSkipDone = true;
         }
         catch (Exception ex)
         {
@@ -1164,16 +1292,18 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         {
             _introSkipBusy = false;
         }
+
+        await Task.CompletedTask;
     }
 
     /// <summary>
     /// Leaves the current chapter once fewer than <see cref="AppSettings.SkipOutroSeconds"/>
-    /// seconds remain, then keeps going with the next one (or finishes the book from the
-    /// last chapter). Measures the chapter's own end, never the whole book.
+    /// seconds remain: jumps to the end of the loaded file and lets the normal track change
+    /// go on to the next chapter (finishing the book from the last chapter).
     /// </summary>
     private async Task TrySkipOutroAsync()
     {
-        if (_outroSkipInProgress) return;
+        if (_outroSkipDone || _outroSkipInProgress) return;
 
         var skip = Math.Max(0, _settingsService.Settings.SkipOutroSeconds);
         if (skip <= 0) return; // feature off
@@ -1184,24 +1314,37 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         var chapterLength = chapter.Duration.TotalSeconds;
         if (chapterLength <= 0 || chapterLength <= skip * 1.5) return; // don't gut a short chapter
 
-        var remaining = chapter.End - Position.TotalSeconds;
+        var position = Position.TotalSeconds;
+        var remaining = chapter.End - position;
         if (remaining > skip || remaining < -2) return;
 
         _outroSkipInProgress = true;
         try
         {
-            var nextIndex = _currentChapterIndex + 1;
-            if (nextIndex < _chapters.Count)
+            var trackEnd = CurrentTrackEndSeconds;
+
+            if (_currentChapterIndex + 1 >= _chapters.Count && chapter.End >= trackEnd - 1)
             {
-                _logger.Log($"[Playback] Skip outro: {remaining:F0}s left of chapter #{_currentChapterIndex + 1} " +
-                            $"— continuing with chapter #{nextIndex + 1}");
-                await SeekToChapterAsync(nextIndex); // also trims that chapter's intro
-            }
-            else
-            {
+                _outroSkipDone = true;
                 _logger.Log("[Playback] Skip outro: last chapter reached — finishing book");
                 await FinishCurrentBookAsync();
+                return;
             }
+
+            // Chapter ends mid-file: jump to its end, the intro skip takes over from there.
+            // Chapter ends with the file: jump just before the end so MediaEnded advances.
+            var target = chapter.End >= trackEnd - 0.5 ? trackEnd - 0.35 : chapter.End;
+
+            if (target <= position + 0.25)
+            {
+                _outroSkipDone = true;   // already there — the normal track change will run
+                return;
+            }
+
+            _logger.Log($"[Playback] Skip outro: {position:F0}s -> {target:F0}s " +
+                        $"({remaining:F0}s left of chapter #{_currentChapterIndex + 1})");
+            if (SeekWithinCurrentTrack(target))
+                _outroSkipDone = true;
         }
         catch (Exception ex)
         {
@@ -1211,6 +1354,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         {
             _outroSkipInProgress = false;
         }
+
+        await Task.CompletedTask;
     }
 
     /// <summary>Stops playback and reports the book as finished (end of last chapter).</summary>
