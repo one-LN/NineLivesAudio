@@ -44,8 +44,11 @@ jobs:
           name: NineLivesAudio-android-apk
           path: NineLivesAudio-android.apk
 
-      - name: Publish Release (on android-v* tag)
+      - name: Upload APK to Latest Release (on android-v* tag)
         if: startsWith(github.ref, 'refs/tags/android-v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: NineLivesAudio-android.apk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST_TAG=$(gh release view --json tagName -q .tagName)
+          echo "Uploading NineLivesAudio-android.apk to $LATEST_TAG"
+          gh release upload "$LATEST_TAG" NineLivesAudio-android.apk --clobber

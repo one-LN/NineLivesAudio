@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -24,6 +24,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ninelives.audio.ui.HomeScreen
+import com.ninelives.audio.ui.LibraryScreen
+import com.ninelives.audio.ui.MainViewModel
+import com.ninelives.audio.ui.SettingsScreen
 import com.ninelives.audio.ui.theme.NineLivesTheme
 
 class MainActivity : ComponentActivity() {
@@ -39,11 +44,11 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun NineLivesApp() {
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+fun NineLivesApp(vm: MainViewModel = viewModel()) {
+    var selectedTab by rememberSaveable { mutableIntStateOf(if (vm.isConnected) 0 else 3) }
     val tabs = listOf(
         "九命" to Icons.Default.Home,
-        "书库" to Icons.Default.LibraryBooks,
+        "书库" to Icons.Default.Menu,
         "播放" to Icons.Default.PlayArrow,
         "设置" to Icons.Default.Settings
     )
@@ -65,10 +70,16 @@ fun NineLivesApp() {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
-            contentAlignment = Alignment.Center
+                .padding(innerPadding)
         ) {
-            Text("NineLivesAudio Android · ${tabs[selectedTab].first}")
+            when (selectedTab) {
+                0 -> HomeScreen(vm, onBookClick = { selectedTab = 2 })
+                1 -> LibraryScreen(vm, onBookClick = { selectedTab = 2 })
+                2 -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("播放器模块下一步接入 Media3")
+                }
+                3 -> SettingsScreen(vm)
+            }
         }
     }
 }
