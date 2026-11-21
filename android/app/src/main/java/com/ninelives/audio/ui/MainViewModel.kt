@@ -204,6 +204,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Player state ---
     private var mediaController: MediaController? = null
+    private var currentTrackIndex = 0
 
     var currentSession by mutableStateOf<PlaybackSessionData?>(null)
         private set
@@ -236,6 +237,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
                     }
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_ENDED) {
+                            val sess = currentSession ?: return
+                            if (currentTrackIndex + 1 < sess.tracks.size) {
+                                loadTrackAndPlay(currentTrackIndex + 1, 0L)
+                            }
+                        }
+                    }
                 })
             } catch (_: Exception) {
             }
@@ -248,8 +257,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val c = mediaController
                 val sess = currentSession
                 if (c != null && sess != null) {
-                    val trackIdx = c.currentMediaItemIndex
-                    val trackOffset = sess.tracks.getOrNull(trackIdx)?.startOffset ?: 0.0
+                    val trackOffset = sess.tracks.getOrNull(currentTrackIndex)?.startOffset ?: 0.0
                     val posSec = trackOffset + (c.currentPosition.coerceAtLeast(0L) / 1000.0)
                     currentPositionSec = posSec
                     if (isPlaying) {
@@ -279,29 +287,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 currentSession = sess
                 totalDurationSec = sess.duration
                 currentPositionSec = sess.currentTime
-                val c = mediaController ?: return@onSuccess
-                val meta = MediaMetadata.Builder()
-                    .setTitle(sess.title)
-                    .setArtist(sess.author)
-                    .setArtworkUri(Uri.parse(sess.coverUrl))
-                    .build()
-                val items = sess.tracks.map { t ->
-                    MediaItem.Builder()
-                        .setUri(t.streamUrl)
-                        .setMediaMetadata(meta)
-                        .build()
-                }
-                c.setMediaItems(items)
-                c.prepare()
-                if (sess.currentTime > 0) {
-                    seekToSec(sess.currentTime)
-                }
-                c.setPlaybackSpeed(playbackSpeed)
-                c.play()
+                val targetIdx = sess.tracks.indexOfLast { sess.currentTime >= it.startOffset }.coerceAtLeast(0)
+                val trackStart = sess.tracks.getOrNull(targetIdx)?.startOffset ?: 0.0
+                val offsetMs = ((sess.currentTime - trackStart).coerceAtLeast(0.0) * 1000).toLong()
+                loadTrackAndPlay(targetIdx, offsetMs)
             }.onFailure { e ->
                 playerError = e.message ?: "播放失败"
             }
         }
+    }
+
+    private fun loadTrackAndPlay(trackIndex: Int, offsetMs: Long) {
+        val c = mediaController ?: return
+        val sess = currentSession ?: return
+        val track = sess.tracks.getOrNull(trackIndex) ?: return
+        currentTrackIndex = trackIndex
+        val meta = MediaMetadata.Builder()
+            .setTitle(sess.title)
+            .setArtist(sess.author)
+            .setArtworkUri(Uri.parse(sess.coverUrl))
+            .build()
+        val item = MediaItem.Builder()
+            .setUri(track.streamUrl)
+            .setMediaMetadata(meta)
+            .build()
+        c.setMediaItem(item)
+        c.prepare()
+        if (offsetMs > 0) {
+            c.seekTo(offsetMs)
+        }
+        c.setPlaybackSpeed(playbackSpeed)
+        c.play()
     }
 
     fun togglePlayPause() {
@@ -327,7 +343,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val targetIdx = sess.tracks.indexOfLast { clamped >= it.startOffset }.coerceAtLeast(0)
         val trackStart = sess.tracks.getOrNull(targetIdx)?.startOffset ?: 0.0
         val offsetMs = ((clamped - trackStart).coerceAtLeast(0.0) * 1000).toLong()
-        c.seekTo(targetIdx, offsetMs)
+        if (targetIdx == currentTrackIndex) {
+            c.seekTo(offsetMs)
+        } else {
+            loadTrackAndPlay(targetIdx, offsetMs)
+        }
         currentPositionSec = clamped
     }
 
