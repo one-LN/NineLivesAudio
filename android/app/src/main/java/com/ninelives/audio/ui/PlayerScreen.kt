@@ -16,6 +16,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,19 +99,34 @@ fun PlayerScreen(vm: MainViewModel) {
             )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-        val duration = vm.totalDurationSec.coerceAtLeast(1.0)
+        Spacer(modifier = Modifier.height(16.dp))
+        var showFullBook by remember { mutableStateOf(false) }
+        val hasChapter = currentChapter != null && currentChapter.end > currentChapter.start
+        val displayStart = if (!showFullBook && hasChapter) currentChapter!!.start else 0.0
+        val displayDuration = if (!showFullBook && hasChapter) {
+            (currentChapter!!.end - currentChapter!!.start).coerceAtLeast(1.0)
+        } else {
+            vm.totalDurationSec.coerceAtLeast(1.0)
+        }
+        val displayPos = (vm.currentPositionSec - displayStart).coerceIn(0.0, displayDuration)
+
         Slider(
-            value = (vm.currentPositionSec / duration).toFloat().coerceIn(0f, 1f),
-            onValueChange = { ratio -> vm.seekToSec(ratio * duration) },
+            value = (displayPos / displayDuration).toFloat().coerceIn(0f, 1f),
+            onValueChange = { ratio -> vm.seekToSec(displayStart + ratio * displayDuration) },
             modifier = Modifier.fillMaxWidth()
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(formatTime(vm.currentPositionSec), style = MaterialTheme.typography.bodySmall)
-            Text(formatTime(vm.totalDurationSec), style = MaterialTheme.typography.bodySmall)
+            Text(formatTime(displayPos), style = MaterialTheme.typography.bodySmall)
+            if (hasChapter) {
+                OutlinedButton(onClick = { showFullBook = !showFullBook }) {
+                    Text(if (showFullBook) "全书进度" else "章节进度", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            Text(formatTime(displayDuration), style = MaterialTheme.typography.bodySmall)
         }
 
         Spacer(modifier = Modifier.height(20.dp))

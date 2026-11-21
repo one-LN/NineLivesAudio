@@ -248,11 +248,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val c = mediaController
                 val sess = currentSession
                 if (c != null && sess != null) {
-                    val posSec = c.currentPosition / 1000.0
+                    val trackIdx = c.currentMediaItemIndex
+                    val trackOffset = sess.tracks.getOrNull(trackIdx)?.startOffset ?: 0.0
+                    val posSec = trackOffset + (c.currentPosition.coerceAtLeast(0L) / 1000.0)
                     currentPositionSec = posSec
-                    if (c.duration > 0) {
-                        totalDurationSec = c.duration / 1000.0
-                    }
                     if (isPlaying) {
                         tick++
                         if (tick % 10 == 0 && activeUrl.isNotBlank() && activeToken.isNotBlank()) {
@@ -281,20 +280,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 totalDurationSec = sess.duration
                 currentPositionSec = sess.currentTime
                 val c = mediaController ?: return@onSuccess
-                val item = MediaItem.Builder()
-                    .setUri(sess.streamUrl)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(sess.title)
-                            .setArtist(sess.author)
-                            .setArtworkUri(Uri.parse(sess.coverUrl))
-                            .build()
-                    )
+                val meta = MediaMetadata.Builder()
+                    .setTitle(sess.title)
+                    .setArtist(sess.author)
+                    .setArtworkUri(Uri.parse(sess.coverUrl))
                     .build()
-                c.setMediaItem(item)
+                val items = sess.tracks.map { t ->
+                    MediaItem.Builder()
+                        .setUri(t.streamUrl)
+                        .setMediaMetadata(meta)
+                        .build()
+                }
+                c.setMediaItems(items)
                 c.prepare()
                 if (sess.currentTime > 0) {
-                    c.seekTo((sess.currentTime * 1000).toLong())
+                    seekToSec(sess.currentTime)
                 }
                 c.setPlaybackSpeed(playbackSpeed)
                 c.play()
@@ -322,8 +322,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun seekToSec(sec: Double) {
         val c = mediaController ?: return
+        val sess = currentSession ?: return
         val clamped = sec.coerceIn(0.0, totalDurationSec.coerceAtLeast(0.0))
-        c.seekTo((clamped * 1000).toLong())
+        val targetIdx = sess.tracks.indexOfLast { clamped >= it.startOffset }.coerceAtLeast(0)
+        val trackStart = sess.tracks.getOrNull(targetIdx)?.startOffset ?: 0.0
+        val offsetMs = ((clamped - trackStart).coerceAtLeast(0.0) * 1000).toLong()
+        c.seekTo(targetIdx, offsetMs)
         currentPositionSec = clamped
     }
 

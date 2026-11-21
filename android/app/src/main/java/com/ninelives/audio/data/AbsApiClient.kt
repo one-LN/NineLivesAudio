@@ -203,11 +203,21 @@ class AbsApiClient {
                 val currentTime = root.get("currentTime")?.asDouble ?: 0.0
                 val duration = root.get("duration")?.asDouble ?: 0.0
 
-                val tracks = root.getAsJsonArray("audioTracks")
-                val firstTrackUrl = if (tracks != null && tracks.size() > 0) {
-                    val contentUrl = tracks[0].asJsonObject.get("contentUrl")?.asString ?: ""
-                    if (contentUrl.startsWith("http")) contentUrl else "$base$contentUrl?token=$token"
-                } else {
+                val tracksArr = root.getAsJsonArray("audioTracks")
+                val tracksList = mutableListOf<AudioTrackInfo>()
+                if (tracksArr != null) {
+                    var offsetAccum = 0.0
+                    for (i in 0 until tracksArr.size()) {
+                        val tObj = tracksArr[i].asJsonObject
+                        val contentUrl = tObj.get("contentUrl")?.takeIf { !it.isJsonNull }?.asString ?: continue
+                        val tUrl = if (contentUrl.startsWith("http")) contentUrl else "$base$contentUrl?token=$token"
+                        val tDur = tObj.get("duration")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
+                        val tStart = tObj.get("startOffset")?.takeIf { !it.isJsonNull }?.asDouble ?: offsetAccum
+                        tracksList.add(AudioTrackInfo(i, tStart, tDur, tUrl))
+                        offsetAccum = tStart + tDur
+                    }
+                }
+                if (tracksList.isEmpty()) {
                     return@withContext Result.failure(Exception("No audioTracks in play response"))
                 }
 
@@ -233,7 +243,7 @@ class AbsApiClient {
                         title = title,
                         author = author,
                         coverUrl = "$base/api/items/$itemId/cover?token=$token",
-                        streamUrl = firstTrackUrl,
+                        tracks = tracksList,
                         currentTime = currentTime,
                         duration = duration,
                         chapters = chaptersList

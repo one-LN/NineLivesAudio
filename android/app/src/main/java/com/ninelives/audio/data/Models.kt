@@ -7,12 +7,19 @@ data class ChapterInfo(
     val end: Double
 )
 
+data class AudioTrackInfo(
+    val index: Int,
+    val startOffset: Double,
+    val duration: Double,
+    val streamUrl: String
+)
+
 data class PlaybackSessionData(
     val itemId: String,
     val title: String,
     val author: String,
     val coverUrl: String,
-    val streamUrl: String,
+    val tracks: List<AudioTrackInfo>,
     val currentTime: Double,
     val duration: Double,
     val chapters: List<ChapterInfo>
