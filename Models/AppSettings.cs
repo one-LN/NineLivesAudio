@@ -3,6 +3,9 @@ namespace NineLivesAudio.Models;
 public class AppSettings
 {
     public string ServerUrl { get; set; } = string.Empty;
+
+    /// <summary>Remembered servers so switching accounts does not mean retyping everything.</summary>
+    public List<SavedServer> SavedServers { get; set; } = new();
     public string Username { get; set; } = string.Empty;
     public string DownloadPath { get; set; } = string.Empty;
     public bool AutoDownloadCovers { get; set; } = true;
@@ -32,12 +35,27 @@ public class AppSettings
     /// <summary>UI language: "system" | "en-US" | "zh-CN".</summary>
     public string Language { get; set; } = "system";
 
+    // Library page: sort, filters and layout are per-user taste, so they survive a restart.
+    public string LibrarySortMode { get; set; } = "Default";
+    public bool LibraryHideFinished { get; set; } = false;
+    public bool LibraryShowDownloadedOnly { get; set; } = false;
+    public string LibraryViewMode { get; set; } = "All";
+
     // Security
     public bool AllowSelfSignedCertificates { get; set; } = false;
 
     // Diagnostics
     public bool DiagnosticsMode { get; set; } = false;
 
+    // Per-book skip intro / outro overrides (null fields fall back to global SkipIntroSeconds/SkipOutroSeconds)
+    public Dictionary<string, BookSkipOverride> BookSkipOverrides { get; set; } = new();
+
     // Server profiles for reconnection
     public List<ServerProfile> ServerProfiles { get; set; } = new();
+}
+
+public class BookSkipOverride
+{
+    public int? SkipIntroSeconds { get; set; }
+    public int? SkipOutroSeconds { get; set; }
 }

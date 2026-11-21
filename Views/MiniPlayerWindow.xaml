@@ -4,7 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Nine Lives Audio">
 
-    <Grid Background="{StaticResource VoidDeepBrush}" Padding="16,8">
+    <Grid Background="{ThemeResource VoidDeepBrush}" Padding="16,8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -20,7 +20,7 @@
                           Padding="6"
                           ToolTipService.ToolTip="Keep on top">
                 <FontIcon x:Name="PinIcon" Glyph="&#xE718;" FontSize="14"
-                          Foreground="{StaticResource MistFaintBrush}"/>
+                          Foreground="{ThemeResource MistFaintBrush}"/>
             </ToggleButton>
 
             <Button x:Name="ExpandButton" Click="Expand_Click"
@@ -29,7 +29,7 @@
                     Padding="6"
                     ToolTipService.ToolTip="Back to full player">
                 <FontIcon Glyph="&#xE740;" FontSize="14"
-                          Foreground="{StaticResource MistFaintBrush}"/>
+                          Foreground="{ThemeResource MistFaintBrush}"/>
             </Button>
         </Grid>
 
@@ -84,7 +84,7 @@
                     Click="PlayPause_Click"
                     Style="{StaticResource SigilPlayButtonStyle}">
                 <FontIcon x:Name="PlayPauseIcon" Glyph="&#xE768;" FontSize="28"
-                          Foreground="{StaticResource VoidDeepBrush}"/>
+                          Foreground="{ThemeResource VoidDeepBrush}"/>
             </Button>
 
             <!-- Skip Forward 30s -->

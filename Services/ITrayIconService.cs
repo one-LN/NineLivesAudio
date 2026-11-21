@@ -18,5 +18,8 @@ public interface ITrayIconService : IDisposable
     /// <summary>Removes the icon from the notification area (idempotent).</summary>
     void Hide();
 
+    /// <summary>Hides the window into the notification area (used for "start minimized").</summary>
+    void HideToTray();
+
     bool IsShown { get; }
 }

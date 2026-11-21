@@ -9,8 +9,16 @@ public interface ISyncService
 
     Task StartAsync();
     Task StopAsync();
+
+    /// <summary>
+    /// Re-reads <c>SyncIntervalMinutes</c> / <c>AutoSyncProgress</c> and restarts the
+    /// schedule, so changing either in Settings takes effect without a restart.
+    /// </summary>
+    Task ApplyScheduleAsync();
     Task SyncNowAsync();
-    Task SyncLibrariesAsync();
+    void NotifyDataCleared();
+    /// <summary>Pulls library metadata. Skipped when the same pull just happened, unless forced.</summary>
+    Task SyncLibrariesAsync(bool force = false);
     Task SyncProgressAsync();
 
     /// <summary>Mark which item is actively playing (session owns progress).</summary>

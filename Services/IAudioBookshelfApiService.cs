@@ -5,6 +5,9 @@ namespace NineLivesAudio.Services;
 public interface IAudioBookshelfApiService
 {
     bool IsAuthenticated { get; }
+
+    /// <summary>Re-reads server URL and token from settings (used when switching servers).</summary>
+    Task<bool> ReloadCredentialsAsync();
     string? ServerUrl { get; }
     string? LastError { get; }
 
@@ -30,6 +33,9 @@ public interface IAudioBookshelfApiService
     Task<List<Library>> GetLibrariesAsync();
     Task<List<AudioBook>> GetLibraryItemsAsync(string libraryId, int limit = 100, int page = 0);
 
+    /// <summary>How the last library pull was fetched ("4 page(s) parallel in 12480 ms") for the log.</summary>
+    string LastFetchDiagnostics { get; }
+
     // Audiobooks
     Task<AudioBook?> GetAudioBookAsync(string itemId);
     Task<Stream> GetAudioFileStreamAsync(string itemId, string fileIno);
@@ -37,6 +43,12 @@ public interface IAudioBookshelfApiService
 
     // Playback & Progress
     Task<PlaybackSessionInfo?> StartPlaybackSessionAsync(string itemId);
+
+    /// <summary>
+    /// Fetches the play session ahead of time (when a book is opened) so pressing play does not
+    /// wait for it. Metadata only — nothing is downloaded from the audio endpoint.
+    /// </summary>
+    void WarmPlaybackSession(string itemId);
     /// <summary>
     /// Pushes listening progress. <paramref name="duration"/> is used to send the
     /// 0..1 <c>progress</c> ratio; pass 0 to let the server compute it.

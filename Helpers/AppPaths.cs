@@ -31,6 +31,12 @@ public static class AppPaths
     public static string DatabaseFile => Path.Combine(DataRoot, "audiobookshelf.db");
     public static string LogsDirectory => Path.Combine(DataRoot, "Logs");
 
+    /// <summary>Cover art kept on disk, so the shelf works offline and stops re-fetching.</summary>
+    public static string CoversDirectory => Path.Combine(DataRoot, "covers");
+
+    /// <summary>Session-scoped audio cache for streamed playback (emptied on start/exit).</summary>
+    public static string StreamCacheDirectory => Path.Combine(DataRoot, "streamcache");
+
     /// <summary>Where earlier versions kept everything, kept around for migration and as a fallback.</summary>
     public static string LegacyRoot => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NineLivesAudio");

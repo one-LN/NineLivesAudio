@@ -7,7 +7,8 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:models="using:NineLivesAudio.Models"
     mc:Ignorable="d"
-    Loaded="Page_Loaded">
+    Loaded="Page_Loaded"
+    Background="{ThemeResource VoidDeepBrush}">
 
     <Grid Padding="{StaticResource PagePadding}">
         <Grid.RowDefinitions>
@@ -44,7 +45,7 @@
                       Height="50"
                       HorizontalAlignment="Center"
                       VerticalAlignment="Center"
-                      Foreground="{StaticResource SigilGoldDimBrush}"/>
+                      Foreground="{ThemeResource SigilGoldDimBrush}"/>
 
         <!-- Content -->
         <ScrollViewer Grid.Row="1"
@@ -63,10 +64,10 @@
                         </ItemsRepeater.Layout>
                         <ItemsRepeater.ItemTemplate>
                             <DataTemplate x:DataType="models:DownloadItem">
-                                <Border Background="{StaticResource VoidSurfaceBrush}"
+                                <Border Background="{ThemeResource VoidSurfaceBrush}"
                                         CornerRadius="{StaticResource RadiusMD}"
                                         Padding="16"
-                                        BorderBrush="{StaticResource DustBrush}"
+                                        BorderBrush="{ThemeResource DustBrush}"
                                         BorderThickness="1">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -139,10 +140,10 @@
                         </ItemsRepeater.Layout>
                         <ItemsRepeater.ItemTemplate>
                             <DataTemplate x:DataType="models:DownloadItem">
-                                <Border Background="{StaticResource VoidSurfaceBrush}"
+                                <Border Background="{ThemeResource VoidSurfaceBrush}"
                                         CornerRadius="{StaticResource RadiusMD}"
                                         Padding="16"
-                                        BorderBrush="{StaticResource DustBrush}"
+                                        BorderBrush="{ThemeResource DustBrush}"
                                         BorderThickness="1">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -154,7 +155,7 @@
                                         <!-- Checkmark -->
                                         <FontIcon Grid.Column="0"
                                                   Glyph="&#xE73E;"
-                                                  Foreground="{StaticResource RitualSuccessBrush}"
+                                                  Foreground="{ThemeResource RitualSuccessBrush}"
                                                   FontSize="20"
                                                   Margin="0,0,12,0"/>
 
@@ -206,7 +207,7 @@
         <Border Grid.Row="1"
                 VerticalAlignment="Top"
                 Visibility="{x:Bind ViewModel.HasError, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                Background="{StaticResource RitualErrorFaintBrush}"
+                Background="{ThemeResource RitualErrorFaintBrush}"
                 CornerRadius="{StaticResource RadiusSM}"
                 Padding="12"
                 Margin="0,0,0,16">
@@ -215,10 +216,10 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <FontIcon Glyph="&#xE7BA;" Foreground="{StaticResource RitualErrorBrush}" Margin="0,0,12,0"/>
+                <FontIcon Glyph="&#xE7BA;" Foreground="{ThemeResource RitualErrorBrush}" Margin="0,0,12,0"/>
                 <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
                            TextWrapping="Wrap" VerticalAlignment="Center"
-                           Foreground="{StaticResource MistBrush}"/>
+                           Foreground="{ThemeResource MistBrush}"/>
             </Grid>
         </Border>
     </Grid>

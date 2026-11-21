@@ -67,16 +67,3 @@ public class BoolToInverseConverter : IValueConverter
     }
 }
 
-public class BoolToHighlightBrushConverter : IValueConverter
-{
-    private static readonly SolidColorBrush ActiveBrush =
-        new(Windows.UI.Color.FromArgb(0xFF, 0x11, 0x18, 0x27)); // VoidSurface
-    private static readonly SolidColorBrush InactiveBrush =
-        new(Windows.UI.Color.FromArgb(0x00, 0x00, 0x00, 0x00)); // Transparent
-
-    public object Convert(object value, Type targetType, object parameter, string language)
-        => value is true ? ActiveBrush : InactiveBrush;
-
-    public object ConvertBack(object value, Type targetType, object parameter, string language)
-        => throw new NotImplementedException();
-}

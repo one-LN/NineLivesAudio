@@ -421,7 +421,7 @@ if _APIFILE.exists():
         fail("[silent-fail] AudioBookshelfApiService: missing LastRequestUnauthorized")
 
 if _SYNCFILE.exists():
-    body = method_body(_SYNCFILE, "public async Task SyncLibrariesAsync()")
+    body = method_body(_SYNCFILE, "public async Task SyncLibrariesAsync(")
     if not body:
         fail("[silent-fail] SyncService: SyncLibrariesAsync not found")
     else:

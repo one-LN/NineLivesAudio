@@ -32,6 +32,7 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
     private readonly IAudioBookshelfApiService _apiService;
     private readonly ILocalDatabase _database;
     private readonly IAudioPlaybackService _playbackService;
+    private readonly ISettingsService _settingsService;
     private readonly IDownloadService _downloadService;
     private readonly ISyncService _syncService;
     private readonly ILoggingService _logger;
@@ -128,11 +129,13 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         INotificationService notifications,
         IMetadataNormalizer normalizer,
         ILibraryFilterService filterService,
-        ILocalizationService localization)
+        ILocalizationService localization,
+        ISettingsService settingsService)
     {
         _apiService = apiService;
         _database = database;
         _playbackService = playbackService;
+        _settingsService = settingsService;
         _downloadService = downloadService;
         _syncService = syncService;
         _logger = logger;
@@ -155,6 +158,26 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         // user staring at a cached/empty shelf until they hit refresh.
         WeakReferenceMessenger.Default.Register<ConnectivityChangedMessage>(this, (r, m) =>
             ((LibraryViewModel)r).OnConnectivityChanged(m.Value));
+
+        // Positions are persisted on pause/stop/every 12s. Patch the shelf's own objects so
+        // their progress text moves without waiting for a refresh.
+        WeakReferenceMessenger.Default.Register<PlaybackProgressSavedMessage>(this, (r, m) =>
+        {
+            var self = (LibraryViewModel)r;
+            self._dispatcherQueue?.TryEnqueue(() =>
+            {
+                var book = self.AudioBooks.FirstOrDefault(b => b.Id == m.ItemId);
+                if (book == null) return;
+
+                book.CurrentTime = m.Position;
+                if (m.Duration.TotalSeconds > 0)
+                {
+                    var ratio = m.Position.TotalSeconds / m.Duration.TotalSeconds;
+                    book.Progress = book.Progress > 1.0 ? ratio * 100 : ratio;
+                }
+                if (m.IsFinished) book.IsFinished = true;
+            });
+        });
 
         // A full sync (first connect, "Sync now", 5-minute tick) can bring in new libraries
         // and progress. Reload afterwards so the shelf stops showing the pre-connect state.
@@ -188,17 +211,43 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         _ = ReloadAfterSyncAsync();
     }
 
-    /// <summary>Refresh the shelf after a completed sync (no extra sync is triggered here).</summary>
+    /// <summary>
+    /// Refresh the shelf after a completed sync. This is a background refresh: it reads the
+    /// database (the sync already wrote it) and patches the existing objects, so no spinner
+    /// appears, the list is not reset and scrolling is not lost. The timer fires every minute,
+    /// so anything visible here would flicker constantly.
+    /// </summary>
     private async Task ReloadAfterSyncAsync()
     {
         if (IsLoading) return;
 
-        try
+        var now = DateTime.UtcNow;
+        if ((now - _lastBackgroundRefreshAt).TotalMilliseconds < 1000) return;
+        _lastBackgroundRefreshAt = now;
+
+        // Nothing on screen yet (first run / new library): fall back to the visible path.
+        if (SelectedLibrary == null)
         {
             await LoadLibrariesAsync();
-            if (SelectedLibrary != null)
-                await LoadAudioBooksAsync();
-            _logger.Log("[Library] Shelf refreshed after sync");
+            return;
+        }
+
+        try
+        {
+            var books = await _database.GetAudioBooksByLibraryAsync(SelectedLibrary.Id);
+            if (books.Count == 0 && !_apiService.IsAuthenticated)
+            {
+                Libraries.Clear();
+                SelectedLibrary = null;
+                AudioBooks.Clear();
+                FilteredAudioBooks.Clear();
+                _normalizedCache.Clear();
+                _logger.Log("[Library] Cleared in-memory shelf after server disconnect/delete");
+                return;
+            }
+            MergeBooks(books);
+            UpdateShowEmptyState();
+            _logger.LogDebug($"[Library] Background refresh merged {books.Count} books (idle, no re-render)");
         }
         catch (Exception ex)
         {
@@ -206,21 +255,93 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Runs VM work on the UI thread. Touching an <see cref="ObservableCollection{T}"/> or even a
+    /// bound property from a background thread makes WinRT marshal a notification across threads
+    /// — which throws (and that is exactly what surfaced as "load failed").
+    /// </summary>
+    private Task RunOnUiThreadAsync(Func<Task> work)
+    {
+        var dispatcher = _dispatcherQueue;
+        if (dispatcher == null || dispatcher.HasThreadAccess)
+            return work();
+
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var queued = dispatcher.TryEnqueue(async () =>
+        {
+            try
+            {
+                await work();
+                completion.TrySetResult(true);
+            }
+            catch (Exception ex)
+            {
+                completion.TrySetException(ex);
+            }
+        });
+
+        if (!queued) completion.TrySetResult(false);
+
+        return completion.Task;
+    }
+
     private async Task ReloadAfterReconnectAsync()
     {
         if (IsLoading) return;
 
-        _logger.Log("[Library] Server reachable again — refreshing library");
+        // Coming back online used to start a full pull immediately — a 12-second stall in the
+        // log, while audio was playing. Patch from the database first (instant, silent), then
+        // let the expensive pull happen once the connection has settled.
+        _logger.Log("[Library] Server reachable again — patching from cache, full pull in 45s");
+
+        // Deliberately NOT clearing _lastServerRefreshAt here: it used to make the very next page
+        // refresh pull all 309 items again, so a reconnect cost two 12-second pulls back to back
+        // (14:22:40 and 14:23:27 in app_2026-11-8.log). The pull below forces itself instead.
+
         try
         {
-            await LoadLibrariesAsync();
-            if (SelectedLibrary != null)
-                await LoadAudioBooksAsync();
+            await ReloadAfterSyncAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogError("[Library] Reconnect refresh failed", ex);
+            _logger.LogError("[Library] Reconnect cache patch failed", ex);
         }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(45));
+
+                // Waiting is fine on a worker thread; touching the collections is not.
+                await RunOnUiThreadAsync(async () =>
+                {
+                    if (IsLoading) return;
+
+                    // Never spend the shelf's bandwidth on metadata while something is playing.
+                    if (_playbackService.State is PlaybackState.Playing or PlaybackState.Loading or PlaybackState.Buffering)
+                    {
+                        _logger.LogDebug("[Library] Playback active — delayed full pull skipped");
+                        return;
+                    }
+
+                    await LoadLibrariesAsync();
+                    if (SelectedLibrary != null)
+                        _lastServerRefreshAt = DateTime.MinValue; // force the fetch below
+
+                    await _syncService.SyncLibrariesAsync(force: true);
+                    await LoadAudioBooksAsync();
+
+                    // Just fetched: let the throttle hold off the next page refresh.
+                    _lastServerRefreshAt = DateTime.UtcNow;
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"[Library] Delayed reconnect refresh failed ({ex.GetType().Name})", ex);
+            }
+        });
     }
 
     /// <summary>
@@ -309,6 +430,15 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             _logger.LogError("Failed to validate token", ex);
         }
 
+        // Re-entering the page (the Frame hands back the cached instance) used to download the
+        // library list again and clear/refill the collections, which is the "always loading"
+        // the shelf showed while the periodic sync was running.
+        if (Libraries.Count > 0 && (DateTime.UtcNow - _lastLibraryListLoadAt).TotalSeconds < 30)
+        {
+            _logger.LogDebug("[Library] Page re-entered — shelf already current, no reload");
+            return;
+        }
+
         await LoadLibrariesAsync();
     }
 
@@ -321,9 +451,11 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         WeakReferenceMessenger.Default.UnregisterAll(this);
     }
 
-    [RelayCommand]
     private Task LoadLibrariesAsync()
     {
+        if (_dispatcherQueue is { HasThreadAccess: false })
+            return RunOnUiThreadAsync(LoadLibrariesAsync);
+
         if (_librariesLoadInFlight is { IsCompleted: false })
             return _librariesLoadInFlight;
 
@@ -331,18 +463,30 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         return _librariesLoadInFlight;
     }
 
+    // When the library list was last fetched (page entry throttle, see InitializeAsync).
+    private DateTime _lastLibraryListLoadAt = DateTime.MinValue;
+
+    // The log showed three "Triggering SyncService" lines inside 300 ms because concurrent
+    // loads all passed the 30-second check before any of them set it. Only one may win.
+    private int _serverRefreshGate;
+
+    // Post-sync refreshes arrive in bursts (progress message + full-sync message); one per
+    // second is plenty for a background patch.
+    private DateTime _lastBackgroundRefreshAt = DateTime.MinValue;
+
     private async Task LoadLibrariesCoreAsync()
     {
         try
         {
-            _logger.Log("LoadLibrariesAsync started");
+            _lastLibraryListLoadAt = DateTime.UtcNow;
+            _logger.LogDebug("LoadLibrariesAsync started");
             IsLoading = true;
             HasError = false;
 
             // Try to load from local database first
-            _logger.Log("Loading libraries from local database...");
+            _logger.LogDebug("Loading libraries from local database...");
             var localLibraries = await _database.GetAllLibrariesAsync();
-            _logger.Log($"Loaded {localLibraries.Count} libraries from database");
+            _logger.LogDebug($"Loaded {localLibraries.Count} libraries from database");
 
             Libraries.Clear();
             foreach (var library in localLibraries)
@@ -355,9 +499,9 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             {
                 try
                 {
-                    _logger.Log("Fetching libraries from server...");
+                    _logger.LogDebug("Fetching libraries from server...");
                     var serverLibraries = await _apiService.GetLibrariesAsync();
-                    _logger.Log($"Received {serverLibraries.Count} libraries from server");
+                    _logger.LogDebug($"Received {serverLibraries.Count} libraries from server");
 
                     if (serverLibraries.Any())
                     {
@@ -387,23 +531,53 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             // Select first library if none selected
             if (SelectedLibrary == null && Libraries.Any())
             {
-                _logger.Log($"Auto-selecting first library: {Libraries.First().Name}");
+                _logger.LogDebug($"Auto-selecting first library: {Libraries.First().Name}");
                 SelectedLibrary = Libraries.First();
             }
 
-            _logger.Log("LoadLibrariesAsync completed");
+            _logger.LogDebug("LoadLibrariesAsync completed");
         }
         catch (Exception ex)
         {
-            _logger.LogError("LoadLibrariesAsync failed", ex);
-            ErrorMessage = _localization.Format("FailedLoadLibraries", ex.Message);
+            _logger.LogError($"LoadLibrariesAsync failed ({ex.GetType().Name})", ex);
+
+            // WinRT's own messages are empty strings; showing "Failed: " tells the user nothing.
+            var detail = string.IsNullOrWhiteSpace(ex.Message) ? ex.GetType().Name : ex.Message;
+            ErrorMessage = _localization.Format("FailedLoadLibraries", detail);
             HasError = true;
-            _notifications.ShowError(ex.Message, _localization.GetString("LoadFailed"));
+            _notifications.ShowError(detail, _localization.GetString("LoadFailed"));
         }
         finally
         {
             IsLoading = false;
         }
+    }
+
+    /// <summary>
+    /// Replaces the shelf only when the set or order of books actually changed. Otherwise the
+    /// incoming values are copied onto the existing objects, which raise change notifications —
+    /// no ItemsRepeater reset, so a background refresh no longer blanks or scrolls the shelf.
+    /// </summary>
+    private void MergeBooks(IReadOnlyList<AudioBook> incoming)
+    {
+        if (!HasSameBooks(AudioBooks, incoming))
+        {
+            AudioBooks.ReplaceRange(incoming);
+            return;
+        }
+
+        for (var i = 0; i < incoming.Count; i++)
+            CopyProgress(AudioBooks[i], incoming[i]);
+    }
+
+    private static void CopyProgress(AudioBook target, AudioBook source)
+    {
+        target.CurrentTime = source.CurrentTime;
+        target.Progress = source.Progress;
+        target.IsFinished = source.IsFinished;
+
+        if (target.IsDownloaded != source.IsDownloaded)
+            target.IsDownloaded = source.IsDownloaded;
     }
 
     /// <summary>True when both lists hold the same books in the same order (id-only compare).</summary>
@@ -420,9 +594,11 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         return true;
     }
 
-    [RelayCommand]
     private Task LoadAudioBooksAsync()
     {
+        if (_dispatcherQueue is { HasThreadAccess: false })
+            return RunOnUiThreadAsync(LoadAudioBooksAsync);
+
         if (_booksLoadInFlight is { IsCompleted: false })
         {
             _logger.LogDebug("[Library] Books load already running — joining it");
@@ -432,6 +608,10 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         _booksLoadInFlight = LoadAudioBooksCoreAsync();
         return _booksLoadInFlight;
     }
+
+    // Set when the page last pulled a fresh library from the server. Re-entering the page
+    // (a cached instance re-raises Loaded) must not trigger another full download.
+    private DateTime _lastServerRefreshAt = DateTime.MinValue;
 
     private async Task LoadAudioBooksCoreAsync()
     {
@@ -451,8 +631,13 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
 
         try
         {
-            _logger.Log($"LoadAudioBooksAsync started for library: {SelectedLibrary.Name}");
-            IsLoading = true;
+            _logger.LogDebug($"LoadAudioBooksAsync started for library: {SelectedLibrary.Name}");
+
+            // A spinner only makes sense when there is nothing on screen. Re-entering the page
+            // with a full shelf used to blank the list and show the spinner again.
+            if (AudioBooks.Count == 0)
+                IsLoading = true;
+
             HasError = false;
 
             // Clear normalized cache when loading fresh data
@@ -463,7 +648,7 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             var localBooks = await _database.GetAudioBooksByLibraryAsync(SelectedLibrary.Id);
             _logger.Log($"[Library] Local load: {localBooks.Count} books in {stopwatch.ElapsedMilliseconds} ms");
 
-            AudioBooks.ReplaceRange(localBooks);
+            MergeBooks(localBooks);
             UpdateAvailableGroups();
             ApplyFilterInternal();
 
@@ -475,14 +660,29 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
 
             // If online, delegate to SyncService for server refresh + merge.
             // SyncService handles LocalPath preservation with robust matching.
-            if (_apiService.IsAuthenticated)
+            // Skipped when the periodic sync covered it recently — the shelf is already current
+            // and re-downloading every time the page is shown is what made it "always loading".
+            // Ten minutes while audio is playing: a full metadata pull is 300+ items and four
+            // parallel requests, and competing with the stream is exactly the "it stutters
+            // while the shelf refreshes" the user reported. Idle pages keep the 30 s refresh.
+            var refreshThrottle = _playbackService.State is PlaybackState.Playing or PlaybackState.Loading
+                ? TimeSpan.FromMinutes(10)
+                : TimeSpan.FromSeconds(30);
+
+            var sinceRefresh = DateTime.UtcNow - _lastServerRefreshAt;
+            var mayRefresh = _apiService.IsAuthenticated
+                             && sinceRefresh >= refreshThrottle
+                             && System.Threading.Interlocked.CompareExchange(ref _serverRefreshGate, 1, 0) == 0;
+
+            if (mayRefresh)
             {
+                _lastServerRefreshAt = DateTime.UtcNow;
                 try
                 {
-                    _logger.Log("Triggering SyncService for fresh server data...");
+                    _logger.LogDebug("Triggering SyncService for fresh server data...");
                     var syncStopwatch = System.Diagnostics.Stopwatch.StartNew();
                     await _syncService.SyncLibrariesAsync();
-                    _logger.Log($"[Library] Server sync finished in {syncStopwatch.ElapsedMilliseconds} ms");
+                    _logger.LogDebug($"[Library] Server sync finished in {syncStopwatch.ElapsedMilliseconds} ms");
 
                     // Reload from DB after sync (SyncService saved the merged data).
                     // Skipped when the ids did not change: re-binding 309 cards costs more
@@ -490,13 +690,16 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
                     var refreshedBooks = await _database.GetAudioBooksByLibraryAsync(SelectedLibrary.Id);
                     if (!HasSameBooks(AudioBooks, refreshedBooks))
                     {
-                        AudioBooks.ReplaceRange(refreshedBooks);
+                        MergeBooks(refreshedBooks);
                         UpdateAvailableGroups();
                         _logger.Log($"[Library] Server data changed — {AudioBooks.Count} books re-bound");
                     }
                     else
                     {
-                        _logger.LogDebug("[Library] Server data unchanged — keeping the current list");
+                        // Same books, same order: only the progress moved. Update the existing
+                        // objects (they notify) instead of rebinding the shelf.
+                        MergeBooks(refreshedBooks);
+                        _logger.LogDebug("[Library] Server data unchanged — progress patched in place");
                     }
 
                     // The server answered: drop the offline-only filter again (unless the
@@ -517,6 +720,10 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
                     ApplyOfflineFallback();
                     _notifications.ShowInfo(_localization.GetString("ShowingDownloadedOnly"));
                 }
+                finally
+                {
+                    System.Threading.Interlocked.Exchange(ref _serverRefreshGate, 0);
+                }
             }
 
             IsLoading = false;
@@ -525,8 +732,10 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError($"LoadAudioBooksAsync failed for library {SelectedLibrary?.Name}", ex);
-            ErrorMessage = _localization.Format("FailedLoadBooks", ex.Message);
+            _logger.LogError($"LoadAudioBooksAsync failed for library {SelectedLibrary?.Name} ({ex.GetType().Name})", ex);
+
+            var detail = string.IsNullOrWhiteSpace(ex.Message) ? ex.GetType().Name : ex.Message;
+            ErrorMessage = _localization.Format("FailedLoadBooks", detail);
             HasError = true;
         }
         finally
@@ -540,13 +749,22 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
     private async Task RefreshAsync()
     {
         IsRefreshing = true;
-        await _syncService.SyncNowAsync();
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        _logger.Log("[Library] Manual refresh requested");
+
+        // Explicit user action: pull the library too, not just progress, and allow the reload
+        // below to hit the server even though the background throttle said "recently synced".
+        await _syncService.SyncLibrariesAsync(force: true);
+        await _syncService.SyncProgressAsync();
+        _lastServerRefreshAt = DateTime.MinValue;
         await LoadLibrariesAsync();
         if (SelectedLibrary != null)
         {
             await LoadAudioBooksAsync();
         }
         IsRefreshing = false;
+        _logger.Log($"[Library] Manual refresh finished in {stopwatch.ElapsedMilliseconds} ms ({AudioBooks.Count} books)");
         _notifications.ShowSuccess(_localization.GetString("LibraryRefreshed"));
     }
 
@@ -657,6 +875,58 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
         catch (OperationCanceledException) { /* superseded by newer keystroke */ }
     }
 
+    // Set while applying saved preferences, so restoring does not immediately write them back.
+    private bool _restoringLibraryPreferences;
+
+    /// <summary>
+    /// Sort order, the two filters and the layout were reset on every launch. They are the kind
+    /// of setting a user sets once, so they are now stored alongside the rest of the app settings.
+    /// </summary>
+    private void RestoreLibraryPreferences()
+    {
+        _restoringLibraryPreferences = true;
+        try
+        {
+            var settings = _settingsService.Settings;
+
+            if (Enum.TryParse<SortMode>(settings.LibrarySortMode, out var sort))
+                CurrentSortMode = sort;
+            if (Enum.TryParse<ViewMode>(settings.LibraryViewMode, out var view))
+                CurrentViewMode = view;
+
+            HideFinished = settings.LibraryHideFinished;
+            ShowDownloadedOnly = settings.LibraryShowDownloadedOnly;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug($"[Library] Could not restore view preferences: {ex.Message}");
+        }
+        finally
+        {
+            _restoringLibraryPreferences = false;
+        }
+    }
+
+    private void PersistLibraryPreferences()
+    {
+        if (_restoringLibraryPreferences) return;
+
+        try
+        {
+            var settings = _settingsService.Settings;
+            settings.LibrarySortMode = CurrentSortMode.ToString();
+            settings.LibraryViewMode = CurrentViewMode.ToString();
+            settings.LibraryHideFinished = HideFinished;
+            settings.LibraryShowDownloadedOnly = ShowDownloadedOnly;
+
+            _ = _settingsService.SaveSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug($"[Library] Could not save view preferences: {ex.Message}");
+        }
+    }
+
     partial void OnCurrentViewModeChanged(ViewMode value)
     {
         UpdateAvailableGroups();
@@ -672,11 +942,13 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
     partial void OnCurrentSortModeChanged(SortMode value)
     {
         ApplyFilterInternal();
+        PersistLibraryPreferences();
     }
 
     partial void OnHideFinishedChanged(bool value)
     {
         ApplyFilterInternal();
+        PersistLibraryPreferences();
     }
 
     partial void OnShowDownloadedOnlyChanged(bool value)
@@ -686,12 +958,7 @@ public partial class LibraryViewModel : ObservableObject, IDisposable
             _autoOfflineFallback = false;
 
         ApplyFilterInternal();
-    }
-
-    [RelayCommand]
-    private void SetViewMode(ViewMode mode)
-    {
-        CurrentViewMode = mode;
+        PersistLibraryPreferences();
     }
 
     private void UpdateAvailableGroups()

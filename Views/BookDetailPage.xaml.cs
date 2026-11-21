@@ -1,4 +1,7 @@
+using CommunityToolkit.Mvvm.Messaging;
+using NineLivesAudio.Data;
 using NineLivesAudio.Helpers;
+using NineLivesAudio.Messages;
 using NineLivesAudio.Models;
 using NineLivesAudio.Services;
 using NineLivesAudio.ViewModels;
@@ -19,6 +22,10 @@ public sealed partial class BookDetailPage : Page
     private readonly LibraryViewModel _libraryViewModel;
     private readonly ILoggingService _logger;
     private readonly ILocalizationService _localization;
+    private readonly IAudioBookshelfApiService _apiService;
+    private readonly ILocalDatabase _database;
+    private readonly IAudioPlaybackService _playbackService;
+    private DateTime _lastLiveProgressAt = DateTime.MinValue;
 
     public BookDetailPage()
     {
@@ -27,7 +34,15 @@ public sealed partial class BookDetailPage : Page
         _libraryViewModel = App.Services.GetRequiredService<LibraryViewModel>();
         _logger = App.Services.GetRequiredService<ILoggingService>();
         _localization = App.Services.GetRequiredService<ILocalizationService>();
+        _apiService = App.Services.GetRequiredService<IAudioBookshelfApiService>();
+        _database = App.Services.GetRequiredService<ILocalDatabase>();
+        _playbackService = App.Services.GetRequiredService<IAudioPlaybackService>();
         this.Unloaded += Page_Unloaded;
+
+        // The chapter rows are produced by XamlReader, so event handlers cannot be declared in the
+        // template. Attaching them when a row is realised is the supported route.
+        ChaptersRepeater.ElementPrepared += ChaptersRepeater_ElementPrepared;
+        ThemeService.PaletteChanged += OnPaletteChanged;
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -43,6 +58,97 @@ public sealed partial class BookDetailPage : Page
             _viewModel.Initialize(audioBook);
             LoadBookDetails();
         }
+
+        // Coming back from the player: the pause happened while this page was unregistered
+        // (Page_Unloaded calls UnregisterAll), so nothing updated the numbers. Read the position
+        // that was just saved instead of showing where playback started.
+        _ = RefreshProgressAsync();
+
+        // While this page is the one on screen and its book is playing, follow the position.
+        WeakReferenceMessenger.Default.Register<PositionChangedMessage>(this, (r, m) =>
+        {
+            var page = (BookDetailPage)r;
+            if (page._audioBook == null) return;
+            if (page._playbackService.CurrentAudioBook?.Id != page._audioBook.Id) return;
+
+            var now = DateTime.UtcNow;
+            if ((now - page._lastLiveProgressAt).TotalMilliseconds < 1500) return;
+            page._lastLiveProgressAt = now;
+
+            page.DispatcherQueue.TryEnqueue(() =>
+            {
+                page._audioBook.CurrentTime = m.Value;
+                page._viewModel.Initialize(page._audioBook);
+                page.UpdateProgressDisplay();
+            });
+        });
+
+        // Keep the "N% complete (x / y)" line current: pause and stop both persist a
+        // position, and this page used to only pick it up when reopened.
+        WeakReferenceMessenger.Default.Register<PlaybackProgressSavedMessage>(this, (r, m) =>
+        {
+            var page = (BookDetailPage)r;
+            if (page._audioBook == null || page._audioBook.Id != m.ItemId) return;
+
+            page.DispatcherQueue.TryEnqueue(() =>
+            {
+                page._audioBook.CurrentTime = m.Position;
+
+                if (m.Duration.TotalSeconds > 0)
+                {
+                    page._audioBook.Duration = m.Duration;
+
+                    // ProgressPercent accepts either 0–1 or 0–100 depending on what the
+                    // server sent, so keep whatever convention this book already uses.
+                    var ratio = m.Position.TotalSeconds / m.Duration.TotalSeconds;
+                    page._audioBook.Progress = page._audioBook.Progress > 1.0 ? ratio * 100 : ratio;
+                }
+                if (m.IsFinished) page._audioBook.IsFinished = true;
+                page._viewModel.Initialize(page._audioBook);
+                page.UpdateProgressDisplay();
+            });
+        });
+    }
+
+    /// <summary>
+    /// Re-reads where this book actually is. The live player wins while it holds the book;
+    /// otherwise the database has the position that the pause just wrote.
+    /// </summary>
+    private async Task RefreshProgressAsync()
+    {
+        if (_audioBook == null) return;
+
+        try
+        {
+            var playing = _playbackService.CurrentAudioBook;
+
+            if (playing != null && playing.Id == _audioBook.Id)
+            {
+                var position = _playbackService.Position;
+                if (position > TimeSpan.Zero)
+                    _audioBook.CurrentTime = position;
+            }
+            else
+            {
+                var fresh = await _database.GetAudioBookAsync(_audioBook.Id);
+                if (fresh != null)
+                {
+                    _audioBook.CurrentTime = fresh.CurrentTime;
+                    _audioBook.Progress = fresh.Progress;
+                    _audioBook.IsFinished = fresh.IsFinished;
+                    if (fresh.Duration > TimeSpan.Zero)
+                        _audioBook.Duration = fresh.Duration;
+                }
+            }
+
+            _viewModel.Initialize(_audioBook);
+            UpdateProgressDisplay();
+            _logger.LogDebug($"[BookDetail] Progress refreshed: {_audioBook.CurrentTime} ({_audioBook.ProgressPercent:F1}%)");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug($"[BookDetail] Progress refresh failed: {ex.Message}");
+        }
     }
 
     private void Page_Loaded(object sender, RoutedEventArgs e)
@@ -51,7 +157,9 @@ public sealed partial class BookDetailPage : Page
 
     private void Page_Unloaded(object sender, RoutedEventArgs e)
     {
+        ThemeService.PaletteChanged -= OnPaletteChanged;
         _localization.LanguageChanged -= ApplyLocalization;
+        WeakReferenceMessenger.Default.UnregisterAll(this);
     }
 
     private void LoadBookDetails()
@@ -59,6 +167,12 @@ public sealed partial class BookDetailPage : Page
         if (_audioBook == null) return;
 
         _logger.Log($"Loading book details: {_audioBook.Title}");
+
+        // The play session (which carries the track URLs) took almost six seconds on this
+        // server. Ask for it now, while the user reads the blurb, so pressing play finds it
+        // ready. Metadata only — no audio is fetched here.
+        try { _apiService.WarmPlaybackSession(_audioBook.Id); }
+        catch (Exception ex) { _logger.LogDebug($"[Playback] Session warm-up failed: {ex.Message}"); }
 
         // Title — populate both wide and narrow
         TitleText.Text = _audioBook.Title;
@@ -135,11 +249,14 @@ public sealed partial class BookDetailPage : Page
             TagsPanel.Visibility = Visibility.Visible;
         }
 
-        // Description
-        if (!string.IsNullOrEmpty(_audioBook.Description))
+        // Description — Audiobookshelf stores it as HTML; render plain text.
+        var cleanedDescription = HtmlTextHelper.StripHtml(_audioBook.Description);
+        if (!string.IsNullOrEmpty(cleanedDescription))
         {
-            DescriptionText.Text = _audioBook.Description;
+            DescriptionText.Text = cleanedDescription;
             DescriptionPanel.Visibility = Visibility.Visible;
+            if (cleanedDescription.Length != (_audioBook.Description?.Length ?? 0))
+                _logger.Log($"[BookDetail] Description HTML stripped ({_audioBook.Description!.Length} -> {cleanedDescription.Length} chars)");
         }
 
         // Download state
@@ -248,7 +365,9 @@ public sealed partial class BookDetailPage : Page
         var labelBlock = new TextBlock
         {
             Text = label,
-            Foreground = (Brush)Application.Current.Resources["MistFaintBrush"],
+            // Opacity instead of a fixed brush: these rows are built in code once and would
+            // otherwise keep the dark palette after switching to the light theme.
+            Opacity = 0.72,
             FontSize = 13
         };
         Grid.SetColumn(labelBlock, 0);
@@ -257,14 +376,70 @@ public sealed partial class BookDetailPage : Page
         {
             Text = value,
             FontSize = 13,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = (Brush)Application.Current.Resources["StarlightDimBrush"]
+            TextWrapping = TextWrapping.Wrap
         };
         Grid.SetColumn(valueBlock, 1);
 
         grid.Children.Add(labelBlock);
         grid.Children.Add(valueBlock);
         MetadataItemsPanel.Children.Add(grid);
+    }
+
+    private void ChaptersRepeater_ElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)
+    {
+        if (args.Element is not FrameworkElement row) return;
+
+        row.Tapped -= ChapterRow_Tapped;
+        row.Tapped += ChapterRow_Tapped;
+    }
+
+    /// <summary>
+    /// Clicking a chapter used to do nothing at all — the list was display-only. Now it loads the
+    /// book if the player is holding another one, jumps to that chapter and opens the player.
+    /// </summary>
+    private async void ChapterRow_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+    {
+        if (_audioBook == null) return;
+        if (sender is not FrameworkElement row || row.DataContext is not ChapterDisplayItem item) return;
+
+        var chapterIndex = item.Index - 1;
+        if (chapterIndex < 0) return;
+
+        try
+        {
+            if (_playbackService.CurrentAudioBook?.Id != _audioBook.Id)
+            {
+                _logger.Log($"[BookDetail] Chapter tap needs the book in the player: {_audioBook.Title}");
+                if (!await _playbackService.LoadAudioBookAsync(_audioBook))
+                {
+                    _logger.LogWarning($"[BookDetail] Could not load '{_audioBook.Title}' for a chapter jump");
+                    return;
+                }
+            }
+
+            await _playbackService.SeekToChapterAsync(chapterIndex);
+            await _playbackService.PlayAsync();
+
+            _logger.Log($"[BookDetail] Jumped to chapter #{item.Index}: {item.Title}");
+            Frame.Navigate(typeof(PlayerPage));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning($"[BookDetail] Chapter jump failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The row brushes are snapshots, so a theme switch has to rebuild the lists.
+    /// </summary>
+    private void OnPaletteChanged()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_audioBook == null) return;
+            LoadChapters();
+            LoadTracks();
+        });
     }
 
     private void LoadChapters()
@@ -288,7 +463,7 @@ public sealed partial class BookDetailPage : Page
         var template = (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(@"
             <DataTemplate xmlns=""http://schemas.microsoft.com/winfx/2006/xaml/presentation"">
                 <Grid CornerRadius=""4"" Padding=""12,8""
-                      Background=""{Binding ChapterBackground}"">
+                      Background=""{Binding RowBackgroundBrush}"">
                     <Grid.RowDefinitions>
                         <RowDefinition Height=""Auto""/>
                         <RowDefinition Height=""Auto""/>
@@ -299,18 +474,18 @@ public sealed partial class BookDetailPage : Page
                         <ColumnDefinition Width=""Auto""/>
                         <ColumnDefinition Width=""Auto""/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column=""0"" Text=""{Binding Index}"" Foreground=""#FF6B7280""/>
+                    <TextBlock Grid.Column=""0"" Text=""{Binding Index}"" Foreground=""{Binding MetaBrush}""/>
                     <TextBlock Grid.Column=""1"" Text=""{Binding Title}"" TextTrimming=""CharacterEllipsis""
-                               FontWeight=""{Binding TitleWeight}"" Foreground=""#FFE0E0E8""/>
+                               FontWeight=""{Binding TitleWeight}"" Foreground=""{Binding TitleBrush}""/>
                     <TextBlock Grid.Column=""2"" Text=""{Binding StatusIcon}"" Margin=""8,0,0,0"" FontSize=""12""
-                               Foreground=""#FFC5A55A""/>
-                    <TextBlock Grid.Column=""3"" Text=""{Binding StartTime}"" Foreground=""#FF6B7280"" Margin=""8,0,0,0""/>
+                               Foreground=""{Binding AccentBrush}""/>
+                    <TextBlock Grid.Column=""3"" Text=""{Binding StartTime}"" Foreground=""{Binding MetaBrush}"" Margin=""8,0,0,0""/>
                     <ProgressBar Grid.Row=""1"" Grid.ColumnSpan=""4""
                                  Minimum=""0"" Maximum=""100""
                                  Value=""{Binding ProgressPercent}""
                                  Height=""3"" Margin=""0,4,0,0""
                                  CornerRadius=""2""
-                                 Foreground=""#FFC5A55A""
+                                 Foreground=""{Binding AccentBrush}""
                                  Visibility=""{Binding ProgressBarVisibility}""/>
                 </Grid>
             </DataTemplate>");
@@ -336,7 +511,7 @@ public sealed partial class BookDetailPage : Page
     {
         var template = (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(@"
             <DataTemplate xmlns=""http://schemas.microsoft.com/winfx/2006/xaml/presentation"">
-                <Grid Background=""#FF111827""
+                <Grid Background=""{Binding RowBackgroundBrush}""
                       CornerRadius=""4""
                       Padding=""12,8"">
                     <Grid.ColumnDefinitions>
@@ -344,10 +519,10 @@ public sealed partial class BookDetailPage : Page
                         <ColumnDefinition Width=""*""/>
                         <ColumnDefinition Width=""Auto""/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column=""0"" Text=""{Binding Index}"" Foreground=""#FF6B7280""/>
+                    <TextBlock Grid.Column=""0"" Text=""{Binding Index}"" Foreground=""{Binding MetaBrush}""/>
                     <TextBlock Grid.Column=""1"" Text=""{Binding Title}"" TextTrimming=""CharacterEllipsis""
-                               Foreground=""#FFE0E0E8""/>
-                    <TextBlock Grid.Column=""2"" Text=""{Binding Duration}"" Foreground=""#FF6B7280"" Margin=""8,0,0,0""/>
+                               Foreground=""{Binding TitleBrush}""/>
+                    <TextBlock Grid.Column=""2"" Text=""{Binding Duration}"" Foreground=""{Binding MetaBrush}"" Margin=""8,0,0,0""/>
                 </Grid>
             </DataTemplate>");
         return template;

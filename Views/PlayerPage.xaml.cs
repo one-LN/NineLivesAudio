@@ -26,7 +26,13 @@ public sealed partial class PlayerPage : Page
     private readonly ILocalizationService _localization;
     private readonly ISettingsService _settingsService;
     private readonly INotificationService _notifications;
+    private readonly IBookmarkQueue _bookmarkQueue;
     private bool _isUserSeeking = false;
+
+    // Set while RefreshProgressDisplay writes the slider. Those writes are not a seek — the
+    // FocusState check alone stopped working as soon as the thumb had been touched once.
+    private bool _isUpdatingProgressSlider;
+    private int _seekDebounceVersion;
     private bool _isChapterMode = false;
 
     // Set while the toggle is changed by code (restore / "this book has no chapters")
@@ -47,6 +53,7 @@ public sealed partial class PlayerPage : Page
         _localization = App.Services.GetRequiredService<ILocalizationService>();
         _settingsService = App.Services.GetRequiredService<ISettingsService>();
         _notifications = App.Services.GetRequiredService<INotificationService>();
+        _bookmarkQueue = App.Services.GetRequiredService<IBookmarkQueue>();
         this.InitializeComponent();
         RegisterChapterAccelerators();
     }
@@ -91,20 +98,29 @@ public sealed partial class PlayerPage : Page
 
         // Initial UI update
         UpdateAllUI();
+
+        // The source badge is painted from code; repaint it when the palette changes.
+        Helpers.ThemeService.PaletteChanged -= OnPaletteChanged;
+        Helpers.ThemeService.PaletteChanged += OnPaletteChanged;
+    }
+
+    private void OnPaletteChanged()
+    {
+        try { UpdateSourceBadge(); }
+        catch { /* page torn down */ }
     }
 
     private void Page_Unloaded(object sender, RoutedEventArgs e)
     {
+        Helpers.ThemeService.PaletteChanged -= OnPaletteChanged;
         _localization.LanguageChanged -= ApplyLocalization;
         _logger.Log("PlayerPage unloaded, cleaning up event subscriptions");
 
         ViewModel.PropertyChanged -= ViewModel_PropertyChanged;
         WeakReferenceMessenger.Default.UnregisterAll(this);
 
-        if (ViewModel is IDisposable disposable)
-        {
-            disposable.Dispose();
-        }
+        // Not disposing the view model: the cached page is shown again and needs its
+        // subscriptions (it drives the position display).
     }
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -177,7 +193,15 @@ public sealed partial class PlayerPage : Page
         SpeedText.Text = $"{ViewModel.PlaybackSpeed:0.0}x";
 
         // Sleep timer
-        SleepButtonText.Text = ViewModel.SleepTimerMinutes.HasValue ? $"{ViewModel.SleepTimerMinutes}m" : _localization.GetString("Off");
+        if (ViewModel.SleepTimerMinutes.HasValue)
+        {
+            SleepButtonText.Text = $"{ViewModel.SleepTimerMinutes}m";
+            SleepButtonText.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            SleepButtonText.Visibility = Visibility.Collapsed;
+        }
         SleepTimerPanel.Visibility = ViewModel.SleepTimerMinutes.HasValue ? Visibility.Visible : Visibility.Collapsed;
         SleepTimerStatusText.Text = ViewModel.SleepTimerText;
 
@@ -249,13 +273,13 @@ public sealed partial class PlayerPage : Page
 
         if (isLocal)
         {
-            SourceBadge.Background = (Brush)Application.Current.Resources["NebulaDarkBrush"];
+            SourceBadge.Background = ThemeService.Brush("NebulaDarkBrush");
             SourceBadgeIcon.Glyph = "\uE73E"; // Checkmark
             SourceBadgeText.Text = _localization.GetString("PlayingLocal");
         }
         else
         {
-            SourceBadge.Background = (Brush)Application.Current.Resources["VoidElevatedBrush"];
+            SourceBadge.Background = ThemeService.Brush("VoidElevatedBrush");
             SourceBadgeIcon.Glyph = "\uE753"; // Cloud/wifi
             SourceBadgeText.Text = _localization.GetString("StreamingFromServer");
         }
@@ -550,27 +574,68 @@ public sealed partial class PlayerPage : Page
 
     private void ProgressSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
-        // Only seek when user is interacting with the slider
-        if (sender is Slider slider && slider.FocusState != FocusState.Unfocused)
-        {
-            _isUserSeeking = true;
+        // Our own refresh writes this slider several times a second; those writes must never seek.
+        if (_isUpdatingProgressSlider) return;
+        if (sender is not Slider slider) return;
+        if (slider.FocusState == FocusState.Unfocused) return;
 
+        _isUserSeeking = true;
+        ScheduleSeek(e.NewValue);
+    }
+
+    /// <summary>
+    /// Dragging the thumb across a 2555-track book used to fire one cross-file load per pixel:
+    /// the log showed 253 "Media opened" lines in a single minute and 53 cached tracks. The seek
+    /// is now committed once the drag settles (or immediately on release).
+    /// </summary>
+    private void ScheduleSeek(double value)
+    {
+        var version = ++_seekDebounceVersion;
+
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(350); } catch { return; }
+            if (version != _seekDebounceVersion) return;
+            DispatcherQueue.TryEnqueue(() => _ = CommitSeekAsync(value));
+        });
+    }
+
+    private void ProgressSlider_PointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (_isUpdatingProgressSlider) return;
+
+        // The thumb is up: commit now instead of waiting out the debounce.
+        _seekDebounceVersion++;
+        _ = CommitSeekAsync(ProgressSlider.Value);
+    }
+
+    private async Task CommitSeekAsync(double value)
+    {
+        try
+        {
             if (_isChapterMode)
             {
                 var chapter = _playbackService.CurrentChapter;
                 if (chapter != null && chapter.Duration.TotalSeconds > 0)
                 {
-                    // Map slider percentage to absolute position within current chapter
-                    var chapterPosition = chapter.Start + (chapter.Duration.TotalSeconds * e.NewValue / 100);
+                    var chapterPosition = chapter.Start + (chapter.Duration.TotalSeconds * value / 100);
                     chapterPosition = Math.Clamp(chapterPosition, chapter.Start, chapter.End);
-                    _ = _playbackService.SeekAsync(TimeSpan.FromSeconds(chapterPosition));
+                    await _playbackService.SeekAsync(TimeSpan.FromSeconds(chapterPosition));
+                    _logger.Log($"[Player] Chapter seek committed: {value:0.0}%");
                 }
             }
             else
             {
-                _ = ViewModel.SeekCommand.ExecuteAsync(e.NewValue);
+                await ViewModel.SeekCommand.ExecuteAsync(value);
+                _logger.Log($"[Player] Seek committed: {value:0.0}%");
             }
-
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning($"[Player] Seek failed: {ex.Message}");
+        }
+        finally
+        {
             _isUserSeeking = false;
         }
     }
@@ -612,6 +677,7 @@ public sealed partial class PlayerPage : Page
     private void PopOut_Click(object sender, RoutedEventArgs e)
     {
         App.OpenMiniPlayer();
+        App.Services.GetRequiredService<MainWindow>().MinimizeRespectingTray();
     }
 
     private void GoToLibrary_Click(object sender, RoutedEventArgs e)
@@ -672,6 +738,21 @@ public sealed partial class PlayerPage : Page
             (120, _localization.Format("HoursCount", 2))
         };
 
+        // "After this chapter" sits above the wall-clock options: it is the one people use
+        // when they actually fall asleep listening.
+        var chapterItem = new MenuFlyoutItem
+        {
+            Text = _localization.GetString("SleepAfterChapter"),
+            Icon = ViewModel.SleepAtChapterEnd ? new FontIcon { Glyph = "\uE73E" } : null
+        };
+        chapterItem.Click += (s, args) =>
+        {
+            ViewModel.SetSleepAtChapterEndCommand.Execute(null);
+            UpdateAllUI();
+        };
+        flyout.Items.Add(chapterItem);
+        flyout.Items.Add(new MenuFlyoutSeparator());
+
         foreach (var (minutes, label) in options)
         {
             var item = new MenuFlyoutItem
@@ -691,7 +772,112 @@ public sealed partial class PlayerPage : Page
             flyout.Items.Add(item);
         }
 
+        flyout.Items.Add(new MenuFlyoutSeparator());
+        var customItem = new MenuFlyoutItem
+        {
+            Text = _localization.GetString("SleepCustom"),
+            Icon = new FontIcon { Glyph = "\uE70F" }
+        };
+        customItem.Click += async (s, args) => await ShowCustomSleepTimerDialogAsync();
+        flyout.Items.Add(customItem);
+
         flyout.ShowAt(SleepButton);
+    }
+
+    private async Task ShowCustomSleepTimerDialogAsync()
+    {
+        var input = new NumberBox
+        {
+            Header = _localization.GetString("SleepCustomMinutes"),
+            Value = (double)(ViewModel.SleepTimerMinutes ?? 20),
+            Minimum = 1,
+            Maximum = 480,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline
+        };
+
+        var dialog = new ContentDialog
+        {
+            Title = _localization.GetString("SleepCustomTitle"),
+            Content = input,
+            PrimaryButtonText = _localization.GetString("Save"),
+            CloseButtonText = _localization.GetString("Cancel"),
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = this.XamlRoot
+        };
+
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary && !double.IsNaN(input.Value))
+        {
+            var minutes = Math.Clamp((int)Math.Round(input.Value), 1, 480);
+            ViewModel.SetSleepTimerCommand.Execute(minutes);
+            UpdateAllUI();
+        }
+    }
+
+    private async void SkipButton_Click(object sender, RoutedEventArgs e)
+    {
+        var book = _playbackService.CurrentAudioBook;
+        if (book == null) return;
+
+        var settingsService = App.Services.GetRequiredService<ISettingsService>();
+        settingsService.Settings.BookSkipOverrides.TryGetValue(book.Id, out var existing);
+
+        var introBox = new NumberBox
+        {
+            Header = _localization.GetString("SkipIntroSecondsLabel"),
+            PlaceholderText = settingsService.Settings.SkipIntroSeconds.ToString(),
+            Value = (double?)existing?.SkipIntroSeconds ?? double.NaN,
+            Minimum = 0,
+            Maximum = 600,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline
+        };
+
+        var outroBox = new NumberBox
+        {
+            Header = _localization.GetString("SkipOutroSecondsLabel"),
+            PlaceholderText = settingsService.Settings.SkipOutroSeconds.ToString(),
+            Value = (double?)existing?.SkipOutroSeconds ?? double.NaN,
+            Minimum = 0,
+            Maximum = 600,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline
+        };
+
+        var panel = new StackPanel { Spacing = 12 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = book.Title,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Opacity = 0.8
+        });
+        panel.Children.Add(introBox);
+        panel.Children.Add(outroBox);
+
+        var dialog = new ContentDialog
+        {
+            Title = _localization.GetString("SkipIntroOutroTitle"),
+            Content = panel,
+            PrimaryButtonText = _localization.GetString("Save"),
+            CloseButtonText = _localization.GetString("Cancel"),
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = this.XamlRoot
+        };
+
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            int? intro = double.IsNaN(introBox.Value) ? null : Math.Clamp((int)Math.Round(introBox.Value), 0, 600);
+            int? outro = double.IsNaN(outroBox.Value) ? null : Math.Clamp((int)Math.Round(outroBox.Value), 0, 600);
+
+            if (intro == null && outro == null)
+                settingsService.Settings.BookSkipOverrides.Remove(book.Id);
+            else
+                settingsService.Settings.BookSkipOverrides[book.Id] = new BookSkipOverride
+                {
+                    SkipIntroSeconds = intro,
+                    SkipOutroSeconds = outro
+                };
+
+            await settingsService.SaveSettingsAsync();
+            _logger.Log($"[Player] Updated per-book skip for '{book.Title}': intro={intro?.ToString() ?? "global"}s, outro={outro?.ToString() ?? "global"}s");
+        }
     }
 
     private void ChapterModeToggle_Toggled(object sender, RoutedEventArgs e)
@@ -756,7 +942,9 @@ public sealed partial class PlayerPage : Page
             var chapterElapsed = Math.Clamp(
                 position.TotalSeconds - chapter.Start, 0, chapter.Duration.TotalSeconds);
 
+            _isUpdatingProgressSlider = true;
             ProgressSlider.Value = chapterElapsed / chapter.Duration.TotalSeconds * 100;
+            _isUpdatingProgressSlider = false;
             CurrentTimeText.Text = TimeFormatHelper.FormatTimeSpan(TimeSpan.FromSeconds(chapterElapsed));
             RemainingTimeText.Text =
                 $"-{TimeFormatHelper.FormatTimeSpan(TimeSpan.FromSeconds(chapter.Duration.TotalSeconds - chapterElapsed))}";
@@ -764,7 +952,11 @@ public sealed partial class PlayerPage : Page
         }
 
         if (duration.TotalSeconds > 0)
+        {
+            _isUpdatingProgressSlider = true;
             ProgressSlider.Value = Math.Clamp(position.TotalSeconds / duration.TotalSeconds * 100, 0, 100);
+            _isUpdatingProgressSlider = false;
+        }
 
         CurrentTimeText.Text = TimeFormatHelper.FormatTimeSpan(position);
         var remaining = duration - position;
@@ -792,6 +984,15 @@ public sealed partial class PlayerPage : Page
         flyout.Items.Add(addItem);
 
         flyout.Items.Add(new MenuFlyoutSeparator());
+
+        if (_bookmarkQueue.PendingCount > 0)
+        {
+            flyout.Items.Add(new MenuFlyoutItem
+            {
+                Text = _localization.Format("BookmarksPendingUpload", _bookmarkQueue.PendingCount),
+                IsEnabled = false
+            });
+        }
 
         // Load existing bookmarks
         try
@@ -906,14 +1107,23 @@ public sealed partial class PlayerPage : Page
         if (result == ContentDialogResult.Primary)
         {
             var title = string.IsNullOrWhiteSpace(titleInput.Text) ? defaultTitle : titleInput.Text;
-            var success = await _apiService.CreateBookmarkAsync(audioBook.Id, title, currentTime);
-            if (success)
+
+            // Online: goes straight to the server. Offline: stored locally and uploaded as
+            // soon as the server is reachable again (it used to fail silently).
+            var bookmarkResult = await _bookmarkQueue.CreateAsync(audioBook.Id, title, currentTime);
+            switch (bookmarkResult)
             {
-                _logger.Log($"[Bookmarks] Created: '{title}' at {currentTime:F1}s");
-            }
-            else
-            {
-                _logger.LogWarning($"[Bookmarks] Failed to create bookmark");
+                case BookmarkCreateResult.Created:
+                    _notifications.ShowSuccess(_localization.GetString("BookmarkSaved"));
+                    break;
+
+                case BookmarkCreateResult.Queued:
+                    _notifications.ShowInfo(_localization.GetString("BookmarkQueuedOffline"));
+                    break;
+
+                default:
+                    _notifications.ShowError(_localization.GetString("BookmarkSaveFailed"));
+                    break;
             }
         }
     }
@@ -926,6 +1136,7 @@ public sealed partial class PlayerPage : Page
         if (ChapterLabelText != null) ChapterLabelText.Text = _localization.GetString("Chapter");
         if (SpeedLabelText != null) SpeedLabelText.Text = _localization.GetString("Speed");
         if (SleepLabelText != null) SleepLabelText.Text = _localization.GetString("Sleep");
+        if (SkipLabelText != null) SkipLabelText.Text = _localization.GetString("SkipLabel");
         if (VolumeLabelText != null) VolumeLabelText.Text = _localization.GetString("Volume");
         if (ChaptersLabelText != null) ChaptersLabelText.Text = _localization.GetString("Chapters");
         if (BookmarksLabelText != null) BookmarksLabelText.Text = _localization.GetString("Bookmarks");

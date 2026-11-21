@@ -2,32 +2,6 @@ using Microsoft.UI.Xaml.Data;
 
 namespace NineLivesAudio.Helpers;
 
-public class DownloadStatusToGlyphConverter : IValueConverter
-{
-    public object Convert(object value, Type targetType, object parameter, string language)
-    {
-        if (value is Models.DownloadStatus status)
-        {
-            return status switch
-            {
-                Models.DownloadStatus.Queued => "\uE896",
-                Models.DownloadStatus.Downloading => "\uE769",
-                Models.DownloadStatus.Paused => "\uE768",
-                Models.DownloadStatus.Completed => "\uE73E",
-                Models.DownloadStatus.Failed => "\uE783",
-                Models.DownloadStatus.Cancelled => "\uE711",
-                _ => "\uE896"
-            };
-        }
-        return "\uE896";
-    }
-
-    public object ConvertBack(object value, Type targetType, object parameter, string language)
-    {
-        throw new NotImplementedException();
-    }
-}
-
 public class StringToImageSourceConverter : IValueConverter
 {
     /// <summary>Decode width used when the binding does not pass one.</summary>

@@ -60,25 +60,3 @@ public class WeightToBrushConverter : IValueConverter
     }
 }
 
-/// <summary>
-/// Converts a life index (0-8) to a Roman numeral label: "LIFE I" through "LIFE IX".
-/// </summary>
-public class LifeIndexToLabelConverter : IValueConverter
-{
-    private static readonly string[] RomanNumerals =
-        { "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX" };
-
-    public object Convert(object value, Type targetType, object parameter, string language)
-    {
-        if (value is int index && index >= 0 && index < RomanNumerals.Length)
-        {
-            return $"LIFE {RomanNumerals[index]}";
-        }
-        return "LIFE";
-    }
-
-    public object ConvertBack(object value, Type targetType, object parameter, string language)
-    {
-        throw new NotImplementedException();
-    }
-}

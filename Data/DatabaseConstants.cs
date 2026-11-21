@@ -13,6 +13,7 @@ public static class Db
         public const string DownloadItems = "DownloadItems";
         public const string PlaybackProgress = "PlaybackProgress";
         public const string PendingProgressUpdates = "PendingProgressUpdates";
+        public const string PendingBookmarks = "PendingBookmarks";
     }
 
     /// <summary>AudioBooks table columns.</summary>
@@ -76,6 +77,15 @@ public static class Db
     }
 
     /// <summary>PendingProgressUpdates table columns.</summary>
+    public static class PendingBookmark
+    {
+        public const string Id = "Id";
+        public const string ItemId = "ItemId";
+        public const string Time = "Time";
+        public const string Title = "Title";
+        public const string Timestamp = "Timestamp";
+    }
+
     public static class PendingProgress
     {
         public const string Id = "Id";

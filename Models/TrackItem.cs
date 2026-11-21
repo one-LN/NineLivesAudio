@@ -1,3 +1,5 @@
+using Microsoft.UI.Xaml.Media;
+
 namespace NineLivesAudio.Models;
 
 /// <summary>
@@ -9,4 +11,9 @@ public class TrackItem
     public string Title { get; set; } = string.Empty;
     public string Duration { get; set; } = string.Empty;
     public bool IsDownloaded { get; set; }
+
+    // Same reason as ChapterDisplayItem: the XamlReader template needs brushes, not #hex literals.
+    public Brush? TitleBrush { get; set; }
+    public Brush? MetaBrush { get; set; }
+    public Brush? RowBackgroundBrush { get; set; }
 }

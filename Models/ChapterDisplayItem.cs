@@ -1,3 +1,5 @@
+using Microsoft.UI.Xaml.Media;
+
 namespace NineLivesAudio.Models;
 
 /// <summary>
@@ -23,5 +25,13 @@ public class ChapterDisplayItem
 
     public string TitleWeight => IsCurrent ? "SemiBold" : "Normal";
     public string ChapterBackground => IsCurrent ? "#1AC5A55A" : "Transparent";
+
+    // The chapter rows are built with XamlReader, which cannot resolve {ThemeResource}. Colours
+    // therefore come from the view model (ThemeService) instead of being hard-coded — they used to
+    // paint near-white text on the light theme's white background.
+    public Brush? TitleBrush { get; set; }
+    public Brush? MetaBrush { get; set; }
+    public Brush? AccentBrush { get; set; }
+    public Brush? RowBackgroundBrush { get; set; }
     public string ProgressBarVisibility => IsCurrent ? "Visible" : "Collapsed";
 }

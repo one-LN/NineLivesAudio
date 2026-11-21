@@ -35,6 +35,8 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
     {
         if (string.IsNullOrEmpty(_authToken)) return;
         _authToken = null;
+        _playbackSessionCache.Clear();
+        _playbackSessionFetches.Clear();
         _httpClient.DefaultRequestHeaders.Authorization = null;
         LastRequestUnauthorized = true;
     }
@@ -72,6 +74,20 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
         // Use 5-minute timeout for downloads, individual operations can override with CancellationToken
         _httpClient.Timeout = TimeSpan.FromMinutes(5);
+    }
+
+    /// <summary>
+    /// Re-reads server + token from settings after the user switched accounts, so the next
+    /// request goes to the other server instead of the one cached at startup.
+    /// </summary>
+    public async Task<bool> ReloadCredentialsAsync()
+    {
+        _authToken = null;
+        _serverUrl = string.Empty;
+        _httpClient.DefaultRequestHeaders.Authorization = null;
+
+        await InitializeFromSettingsAsync();
+        return IsAuthenticated;
     }
 
     private async Task InitializeFromSettingsAsync()
@@ -124,12 +140,15 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
             _authToken = loginResponse.User.Token;
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _authToken);
 
-            // Save credentials
-            await _settingsService.SaveAuthTokenAsync(_authToken);
+            // Save credentials. The token file is per server (SettingsService hashes the
+            // host), so the address has to be in settings *before* the token is written —
+            // otherwise a second server would overwrite the first one's token.
             var settings = _settingsService.Settings;
             settings.ServerUrl = _serverUrl;
             settings.Username = username;
+            await _settingsService.SaveAuthTokenAsync(_authToken);
             await _settingsService.SaveSettingsAsync();
+            _settingsService.RememberServer(_serverUrl, username);
 
             LastError = null;
             LastRequestUnauthorized = false;
@@ -235,43 +254,133 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
     }
 
-    public async Task<List<AudioBook>> GetLibraryItemsAsync(string libraryId, int limit = 100, int page = 0)
+    /// <summary>One page of a library, or null when the server answered with nothing useful.</summary>
+    private async Task<LibraryItemsResponse?> FetchLibraryPageAsync(string libraryId, int limit, int page)
+    {
+        var response = await _httpClient.GetAsync(
+            $"{_serverUrl}/api/libraries/{libraryId}/items?limit={limit}&page={page}&minified=0").ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        LastRequestUnauthorized = false;
+
+        var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        return JsonSerializer.Deserialize<LibraryItemsResponse>(json, JsonOptions);
+    }
+
+    public string LastFetchDiagnostics { get; private set; } = string.Empty;
+
+    public async Task<List<AudioBook>> GetLibraryItemsAsync(string libraryId, int limit = 500, int page = 0)
     {
         EnsureAuthenticated();
 
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var pagesFetched = 0;
+        var parallel = false;
+
         try
         {
-            var allItems = new List<AudioBook>();
-            int currentPage = page;
-            const int MaxPages = 200; // safety valve — never loop forever on a broken server
+            var first = await FetchLibraryPageAsync(libraryId, limit, page);
+            pagesFetched = 1;
 
-            while (currentPage - page < MaxPages)
+            if (first?.Results == null || first.Results.Count == 0)
+                return new List<AudioBook>();
+
+            var allItems = new List<AudioBook>(first.Results.Select(MapToAudioBook));
+
+            // Page size as the server understands it, not as we asked. Servers that cap `limit`
+            // would otherwise make a short page look like the end of the library.
+            var pageSize = first.Results.Count;
+
+            // Everything arrived in this one page.
+            if (first.Total > 0 && pageSize >= first.Total)
             {
-                var response = await _httpClient.GetAsync(
-                    $"{_serverUrl}/api/libraries/{libraryId}/items?limit={limit}&page={currentPage}&minified=0");
-                response.EnsureSuccessStatusCode();
                 LastRequestUnauthorized = false;
-
-                var json = await response.Content.ReadAsStringAsync();
-                var apiResponse = JsonSerializer.Deserialize<LibraryItemsResponse>(json, JsonOptions);
-
-                if (apiResponse?.Results == null || apiResponse.Results.Count == 0)
-                    break;
-
-                allItems.AddRange(apiResponse.Results.Select(MapToAudioBook));
-
-                // Termination: a short page means we hit the end. `total` is only
-                // trusted when it is a positive number — some server versions omit it
-                // (0), which used to stop the loop after the very first page.
-                if (apiResponse.Results.Count < limit)
-                    break;
-
-                if (apiResponse.Total > 0 && allItems.Count >= apiResponse.Total)
-                    break;
-
-                currentPage++;
+                LastFetchDiagnostics = $"1 page in {watch.ElapsedMilliseconds} ms (whole library)";
+                return allItems;
             }
 
+            // No `total` from this server version: a short page is all we can go by.
+            if (first.Total <= 0 && pageSize < limit)
+                return allItems;
+
+            const int MaxPages = 200; // safety valve — never loop forever on a broken server
+
+            if (first.Total > 0)
+            {
+                // `total` is known: fetch the remaining pages in parallel. 309 books used to be
+                // four sequential round trips (~5–12 s on a slow link); four at once cuts the
+                // wall clock to roughly one round trip.
+                var lastPage = (int)Math.Ceiling(first.Total / (double)pageSize) - 1;
+                var pages = Enumerable.Range(page + 1, Math.Max(0, lastPage - page))
+                                      .Take(MaxPages)
+                                      .ToList();
+
+                if (pages.Count > 0)
+                {
+                    parallel = true;
+                    pagesFetched += pages.Count;
+
+                    var byPage = new System.Collections.Concurrent.ConcurrentDictionary<int, List<AudioBook>>();
+
+                    await Parallel.ForEachAsync(pages,
+                        new ParallelOptions { MaxDegreeOfParallelism = 4 },
+                        async (p, _) =>
+                        {
+                            var response = await FetchLibraryPageAsync(libraryId, pageSize, p).ConfigureAwait(false);
+                            if (response?.Results is { Count: > 0 })
+                                byPage[p] = response.Results.Select(MapToAudioBook).ToList();
+                        }).ConfigureAwait(false);
+
+                    foreach (var p in pages.OrderBy(x => x))
+                    {
+                        if (byPage.TryGetValue(p, out var pageItems))
+                            allItems.AddRange(pageItems);
+                    }
+
+                    // If the last page was full the server has more books than `total` claimed:
+                    // keep reading sequentially so nothing is silently dropped.
+                    var lastFetched = pages[pages.Count - 1];
+                    var lastWasFull = byPage.TryGetValue(lastFetched, out var lastItems) && lastItems.Count >= pageSize;
+
+                    if (lastWasFull)
+                    {
+                        var currentPage = lastFetched + 1;
+                        while (currentPage - page < MaxPages)
+                        {
+                            var response = await FetchLibraryPageAsync(libraryId, pageSize, currentPage).ConfigureAwait(false);
+                            if (response?.Results == null || response.Results.Count == 0)
+                                break;
+
+                            allItems.AddRange(response.Results.Select(MapToAudioBook));
+
+                            if (response.Results.Count < limit)
+                                break;
+
+                            currentPage++;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Unknown total: sequential, exactly as before.
+                int currentPage = page + 1;
+                while (currentPage - page < MaxPages)
+                {
+                    var response = await FetchLibraryPageAsync(libraryId, limit, currentPage);
+                    if (response?.Results == null || response.Results.Count == 0)
+                        break;
+
+                    allItems.AddRange(response.Results.Select(MapToAudioBook));
+
+                    if (response.Results.Count < pageSize)
+                        break;
+
+                    currentPage++;
+                }
+            }
+
+            LastRequestUnauthorized = false;
+            LastFetchDiagnostics = $"{pagesFetched} page(s) {(parallel ? "parallel" : "sequential")} in {watch.ElapsedMilliseconds} ms";
             return allItems;
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
@@ -386,7 +495,59 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
     }
 
+    // The play-session response is what carries the track URLs; the server can take seconds to
+    // produce it (five of them in the user's log). Reusing it for a while turns a replay into a
+    // local lookup, and warming it from the detail page means the POST is already done when the
+    // user presses play.
+    private static readonly TimeSpan PlaybackSessionTtl = TimeSpan.FromMinutes(10);
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<PlaybackSessionInfo?>>
+        _playbackSessionFetches = new(StringComparer.Ordinal);
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (PlaybackSessionInfo Info, DateTime FetchedAt)>
+        _playbackSessionCache = new(StringComparer.Ordinal);
+
+    public void WarmPlaybackSession(string itemId)
+    {
+        if (!IsAuthenticated || string.IsNullOrEmpty(itemId)) return;
+
+        if (_playbackSessionCache.TryGetValue(itemId, out var cached) &&
+            DateTime.UtcNow - cached.FetchedAt < PlaybackSessionTtl)
+            return;
+
+        // Fire and forget: a failure just means pressing play pays the cost as before.
+        _ = _playbackSessionFetches.GetOrAdd(itemId, id => FetchAndCachePlaybackSessionAsync(id));
+    }
+
     public async Task<PlaybackSessionInfo?> StartPlaybackSessionAsync(string itemId)
+    {
+        if (_playbackSessionCache.TryGetValue(itemId, out var cached) &&
+            DateTime.UtcNow - cached.FetchedAt < PlaybackSessionTtl)
+        {
+            return cached.Info;
+        }
+
+        return await _playbackSessionFetches
+            .GetOrAdd(itemId, id => FetchAndCachePlaybackSessionAsync(id))
+            .ConfigureAwait(false);
+    }
+
+    private async Task<PlaybackSessionInfo?> FetchAndCachePlaybackSessionAsync(string itemId)
+    {
+        try
+        {
+            var session = await FetchPlaybackSessionAsync(itemId).ConfigureAwait(false);
+            if (session != null)
+                _playbackSessionCache[itemId] = (session, DateTime.UtcNow);
+            return session;
+        }
+        finally
+        {
+            _playbackSessionFetches.TryRemove(itemId, out _);
+        }
+    }
+
+    private async Task<PlaybackSessionInfo?> FetchPlaybackSessionAsync(string itemId)
     {
         EnsureAuthenticated();
 

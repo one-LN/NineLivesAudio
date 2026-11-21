@@ -13,74 +13,8 @@ public sealed partial class SettingsPage : Page
     public SettingsViewModel ViewModel { get; }
 
     public SolidColorBrush ConnectionStatusColor => ViewModel.IsConnected
-        ? (SolidColorBrush)Application.Current.Resources["RitualSuccessBrush"]
-        : (SolidColorBrush)Application.Current.Resources["MistFaintBrush"];
-
-    public int SpeedSelectedIndex
-    {
-        get => ViewModel.PlaybackSpeed switch
-        {
-            0.5 => 0,
-            0.75 => 1,
-            1.0 => 2,
-            1.25 => 3,
-            1.5 => 4,
-            1.75 => 5,
-            2.0 => 6,
-            _ => 2
-        };
-        set => ViewModel.PlaybackSpeed = value switch
-        {
-            0 => 0.5,
-            1 => 0.75,
-            2 => 1.0,
-            3 => 1.25,
-            4 => 1.5,
-            5 => 1.75,
-            6 => 2.0,
-            _ => 1.0
-        };
-    }
-
-    public int SyncIntervalSelectedIndex
-    {
-        get => ViewModel.SyncIntervalMinutes switch
-        {
-            1 => 0,
-            5 => 1,
-            10 => 2,
-            15 => 3,
-            30 => 4,
-            _ => 1
-        };
-        set => ViewModel.SyncIntervalMinutes = value switch
-        {
-            0 => 1,
-            1 => 5,
-            2 => 10,
-            3 => 15,
-            4 => 30,
-            _ => 5
-        };
-    }
-
-    public int ThemeSelectedIndex
-    {
-        get => ViewModel.Theme switch
-        {
-            "System" => 0,
-            "Light" => 1,
-            "Dark" => 2,
-            _ => 0
-        };
-        set => ViewModel.Theme = value switch
-        {
-            0 => "System",
-            1 => "Light",
-            2 => "Dark",
-            _ => "System"
-        };
-    }
+        ? (SolidColorBrush)Helpers.ThemeService.Brush("RitualSuccessBrush")
+        : (SolidColorBrush)Helpers.ThemeService.Brush("MistFaintBrush");
 
     private readonly ILocalizationService _localization;
 
@@ -90,6 +24,10 @@ public sealed partial class SettingsPage : Page
         _localization = App.Services.GetRequiredService<ILocalizationService>();
         this.InitializeComponent();
         this.Unloaded += Page_Unloaded;
+
+        // ConnectionStatusColor is a code-computed brush bound OneWay; re-evaluate the
+        // bindings when the palette changes so the dot does not keep the old colour.
+        Helpers.ThemeService.PaletteChanged += OnPaletteChanged;
     }
 
     // Guards SelectionChanged while the combo box is being synced from settings.
@@ -166,12 +104,21 @@ public sealed partial class SettingsPage : Page
             LocalizeComboItem(LanguageComboBox, 2, _localization.GetString("LanguageChinese"));
         }
         if (ServerConnectionTitle != null) ServerConnectionTitle.Text = _localization.GetString("ServerConnection");
+        if (SavedServerBox != null) SavedServerBox.Header = _localization.GetString("SavedServers");
+        if (DeleteServerButton != null) DeleteServerButton.Content = _localization.GetString("Delete");
+        if (ServerNameBox != null)
+        {
+            ServerNameBox.Header = _localization.GetString("ServerName");
+            ServerNameBox.PlaceholderText = _localization.GetString("ServerNamePlaceholder");
+        }
         if (ServerUrlBox != null) ServerUrlBox.Header = _localization.GetString("ServerUrl");
         if (UsernameBox != null) UsernameBox.Header = _localization.GetString("Username");
         if (PasswordBox != null) PasswordBox.Header = _localization.GetString("Password");
         if (ConnectButton != null) ConnectButton.Content = _localization.GetString("Connect");
         if (DisconnectButton != null) DisconnectButton.Content = _localization.GetString("Disconnect");
         if (TestConnectionButton != null) TestConnectionButton.Content = _localization.GetString("TestConnection");
+        if (AddServerButton != null) AddServerButton.Content = _localization.GetString("AddServer");
+        if (CancelAddServerButton != null) CancelAddServerButton.Content = _localization.GetString("Cancel");
         if (PlaybackTitle != null) PlaybackTitle.Text = _localization.GetString("Playback");
         if (DefaultVolumeLabel != null) DefaultVolumeLabel.Text = _localization.GetString("DefaultVolume");
         if (DefaultSpeedBox != null) DefaultSpeedBox.Header = _localization.GetString("DefaultSpeed");
@@ -179,6 +126,8 @@ public sealed partial class SettingsPage : Page
         if (SkipIntroHint != null) SkipIntroHint.Text = _localization.GetString("SkipIntroHint");
         if (SkipOutroBox != null) SkipOutroBox.Header = _localization.GetString("SkipOutro");
         if (SkipOutroHint != null) SkipOutroHint.Text = _localization.GetString("SkipOutroHint");
+        if (ChapterModeSwitch != null) ChapterModeSwitch.Header = _localization.GetString("ChapterModeHeader");
+        if (ChapterModeHint != null) ChapterModeHint.Text = _localization.GetString("ChapterModeHint");
         if (DownloadsTitle != null) DownloadsTitle.Text = _localization.GetString("DownloadsSection");
         if (DownloadLocationBox != null) DownloadLocationBox.Header = _localization.GetString("DownloadLocation");
         if (BrowseButton != null) BrowseButton.Content = _localization.GetString("Browse");
@@ -201,14 +150,38 @@ public sealed partial class SettingsPage : Page
         if (ExportLogsButton != null) ExportLogsButton.Content = _localization.GetString("ExportLogs");
         if (OpenSettingsFolderButton != null) OpenSettingsFolderButton.Content = _localization.GetString("OpenSettingsFolder");
         if (SettingsDoctorTitle != null) SettingsDoctorTitle.Text = _localization.GetString("SettingsDoctor");
-        if (SaveSettingsButton != null) SaveSettingsButton.Content = _localization.GetString("SaveSettings");
         if (ResetConnectionButton != null) ResetConnectionButton.Content = _localization.GetString("ResetConnection");
         if (DoctorTestConnectionButton != null) DoctorTestConnectionButton.Content = _localization.GetString("TestConnection");
         if (AboutTitle != null) AboutTitle.Text = _localization.GetString("About");
+        if (SelfSignedHint != null) SelfSignedHint.Text = _localization.GetString("AllowSelfSignedHint");
+        if (SyncNowHint != null) SyncNowHint.Text = _localization.GetString("SyncNowHint");
+        if (ClearCacheHint != null) ClearCacheHint.Text = _localization.GetString("ClearCacheHint");
+        if (DiagnosticsHint != null) DiagnosticsHint.Text = _localization.GetString("DiagnosticsHint");
+        if (SettingsFileLabel != null) SettingsFileLabel.Text = _localization.GetString("SettingsFileLabel");
+        if (SettingsSourceLabel != null) SettingsSourceLabel.Text = _localization.GetString("SettingsSourceLabel");
+        if (TokenSourceLabel != null) TokenSourceLabel.Text = _localization.GetString("TokenSourceLabel");
+        if (LastLoadedLabel != null) LastLoadedLabel.Text = _localization.GetString("LastLoadedLabel");
+        if (SessionIdLabel != null) SessionIdLabel.Text = _localization.GetString("SessionIdLabel");
+        if (ServerHostLabel != null) ServerHostLabel.Text = _localization.GetString("ServerHostLabel");
+        if (PlaybackSavedLabel != null) PlaybackSavedLabel.Text = _localization.GetString("PlaybackSavedLabel");
+        if (AutosaveNote != null) AutosaveNote.Text = _localization.GetString("AutosaveNoteText");
+        if (DisclaimerText != null) DisclaimerText.Text = _localization.GetString("DisclaimerText");
+        if (OpenSourceNoteText != null) OpenSourceNoteText.Text = _localization.GetString("OpenSourceNoteText");
+
+    }
+
+    private void OnPaletteChanged()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            try { Bindings.Update(); }
+            catch { /* page torn down */ }
+        });
     }
 
     private void Page_Unloaded(object sender, RoutedEventArgs e)
     {
+        Helpers.ThemeService.PaletteChanged -= OnPaletteChanged;
         _localization.LanguageChanged -= ApplyLocalization;
     }
 
@@ -217,10 +190,6 @@ public sealed partial class SettingsPage : Page
         ViewModel.DismissErrorCommand.Execute(null);
     }
 
-    private void SuccessInfoBar_Closed(InfoBar sender, InfoBarClosedEventArgs args)
-    {
-        ViewModel.DismissSuccessCommand.Execute(null);
-    }
 
     private async void BrowseButton_Click(object sender, RoutedEventArgs e)
     {

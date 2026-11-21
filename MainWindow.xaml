@@ -10,7 +10,7 @@
     <Grid>
         <!-- Loading Overlay (shown during init) -->
         <Grid x:Name="InitOverlay" Canvas.ZIndex="100">
-            <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+            <Grid Background="{ThemeResource VoidDeepBrush}">
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16">
                     <ProgressRing x:Name="InitSpinner" IsActive="True" Width="48" Height="48"/>
                     <TextBlock x:Name="InitStatusText" loc:Loc.Text="StartingUp" Text="Starting up..."
@@ -21,7 +21,7 @@
 
         <!-- Init Error Panel (shown if init fails) -->
         <Grid x:Name="InitErrorPanel" Visibility="Collapsed" Canvas.ZIndex="100">
-            <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+            <Grid Background="{ThemeResource VoidDeepBrush}">
                 <StackPanel Style="{StaticResource EmptyStateContainerStyle}">
                     <FontIcon Glyph="&#xE783;" Style="{StaticResource EmptyStateIconStyle}"/>
                     <TextBlock loc:Loc.Text="StartupFailed" Text="Startup Failed" Style="{StaticResource EmptyStateTitleStyle}"/>
@@ -38,7 +38,8 @@
         </Grid>
 
         <!-- Main App Content -->
-        <Grid x:Name="AppContent" Visibility="Collapsed">
+        <Grid x:Name="AppContent" Visibility="Collapsed"
+              Background="{ThemeResource VoidDeepBrush}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -46,15 +47,35 @@
             </Grid.RowDefinitions>
 
             <NavigationView x:Name="NavView" Grid.Row="0"
+                            Background="{ThemeResource VoidDeepBrush}"
                             PaneDisplayMode="LeftCompact"
                             CompactModeThresholdWidth="0"
                             ExpandedModeThresholdWidth="900"
                             CompactPaneLength="48"
                             OpenPaneLength="200"
-                            IsBackButtonVisible="Auto"
+                            IsBackButtonVisible="Collapsed"
                             BackRequested="NavView_BackRequested"
                             IsSettingsVisible="True"
                             SelectionChanged="NavView_SelectionChanged">
+
+                <!-- The pane colour used to come from the control template's own
+                     ThemeResource lookup, which resolved against the system theme instead of
+                     the window's ElementTheme: dark window, light-grey rail. Overriding the
+                     keys here (closer to the template than Application.Resources) is what
+                     actually wins, and the brush stays opaque: the compact rail is 48px wide
+                     so transparency went unnoticed, but the expanded pane sits on top of the
+                     book list and the covers showed through it. -->
+                <NavigationView.Resources>
+                    <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="{ThemeResource VoidSurface}"/>
+                    <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="{ThemeResource VoidSurface}"/>
+                    <SolidColorBrush x:Key="NavigationViewTopPaneBackground" Color="{ThemeResource VoidSurface}"/>
+                    <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent"/>
+                    <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="{ThemeResource SigilGoldFaint}"/>
+                    <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="{ThemeResource SigilGoldGlow}"/>
+                    <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="{ThemeResource SigilGoldGlow}"/>
+                    <SolidColorBrush x:Key="NavigationViewItemForegroundSelected" Color="{ThemeResource SigilGold}"/>
+                    <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOver" Color="{ThemeResource SigilGoldFaint}"/>
+                </NavigationView.Resources>
 
                 <NavigationView.MenuItems>
                     <NavigationViewItem x:Name="NavHomeItem" Content="Home"
@@ -72,6 +93,13 @@
                     <NavigationViewItem x:Name="NavDownloadsItem" Content="Downloads"
                                         Tag="Downloads"
                                         Icon="Download"/>
+                    <NavigationViewItem x:Name="NavStatsItem" Content="Statistics"
+                                        Tag="Stats">
+                        <NavigationViewItem.Icon>
+                            <!-- Symbol 枚举里没有 Stopwatch，用图标字体避免 XAML 解析失败 -->
+                            <FontIcon Glyph="&#xE916;"/>
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
                 </NavigationView.MenuItems>
 
                 <NavigationView.FooterMenuItems>
@@ -80,12 +108,12 @@
                                         IsEnabled="False">
                         <NavigationViewItem.Icon>
                             <FontIcon x:Name="ConnectivityIcon" Glyph="&#x25CF;" FontSize="16"
-                                      Foreground="{StaticResource RitualSuccessBrush}"/>
+                                      Foreground="{ThemeResource RitualSuccessBrush}"/>
                         </NavigationViewItem.Icon>
                         <NavigationViewItem.Content>
                             <TextBlock x:Name="ConnectivityText" loc:Loc.Text="Connected" Text="Connected"
                                        FontSize="11"
-                                       Foreground="{StaticResource StarlightBrush}"/>
+                                       Foreground="{ThemeResource StarlightBrush}"/>
                         </NavigationViewItem.Content>
                     </NavigationViewItem>
                 </NavigationView.FooterMenuItems>
@@ -95,8 +123,8 @@
 
             <!-- Mini Player Bar -->
             <Grid x:Name="MiniPlayerBar" Grid.Row="1"
-                  Background="{StaticResource VoidSurfaceBrush}"
-                  BorderBrush="{StaticResource DustBrush}"
+                  Background="{ThemeResource VoidSurfaceBrush}"
+                  BorderBrush="{ThemeResource DustBrush}"
                   BorderThickness="0,1,0,0"
                   Height="72" Padding="16,0"
                   Visibility="Collapsed"
@@ -113,7 +141,7 @@
                         Style="{StaticResource CoverImageBorderStyle}">
                     <Grid>
                         <FontIcon Glyph="&#xE8F1;" FontSize="20" Opacity="0.15"
-                                  Foreground="{StaticResource MistFaintBrush}"
+                                  Foreground="{ThemeResource MistFaintBrush}"
                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         <Image x:Name="MiniPlayerArt" Stretch="UniformToFill"/>
                     </Grid>
@@ -128,14 +156,14 @@
                     </Grid.RowDefinitions>
                     <TextBlock x:Name="MiniPlayerTitle" Grid.Row="0"
                                Style="{StaticResource CardTitleStyle}"
-                               Foreground="{StaticResource StarlightDimBrush}"
+                               Foreground="{ThemeResource StarlightDimBrush}"
                                MaxLines="1"/>
                     <TextBlock x:Name="MiniPlayerAuthor" Grid.Row="1"
                                Style="{StaticResource SubtitleStyle}"
-                               Foreground="{StaticResource MistBrush}"/>
+                               Foreground="{ThemeResource MistBrush}"/>
                     <ProgressBar x:Name="MiniPlayerProgress" Grid.Row="2"
                                  Style="{StaticResource MiniPlayerProgressStyle}"
-                                 Foreground="{StaticResource SigilGoldBrush}"/>
+                                 Foreground="{ThemeResource SigilGoldBrush}"/>
                 </Grid>
 
                 <!-- Playback Controls -->

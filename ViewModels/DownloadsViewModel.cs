@@ -53,7 +53,6 @@ public partial class DownloadsViewModel : ObservableObject, IDisposable
         await LoadDownloadsAsync();
     }
 
-    [RelayCommand]
     private async Task LoadDownloadsAsync()
     {
         try

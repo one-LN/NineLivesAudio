@@ -1,8 +1,9 @@
 <Application
     x:Class="NineLivesAudio.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    RequestedTheme="Dark">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- No RequestedTheme: "Appearance → Theme" decides (System follows Windows).
+         Each window root gets the ElementTheme in ThemeService.Register/Apply. -->
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>

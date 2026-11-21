@@ -186,7 +186,7 @@ public sealed class TrayIconService : ITrayIconService
         return DefSubclassProc(hWnd, uMsg, wParam, lParam);
     }
 
-    private void HideToTray()
+    public void HideToTray()
     {
         Show();
         ShowWindow(_hwnd, SW_HIDE);
@@ -195,6 +195,13 @@ public sealed class TrayIconService : ITrayIconService
 
     private void RestoreFromTray()
     {
+        if (App.TryRestoreMiniPlayer())
+        {
+            Hide();
+            _logger.Log("[Tray] Restored mini player from the notification area");
+            return;
+        }
+
         ShowWindow(_hwnd, SW_SHOW);
         ShowWindow(_hwnd, SW_RESTORE);
         SetForegroundWindow(_hwnd);

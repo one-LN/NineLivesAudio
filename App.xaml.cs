@@ -15,6 +15,13 @@ public partial class App : Application
     private static IHost? _host;
     private static MiniPlayerWindow? _miniPlayerWindow;
 
+    public static bool TryRestoreMiniPlayer()
+    {
+        if (_miniPlayerWindow == null) return false;
+        _miniPlayerWindow.RestoreFromTray();
+        return true;
+    }
+
     public static IServiceProvider Services => _host!.Services;
 
     public App()
@@ -42,12 +49,15 @@ public partial class App : Application
                 services.AddSingleton<IAudioPlaybackService, AudioPlaybackService>();
                 services.AddSingleton<IDownloadService, DownloadService>();
                 services.AddSingleton<ISyncService, SyncService>();
+                services.AddSingleton<IUpdateService, UpdateService>();
+                services.AddSingleton<IStreamCacheService, StreamCacheService>();
                 services.AddSingleton<ILocalDatabase, LocalDatabase>();
                 services.AddSingleton<IAppInitializer, AppInitializer>();
 
                 // Services - Connectivity & Offline
                 services.AddSingleton<IConnectivityService, ConnectivityService>();
                 services.AddSingleton<IOfflineProgressQueue, OfflineProgressQueue>();
+                services.AddSingleton<IBookmarkQueue, BookmarkQueue>();
 
                 // Services - Navigation
                 services.AddSingleton<INavigationService, NavigationService>();
@@ -65,12 +75,18 @@ public partial class App : Application
 
                 // ViewModels
                 services.AddTransient<MainViewModel>();
-                services.AddTransient<HomeViewModel>();
-                services.AddTransient<LibraryViewModel>();
-                services.AddTransient<PlayerViewModel>();
-                services.AddTransient<DownloadsViewModel>();
+
+                // Pages are cached by the Frame and are shown again without being recreated,
+                // so a transient view model leaked one messenger subscription per visit: five
+                // visits meant five "reload" reactions to a single sync (see the 22:21 log).
+                // These four are app-scoped state anyway (filters, scroll, current track).
+                services.AddSingleton<HomeViewModel>();
+                services.AddSingleton<LibraryViewModel>();
+                services.AddSingleton<PlayerViewModel>();
+                services.AddSingleton<DownloadsViewModel>();
                 services.AddTransient<SettingsViewModel>();
                 services.AddTransient<BookDetailViewModel>();
+                services.AddTransient<StatsViewModel>();
 
                 // Main Window
                 services.AddSingleton<MainWindow>();

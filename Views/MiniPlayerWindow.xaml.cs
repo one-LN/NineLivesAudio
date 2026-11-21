@@ -30,6 +30,11 @@ public sealed partial class MiniPlayerWindow : Window
 
         this.InitializeComponent();
 
+        // The mini player is a separate Window: it needs the theme itself, otherwise it
+        // stays dark while the main window is light.
+        if (this.Content is Microsoft.UI.Xaml.FrameworkElement themeRoot)
+            ThemeService.Register(themeRoot);
+
         Title = "Nine Lives Audio";
 
         // Set up compact window size and title bar styling
@@ -58,22 +63,26 @@ public sealed partial class MiniPlayerWindow : Window
         }
         catch { /* Non-fatal */ }
 
-        // Dark title bar matching the app theme
-        if (_appWindow?.TitleBar is { } titleBar)
+        if (_appWindow != null)
         {
-            titleBar.BackgroundColor = Windows.UI.Color.FromArgb(0xFF, 0x05, 0x08, 0x10);
-            titleBar.ForegroundColor = Windows.UI.Color.FromArgb(0xFF, 0xE0, 0xE0, 0xE8);
-            titleBar.ButtonBackgroundColor = Windows.UI.Color.FromArgb(0xFF, 0x05, 0x08, 0x10);
-            titleBar.ButtonForegroundColor = Windows.UI.Color.FromArgb(0xFF, 0xE0, 0xE0, 0xE8);
-            titleBar.ButtonHoverBackgroundColor = Windows.UI.Color.FromArgb(0xFF, 0x11, 0x18, 0x27);
-            titleBar.ButtonHoverForegroundColor = Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF);
-            titleBar.ButtonPressedBackgroundColor = Windows.UI.Color.FromArgb(0xFF, 0x1A, 0x22, 0x36);
-            titleBar.ButtonPressedForegroundColor = Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF);
-            titleBar.InactiveBackgroundColor = Windows.UI.Color.FromArgb(0xFF, 0x05, 0x08, 0x10);
-            titleBar.InactiveForegroundColor = Windows.UI.Color.FromArgb(0xFF, 0x6B, 0x72, 0x80);
-            titleBar.ButtonInactiveBackgroundColor = Windows.UI.Color.FromArgb(0xFF, 0x05, 0x08, 0x10);
-            titleBar.ButtonInactiveForegroundColor = Windows.UI.Color.FromArgb(0xFF, 0x6B, 0x72, 0x80);
+            _appWindow.Changed += (s, args) =>
+            {
+                if (args.DidPresenterChange
+                    && _appWindow.Presenter is OverlappedPresenter p
+                    && p.State == OverlappedPresenterState.Minimized)
+                {
+                    var settings = App.Services.GetService<ISettingsService>()?.Settings;
+                    if (settings?.MinimizeToTray == true)
+                    {
+                        App.Services.GetService<ITrayIconService>()?.Show();
+                        _appWindow.Hide();
+                    }
+                }
+            };
         }
+
+        // Title bar colours follow the current palette (see ThemeService).
+        ThemeService.RegisterTitleBar(_appWindow, hwnd);
 
         // Subscribe to playback events via Messenger
         WeakReferenceMessenger.Default.Register<PositionChangedMessage>(this, (r, m) =>
@@ -83,6 +92,9 @@ public sealed partial class MiniPlayerWindow : Window
 
         // Clean up on close
         this.Closed += OnClosed;
+
+        // Pin colour is painted from code, so it has to be repainted on theme changes.
+        ThemeService.PaletteChanged += OnPaletteChanged;
 
         ApplyLocalization();
         _localization.LanguageChanged -= ApplyLocalization;
@@ -104,8 +116,19 @@ public sealed partial class MiniPlayerWindow : Window
         if (PlayPauseButton != null) ToolTipService.SetToolTip(PlayPauseButton, _localization.GetString("PlayPauseTip"));
     }
 
+    private void OnPaletteChanged()
+    {
+        var window = this.Content as Microsoft.UI.Xaml.FrameworkElement;
+        window?.DispatcherQueue.TryEnqueue(() =>
+        {
+            try { UpdatePinVisual(); }
+            catch { /* window closing */ }
+        });
+    }
+
     private void OnClosed(object sender, WindowEventArgs args)
     {
+        ThemeService.PaletteChanged -= OnPaletteChanged;
         _localization.LanguageChanged -= ApplyLocalization;
         WeakReferenceMessenger.Default.UnregisterAll(this);
         _logger.Log("[MiniPlayer] Window closed");
@@ -119,16 +142,31 @@ public sealed partial class MiniPlayerWindow : Window
         {
             if (_isUserSeeking) return;
 
-            var duration = _playbackService.Duration;
-            if (duration.TotalSeconds > 0)
+            var settings = App.Services.GetService<ISettingsService>()?.Settings;
+            var ch = _playbackService.CurrentChapter;
+            if (settings?.PlayerChapterMode == true && ch != null && ch.End > ch.Start)
             {
-                ProgressSlider.Value = position.TotalSeconds / duration.TotalSeconds * 100;
+                var chDur = TimeSpan.FromSeconds(ch.End - ch.Start);
+                var chPos = TimeSpan.FromSeconds(Math.Clamp(position.TotalSeconds - ch.Start, 0, chDur.TotalSeconds));
+                ProgressSlider.Value = chPos.TotalSeconds / chDur.TotalSeconds * 100;
+                CurrentTimeText.Text = TimeFormatHelper.FormatTimeSpan(chPos);
+                var remaining = chDur - chPos;
+                if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
+                RemainingTimeText.Text = $"-{TimeFormatHelper.FormatTimeSpan(remaining)}";
             }
+            else
+            {
+                var duration = _playbackService.Duration;
+                if (duration.TotalSeconds > 0)
+                {
+                    ProgressSlider.Value = position.TotalSeconds / duration.TotalSeconds * 100;
+                }
 
-            CurrentTimeText.Text = TimeFormatHelper.FormatTimeSpan(position);
-            var remaining = duration - position;
-            if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
-            RemainingTimeText.Text = $"-{TimeFormatHelper.FormatTimeSpan(remaining)}";
+                CurrentTimeText.Text = TimeFormatHelper.FormatTimeSpan(position);
+                var remaining = duration - position;
+                if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
+                RemainingTimeText.Text = $"-{TimeFormatHelper.FormatTimeSpan(remaining)}";
+            }
         });
     }
 
@@ -210,6 +248,12 @@ public sealed partial class MiniPlayerWindow : Window
 
     // --- Pin / Expand ---
 
+    public void RestoreFromTray()
+    {
+        _appWindow?.Show();
+        Activate();
+    }
+
     private void PinToggle_Click(object sender, RoutedEventArgs e)
     {
         _isPinned = !_isPinned;
@@ -219,13 +263,16 @@ public sealed partial class MiniPlayerWindow : Window
             presenter.IsAlwaysOnTop = _isPinned;
         }
 
-        // Update pin icon appearance
+        UpdatePinVisual();
+        _logger.LogDebug($"[MiniPlayer] Always on top: {_isPinned}");
+    }
+
+    private void UpdatePinVisual()
+    {
         PinIcon.Glyph = _isPinned ? "\uE840" : "\uE718"; // Pinned vs UnPin
         PinIcon.Foreground = _isPinned
-            ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["SigilGoldBrush"]
-            : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["MistFaintBrush"];
-
-        _logger.LogDebug($"[MiniPlayer] Always on top: {_isPinned}");
+            ? ThemeService.Brush("SigilGoldBrush")
+            : ThemeService.Brush("MistFaintBrush");
     }
 
     private void Expand_Click(object sender, RoutedEventArgs e)

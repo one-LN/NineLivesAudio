@@ -9,7 +9,8 @@
     xmlns:controls="using:CommunityToolkit.WinUI.Controls"
     mc:Ignorable="d"
     Loaded="Page_Loaded"
-    Unloaded="Page_Unloaded">
+    Unloaded="Page_Unloaded"
+    Background="{ThemeResource VoidDeepBrush}">
 
     <Grid x:Name="LibraryRootGrid" Padding="{StaticResource PagePadding}">
         <VisualStateManager.VisualStateGroups>
@@ -83,11 +84,11 @@
 
             <!-- Status Pill -->
             <Border x:Name="StatusPill" Grid.Column="1" Style="{StaticResource StatusPillStyle}"
-                    Background="{StaticResource NebulaDarkBrush}">
+                    Background="{ThemeResource NebulaDarkBrush}">
                 <StackPanel Orientation="Horizontal" Spacing="6">
-                    <Ellipse x:Name="StatusEllipse" Width="6" Height="6" Fill="{StaticResource RitualSuccessBrush}"/>
+                    <Ellipse x:Name="StatusEllipse" Width="6" Height="6" Fill="{ThemeResource RitualSuccessBrush}"/>
                     <TextBlock x:Name="StatusText" Text="Connected" Style="{StaticResource StatusPillTextStyle}"
-                               Foreground="{StaticResource MistBrush}"/>
+                               Foreground="{ThemeResource MistBrush}"/>
                 </StackPanel>
             </Border>
         </Grid>
@@ -180,7 +181,7 @@
         <!-- Error State -->
         <Border Grid.Row="3"
                 Visibility="{x:Bind ViewModel.HasError, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                Background="{StaticResource RitualErrorFaintBrush}"
+                Background="{ThemeResource RitualErrorFaintBrush}"
                 CornerRadius="{StaticResource RadiusMD}"
                 Padding="16"
                 Margin="0,0,0,12">
@@ -189,10 +190,10 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <FontIcon Glyph="&#xE7BA;" Foreground="{StaticResource RitualErrorBrush}" Margin="0,0,12,0"/>
+                <FontIcon Glyph="&#xE7BA;" Foreground="{ThemeResource RitualErrorBrush}" Margin="0,0,12,0"/>
                 <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
                            TextWrapping="Wrap" VerticalAlignment="Center"
-                           Foreground="{StaticResource MistBrush}"/>
+                           Foreground="{ThemeResource MistBrush}"/>
             </Grid>
         </Border>
 
@@ -201,7 +202,7 @@
               Visibility="{x:Bind ViewModel.IsLoading, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16">
                 <ProgressRing IsActive="True" Width="48" Height="48"
-                              Foreground="{StaticResource SigilGoldDimBrush}"/>
+                              Foreground="{ThemeResource SigilGoldDimBrush}"/>
                 <TextBlock x:Name="LoadingLibraryText" Text="Loading library..." Style="{StaticResource SubtitleStyle}" HorizontalAlignment="Center"/>
             </StackPanel>
         </Grid>
@@ -221,7 +222,7 @@
                               loc:Loc.Placeholder="Sort" PlaceholderText="Sort" MinWidth="110"
                               SelectionChanged="SortComboBox_SelectionChanged"
                               VerticalAlignment="Center">
-                        <ComboBoxItem loc:Loc.Content="SortDefault" Content="Default" Tag="Default" IsSelected="True"/>
+                        <ComboBoxItem loc:Loc.Content="SortDefault" Content="Default" Tag="Default"/>
                         <ComboBoxItem loc:Loc.Content="SortTitle" Content="Title" Tag="Title"/>
                         <ComboBoxItem loc:Loc.Content="SortAuthor" Content="Author" Tag="Author"/>
                         <ComboBoxItem loc:Loc.Content="SortProgress" Content="Progress" Tag="Progress"/>
@@ -257,7 +258,6 @@
                                     Tag="{x:Bind}">
                                 <Grid>
                                     <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
@@ -301,17 +301,42 @@
                                 <!-- Author -->
                                 <TextBlock Grid.Row="2"
                                            Text="{x:Bind Author}"
-                                           Style="{StaticResource SubtitleStyle}"/>
+                                           Style="{StaticResource SubtitleStyle}"
+                                           Visibility="{x:Bind Author, Converter={StaticResource StringToVisibilityConverter}}"/>
 
                                 <!-- Progress -->
-                                <StackPanel Grid.Row="3" Spacing="4" Margin="0,6,0,0"
-                                            Visibility="{x:Bind HasProgress, Converter={StaticResource BoolToVisibilityConverter}}">
-                                    <ProgressBar Value="{x:Bind ProgressPercent}"
-                                                 Style="{StaticResource DownloadProgressStyle}"/>
-                                    <TextBlock Text="{x:Bind ProgressText}"
-                                               FontSize="11"
-                                               Foreground="{StaticResource MistFaintBrush}"/>
-                                </StackPanel>
+                                <!-- 4-Edge GPU-Accelerated Progress Ring (partial) + Rounded Closed Loop (100%) -->
+                                <Border Grid.Row="0" Grid.RowSpan="3" Margin="-4" CornerRadius="8"
+                                        BorderBrush="{ThemeResource SigilGoldBrush}" BorderThickness="2"
+                                        IsHitTestVisible="False"
+                                        Visibility="{x:Bind IsProgressFull, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                <Grid Grid.Row="0" Grid.RowSpan="3" IsHitTestVisible="False"
+                                      Visibility="{x:Bind IsProgressPartial, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <Border VerticalAlignment="Top" Height="2" Margin="6,-4,6,0" CornerRadius="1" Background="{ThemeResource SigilGoldBrush}"
+                                            RenderTransformOrigin="0,0.5">
+                                        <Border.RenderTransform>
+                                            <ScaleTransform ScaleX="{x:Bind RingTopScale, Mode=OneWay}"/>
+                                        </Border.RenderTransform>
+                                    </Border>
+                                    <Border HorizontalAlignment="Right" Width="2" Margin="0,6,-4,6" CornerRadius="1" Background="{ThemeResource SigilGoldBrush}"
+                                            RenderTransformOrigin="0.5,0">
+                                        <Border.RenderTransform>
+                                            <ScaleTransform ScaleY="{x:Bind RingRightScale, Mode=OneWay}"/>
+                                        </Border.RenderTransform>
+                                    </Border>
+                                    <Border VerticalAlignment="Bottom" Height="2" Margin="6,0,6,-4" CornerRadius="1" Background="{ThemeResource SigilGoldBrush}"
+                                            RenderTransformOrigin="1,0.5">
+                                        <Border.RenderTransform>
+                                            <ScaleTransform ScaleX="{x:Bind RingBottomScale, Mode=OneWay}"/>
+                                        </Border.RenderTransform>
+                                    </Border>
+                                    <Border HorizontalAlignment="Left" Width="2" Margin="-4,6,0,6" CornerRadius="1" Background="{ThemeResource SigilGoldBrush}"
+                                            RenderTransformOrigin="0.5,1">
+                                        <Border.RenderTransform>
+                                            <ScaleTransform ScaleY="{x:Bind RingLeftScale, Mode=OneWay}"/>
+                                        </Border.RenderTransform>
+                                    </Border>
+                                </Grid>
                                 </Grid>
                             </Border>
                         </DataTemplate>

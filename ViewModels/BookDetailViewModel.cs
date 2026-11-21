@@ -1,3 +1,5 @@
+using Windows.UI;
+using Microsoft.UI.Xaml.Media;
 using NineLivesAudio.Data;
 using NineLivesAudio.Helpers;
 using NineLivesAudio.Messages;
@@ -93,6 +95,11 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
         var currentIdx = AudioBook.GetCurrentChapterIndex();
         var currentTimeSeconds = AudioBook.CurrentTime.TotalSeconds;
 
+        var titleBrush = ThemeService.Brush("StarlightBrush");
+        var metaBrush = ThemeService.Brush("MistFaintBrush");
+        var accentBrush = ThemeService.Brush("SigilGoldBrush");
+        var highlight = new SolidColorBrush(Color.FromArgb(0x1A, 0xC5, 0xA5, 0x5A));
+
         return AudioBook.Chapters.Select((ch, idx) =>
         {
             double progressPercent = 0;
@@ -121,7 +128,11 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
                 Duration = TimeFormatHelper.FormatDuration(ch.Duration),
                 IsCurrent = idx == currentIdx,
                 ProgressPercent = progressPercent,
-                Status = status
+                Status = status,
+                TitleBrush = titleBrush,
+                MetaBrush = metaBrush,
+                AccentBrush = accentBrush,
+                RowBackgroundBrush = idx == currentIdx ? highlight : null
             };
         }).ToList();
     }
@@ -134,12 +145,17 @@ public partial class BookDetailViewModel : ObservableObject, IDisposable
         if (AudioBook?.AudioFiles == null || AudioBook.AudioFiles.Count == 0)
             return Array.Empty<TrackItem>();
 
+        var titleBrush = ThemeService.Brush("StarlightBrush");
+        var metaBrush = ThemeService.Brush("MistFaintBrush");
+
         return AudioBook.AudioFiles.Select((af, idx) => new TrackItem
         {
             Index = idx + 1,
             Title = af.Filename,
             Duration = TimeFormatHelper.FormatDuration(af.Duration),
-            IsDownloaded = !string.IsNullOrEmpty(af.LocalPath)
+            IsDownloaded = !string.IsNullOrEmpty(af.LocalPath),
+            TitleBrush = titleBrush,
+            MetaBrush = metaBrush
         }).ToList();
     }
 

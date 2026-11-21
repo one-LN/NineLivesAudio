@@ -1,0 +1,121 @@
+<Page
+    x:Class="NineLivesAudio.Views.StatsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:NineLivesAudio.ViewModels"
+    mc:Ignorable="d"
+    Loaded="Page_Loaded"
+    Background="{ThemeResource VoidDeepBrush}">
+
+    <ScrollViewer>
+        <StackPanel Padding="{StaticResource PagePadding}" Spacing="16">
+
+            <TextBlock x:Name="StatsTitleText" Text="Statistics"
+                       Style="{StaticResource PageTitleStyle}"/>
+
+            <!-- Totals -->
+            <Grid ColumnSpacing="12" RowSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Grid.Column="0" Background="{ThemeResource VoidSurfaceBrush}"
+                        BorderBrush="{ThemeResource DustBrush}" BorderThickness="1"
+                        CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock x:Name="TodayLabel" Text="Today" Style="{StaticResource CaptionStyle}"/>
+                        <TextBlock Text="{x:Bind ViewModel.TodayText, Mode=OneWay}"
+                                   FontSize="22" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource SigilGoldBrush}"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="0" Grid.Column="1" Background="{ThemeResource VoidSurfaceBrush}"
+                        BorderBrush="{ThemeResource DustBrush}" BorderThickness="1"
+                        CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock x:Name="WeekLabel" Text="Last 7 days" Style="{StaticResource CaptionStyle}"/>
+                        <TextBlock Text="{x:Bind ViewModel.WeekText, Mode=OneWay}" FontSize="22" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="1" Grid.Column="0" Background="{ThemeResource VoidSurfaceBrush}"
+                        BorderBrush="{ThemeResource DustBrush}" BorderThickness="1"
+                        CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock x:Name="MonthLabel" Text="Last 30 days" Style="{StaticResource CaptionStyle}"/>
+                        <TextBlock Text="{x:Bind ViewModel.MonthText, Mode=OneWay}" FontSize="22" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="1" Grid.Column="1" Background="{ThemeResource VoidSurfaceBrush}"
+                        BorderBrush="{ThemeResource DustBrush}" BorderThickness="1"
+                        CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock x:Name="AllTimeLabel" Text="All time" Style="{StaticResource CaptionStyle}"/>
+                        <TextBlock Text="{x:Bind ViewModel.AllTimeText, Mode=OneWay}" FontSize="22" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- 14-day chart -->
+            <Border Background="{ThemeResource VoidSurfaceBrush}"
+                    BorderBrush="{ThemeResource DustBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="{x:Bind ViewModel.ChartTitle, Mode=OneWay}"
+                               Style="{StaticResource SectionTitleStyle}"/>
+
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.Bars}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="6"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:StatBar">
+                                <StackPanel Spacing="4" Width="18" VerticalAlignment="Bottom">
+                                    <Rectangle Height="{x:Bind Height}" Width="14"
+                                               VerticalAlignment="Bottom"
+                                               RadiusX="3" RadiusY="3"
+                                               Fill="{ThemeResource SigilGoldDimBrush}"
+                                               ToolTipService.ToolTip="{x:Bind Tooltip}"/>
+                                    <TextBlock Text="{x:Bind Label}" FontSize="9"
+                                               Foreground="{ThemeResource MistFaintBrush}"
+                                               HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock x:Name="StatsEmptyHint"
+                               Text="Listening time appears here once you play for a few minutes."
+                               Style="{StaticResource CaptionStyle}"
+                               Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Library overview -->
+            <Border Background="{ThemeResource VoidSurfaceBrush}"
+                    BorderBrush="{ThemeResource DustBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="16">
+                <StackPanel Spacing="6">
+                    <TextBlock x:Name="LibrarySummaryTitle" Text="Your shelf"
+                               Style="{StaticResource SectionTitleStyle}"/>
+                    <TextBlock Text="{x:Bind ViewModel.BooksSummary, Mode=OneWay}"
+                               TextWrapping="Wrap"/>
+                    <TextBlock x:Name="StatsNote"
+                               Text="Counted on this device only — reading time is not uploaded to the server."
+                               Style="{StaticResource CaptionStyle}"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

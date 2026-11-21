@@ -6,16 +6,9 @@
     <helpers:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
     <helpers:BoolToVisibilityInverseConverter x:Key="BoolToVisibilityInverseConverter"/>
     <helpers:BoolToInverseConverter x:Key="BoolToInverseConverter"/>
-    <helpers:ProgressToVisibilityConverter x:Key="ProgressToVisibilityConverter"/>
-    <helpers:TimeSpanToStringConverter x:Key="TimeSpanToStringConverter"/>
-    <helpers:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
-    <helpers:NullToVisibilityInverseConverter x:Key="NullToVisibilityInverseConverter"/>
-    <helpers:DownloadStatusToGlyphConverter x:Key="DownloadStatusToGlyphConverter"/>
+    <helpers:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
     <helpers:StringToImageSourceConverter x:Key="StringToImageSourceConverter"/>
     <helpers:HoursToCosmicBrushConverter x:Key="HoursToCosmicBrushConverter"/>
     <helpers:WeightToBrushConverter x:Key="WeightToBrushConverter"/>
-    <helpers:LifeIndexToLabelConverter x:Key="LifeIndexToLabelConverter"/>
-    <helpers:DurationToWeightConverter x:Key="DurationToWeightConverter"/>
-    <helpers:BoolToHighlightBrushConverter x:Key="BoolToHighlightBrushConverter"/>
 
 </ResourceDictionary>

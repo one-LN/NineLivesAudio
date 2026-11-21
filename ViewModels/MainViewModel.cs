@@ -125,9 +125,4 @@ public partial class MainViewModel : ObservableObject, IDisposable
         await _playbackService.SeekAsync(newPosition);
     }
 
-    [RelayCommand]
-    private async Task SyncAsync()
-    {
-        await _syncService.SyncNowAsync();
-    }
 }

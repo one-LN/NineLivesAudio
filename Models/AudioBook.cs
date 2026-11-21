@@ -1,10 +1,28 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 
 namespace NineLivesAudio.Models;
 
-public class AudioBook
+/// <summary>
+/// An audiobook. The progress fields raise <see cref="PropertyChanged"/> so a refresh can
+/// update the cards in place instead of replacing the whole list (which re-ran the
+/// ItemsRepeater layout and made the shelf flash on every sync).
+/// </summary>
+public class AudioBook : INotifyPropertyChanged
 {
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void Raise(params string[] names)
+    {
+        var handler = PropertyChanged;
+        if (handler == null) return;
+        foreach (var name in names)
+            handler(this, new PropertyChangedEventArgs(name));
+    }
+
+
     public string Id { get; set; } = string.Empty;
     public string? LibraryId { get; set; }
     public string Title { get; set; } = string.Empty;
@@ -27,12 +45,56 @@ public class AudioBook
     // Chapters
     public List<Chapter> Chapters { get; set; } = new();
 
-    public TimeSpan CurrentTime { get; set; }
-    public double Progress { get; set; }
-    public bool IsFinished { get; set; }
+    private TimeSpan _currentTime;
+    public TimeSpan CurrentTime
+    {
+        get => _currentTime;
+        set
+        {
+            if (_currentTime == value) return;
+            _currentTime = value;
+            Raise(nameof(CurrentTime), nameof(ProgressText), nameof(ChapterProgressText),
+                  nameof(CurrentChapterProgressPercent));
+        }
+    }
+
+    private double _progress;
+    public double Progress
+    {
+        get => _progress;
+        set
+        {
+            if (Math.Abs(_progress - value) < 0.000001) return;
+            _progress = value;
+            Raise(nameof(Progress), nameof(ProgressPercent), nameof(HasProgress),
+                  nameof(IsProgressFull), nameof(IsProgressPartial),
+                  nameof(RingTopScale), nameof(RingRightScale), nameof(RingBottomScale), nameof(RingLeftScale),
+                  nameof(ProgressText), nameof(ChapterProgressText));
+        }
+    }
+
+    private bool _isFinished;
+    public bool IsFinished
+    {
+        get => _isFinished;
+        set
+        {
+            if (_isFinished == value) return;
+            _isFinished = value;
+            Raise(nameof(IsFinished));
+        }
+    }
 
     /// <summary>Progress as 0–100 regardless of whether the API returned 0–1 or 0–100.</summary>
     public double ProgressPercent => Progress <= 1.0 ? Progress * 100.0 : Progress;
+
+    public bool IsProgressFull => HasProgress && ProgressPercent >= 99.5;
+    public bool IsProgressPartial => HasProgress && ProgressPercent < 99.5;
+
+    public double RingTopScale => Math.Clamp(ProgressPercent / 25.0, 0.0, 1.0);
+    public double RingRightScale => Math.Clamp((ProgressPercent - 25.0) / 25.0, 0.0, 1.0);
+    public double RingBottomScale => Math.Clamp((ProgressPercent - 50.0) / 25.0, 0.0, 1.0);
+    public double RingLeftScale => Math.Clamp((ProgressPercent - 75.0) / 25.0, 0.0, 1.0);
 
     /// <summary>Whether this book has any progress to display.</summary>
     public bool HasProgress => Progress > 0;
@@ -109,7 +171,18 @@ public class AudioBook
         }
     }
 
-    public bool IsDownloaded { get; set; }
+    private bool _isDownloaded;
+    public bool IsDownloaded
+    {
+        get => _isDownloaded;
+        set
+        {
+            if (_isDownloaded == value) return;
+            _isDownloaded = value;
+            Raise(nameof(IsDownloaded));
+        }
+    }
+
     public string? LocalPath { get; set; }
 }
 

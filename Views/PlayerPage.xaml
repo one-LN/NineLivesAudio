@@ -7,7 +7,8 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     Loaded="Page_Loaded"
-    Unloaded="Page_Unloaded">
+    Unloaded="Page_Unloaded"
+    Background="{ThemeResource VoidDeepBrush}">
 
     <Page.Resources>
         <!-- Rows for the chapter picker. A virtualised ListView keeps a 2555-chapter book
@@ -23,7 +24,7 @@
                            Style="{StaticResource CaptionStyle}" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="1" Text="{Binding Title}"
                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                           Foreground="{StaticResource StarlightDimBrush}"/>
+                           Foreground="{ThemeResource StarlightDimBrush}"/>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                     <TextBlock Text="{Binding StartTime}" Style="{StaticResource CaptionStyle}"/>
                     <TextBlock Text="·" Style="{StaticResource CaptionStyle}" Opacity="0.5"/>
@@ -33,7 +34,7 @@
         </DataTemplate>
     </Page.Resources>
 
-    <Grid x:Name="PlayerRootGrid" Padding="{StaticResource PagePadding}">
+    <Grid x:Name="PlayerRootGrid">
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="PlayerLayoutStates">
                 <!-- Wide: > 900px — generous spacing, large cover -->
@@ -85,14 +86,14 @@
         </Grid.RowDefinitions>
 
         <!-- Back Button + Pop-Out -->
-        <Grid Grid.Row="0" Padding="8,4">
+        <Grid Grid.Row="0" Padding="16,8">
             <Button x:Name="PlayerBackButton" Click="BackButton_Click"
                     HorizontalAlignment="Left"
                     Background="Transparent" BorderThickness="0">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon Glyph="&#xE72B;" FontSize="16" Foreground="{StaticResource MistFaintBrush}"/>
+                    <FontIcon Glyph="&#xE72B;" FontSize="16" Foreground="{ThemeResource MistFaintBrush}"/>
                     <TextBlock x:Name="PlayerBackButtonLabel" loc:Loc.Text="Back" Text="Back" VerticalAlignment="Center"
-                               Foreground="{StaticResource MistFaintBrush}"/>
+                               Foreground="{ThemeResource MistFaintBrush}"/>
                 </StackPanel>
             </Button>
 
@@ -101,7 +102,7 @@
                     Background="Transparent" BorderThickness="0"
                     ToolTipService.ToolTip="Pop out mini player">
                 <FontIcon Glyph="&#xE8A7;" FontSize="16"
-                          Foreground="{StaticResource MistFaintBrush}"/>
+                          Foreground="{ThemeResource MistFaintBrush}"/>
             </Button>
         </Grid>
 
@@ -216,7 +217,8 @@
                             Grid.Row="0"
                             Minimum="0"
                             Maximum="100"
-                            ValueChanged="ProgressSlider_ValueChanged"/>
+                            ValueChanged="ProgressSlider_ValueChanged"
+                            PointerReleased="ProgressSlider_PointerReleased"/>
 
                     <Grid Grid.Row="1" Margin="0,4,0,0">
                         <TextBlock x:Name="CurrentTimeText"
@@ -284,7 +286,7 @@
                             Style="{StaticResource SigilPlayButtonStyle}"
                             VerticalAlignment="Center">
                         <FontIcon x:Name="PlayPauseIcon" Glyph="&#xE768;" FontSize="28"
-                                  Foreground="{StaticResource VoidDeepBrush}"/>
+                                  Foreground="{ThemeResource VoidDeepBrush}"/>
                     </Button>
 
                     <!-- Skip Forward 30s -->
@@ -315,6 +317,7 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
                         <ColumnDefinition x:Name="ChaptersColumn" Width="0"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
@@ -326,7 +329,8 @@
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <FontIcon Glyph="&#xEC57;" FontSize="16"/>
                                 <TextBlock x:Name="SpeedText" Text="1.0x"
-                                           Foreground="{StaticResource MistBrush}"/>
+                                           Visibility="Collapsed"
+                                           Foreground="{ThemeResource MistBrush}"/>
                             </StackPanel>
                         </Button>
                         <TextBlock x:Name="SpeedLabelText" Text="Speed" Style="{StaticResource CaptionStyle}"
@@ -336,11 +340,13 @@
                     <!-- Sleep Timer -->
                     <StackPanel Grid.Column="1" HorizontalAlignment="Center">
                         <Button x:Name="SleepButton" Click="SleepButton_Click"
-                                Style="{StaticResource IconButtonStyle}">
+                                Style="{StaticResource IconButtonStyle}"
+                                Width="Auto" MinWidth="40" Padding="6,4">
                             <StackPanel Orientation="Horizontal" Spacing="4">
-                                <FontIcon Glyph="&#xE708;" FontSize="16"/>
-                                <TextBlock x:Name="SleepButtonText" Text="Off"
-                                           Foreground="{StaticResource MistBrush}"/>
+                                <FontIcon Glyph="&#xE916;" FontSize="16"/>
+                                <TextBlock x:Name="SleepButtonText" Text=""
+                                           Visibility="Collapsed"
+                                           Foreground="{ThemeResource MistBrush}"/>
                             </StackPanel>
                         </Button>
                         <TextBlock x:Name="SleepLabelText" Text="Sleep" Style="{StaticResource CaptionStyle}"
@@ -354,7 +360,7 @@
                                 <Flyout>
                                     <StackPanel Width="200">
                                         <TextBlock loc:Loc.Text="Volume" Text="Volume" FontWeight="SemiBold" Margin="0,0,0,8"
-                                                   Foreground="{StaticResource StarlightDimBrush}"/>
+                                                   Foreground="{ThemeResource StarlightDimBrush}"/>
                                         <Slider x:Name="VolumeSlider"
                                                 Minimum="0"
                                                 Maximum="1"
@@ -370,7 +376,7 @@
                     </StackPanel>
 
                     <!-- Chapters -->
-                    <StackPanel x:Name="ChaptersButtonPanel" Grid.Column="3" HorizontalAlignment="Center" Visibility="Collapsed">
+                    <StackPanel x:Name="ChaptersButtonPanel" Grid.Column="4" HorizontalAlignment="Center" Visibility="Collapsed">
                         <Button x:Name="ChaptersButton" Click="ChaptersButton_Click"
                                 Style="{StaticResource IconButtonStyle}">
                             <FontIcon Glyph="&#xE8FD;" FontSize="16"/>
@@ -380,7 +386,7 @@
                     </StackPanel>
 
                     <!-- Bookmarks -->
-                    <StackPanel Grid.Column="4" HorizontalAlignment="Center">
+                    <StackPanel Grid.Column="5" HorizontalAlignment="Center">
                         <Button x:Name="BookmarkButton" Click="BookmarkButton_Click"
                                 Style="{StaticResource IconButtonStyle}">
                             <FontIcon Glyph="&#xE8A4;" FontSize="16"/>
@@ -388,21 +394,31 @@
                         <TextBlock x:Name="BookmarksLabelText" Text="Bookmarks" Style="{StaticResource CaptionStyle}"
                                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
                     </StackPanel>
+
+                    <!-- Per-book Skip Intro/Outro -->
+                    <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                        <Button x:Name="SkipButton" Click="SkipButton_Click"
+                                Style="{StaticResource IconButtonStyle}">
+                            <FontIcon Glyph="&#xE8C6;" FontSize="16"/>
+                        </Button>
+                        <TextBlock x:Name="SkipLabelText" Text="Skip" Style="{StaticResource CaptionStyle}"
+                                   HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
                 </Grid>
 
                 <!-- Sleep Timer Status -->
                 <Border x:Name="SleepTimerPanel"
                         Visibility="Collapsed"
-                        Background="{StaticResource VoidSurfaceBrush}"
+                        Background="{ThemeResource VoidSurfaceBrush}"
                         CornerRadius="{StaticResource RadiusSM}"
                         Padding="12"
                         Margin="0,12,0,0">
                     <Grid>
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE708;" FontSize="16"
-                                      Foreground="{StaticResource SigilGoldDimBrush}"/>
+                                      Foreground="{ThemeResource SigilGoldDimBrush}"/>
                             <TextBlock x:Name="SleepTimerStatusText"
-                                       Foreground="{StaticResource SigilGoldDimBrush}"/>
+                                       Foreground="{ThemeResource SigilGoldDimBrush}"/>
                         </StackPanel>
                         <Button HorizontalAlignment="Right"
                                 Click="CancelSleepTimer_Click"
@@ -417,11 +433,11 @@
         <!-- Loading Overlay -->
         <Grid x:Name="LoadingOverlay"
               Grid.Row="1"
-              Background="{StaticResource VoidDeepBrush}"
+              Background="{ThemeResource VoidDeepBrush}"
               Visibility="Collapsed">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16">
                 <ProgressRing IsActive="True" Width="50" Height="50"
-                              Foreground="{StaticResource SigilGoldDimBrush}"/>
+                              Foreground="{ThemeResource SigilGoldDimBrush}"/>
                 <TextBlock x:Name="LoadingAudiobookText" Text="Loading audiobook..." Style="{StaticResource SubtitleStyle}"
                            HorizontalAlignment="Center"/>
             </StackPanel>

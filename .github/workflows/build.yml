@@ -31,10 +31,21 @@ jobs:
         run: dotnet restore -r win-x64
 
       - name: Build (Release)
-        run: dotnet build -r win-x64 -c Release --no-restore
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'build.log'
+          dotnet build -r win-x64 -c Release --no-restore 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) {
+            # Diagnostics without downloading the (large, expiring) job log: every compiler
+            # error becomes a check-run annotation, which the API returns as plain JSON.
+            $errors = Select-String -Path $log -Pattern ': error [A-Z]+\d+' | Select-Object -First 40
+            foreach ($e in $errors) { Write-Host "::error::$($e.Line.Trim())" }
+            if (-not $errors) { Write-Host '::error::dotnet build failed without a recognizable compiler error (see step log)' }
+            exit 1
+          }
 
       - name: Publish (win-x64, self-contained)
-        run: dotnet publish -p:PublishProfile=win-x64 -c Release --no-restore
+        run: dotnet publish -p:PublishProfile=win-x64 -c Release --no-restore -p:SourceRevisionId=${{ github.sha }}
 
       # Shows up as a notice annotation on the run page: makes the publish layout
       # (and any stray culture folders) reviewable without downloading the artifact.

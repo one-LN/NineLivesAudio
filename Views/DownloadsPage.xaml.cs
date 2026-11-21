@@ -38,10 +38,8 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         ViewModel.ActiveDownloads.CollectionChanged -= OnCollectionChanged;
         ViewModel.CompletedDownloads.CollectionChanged -= OnCollectionChanged;
 
-        if (ViewModel is IDisposable disposable)
-        {
-            disposable.Dispose();
-        }
+        // View model lifetime is not tied to this page: the Frame caches page instances and
+        // disposing would drop its subscriptions permanently.
     }
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
@@ -49,6 +47,14 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         ApplyLocalization();
         _localization.LanguageChanged -= ApplyLocalization;
         _localization.LanguageChanged += ApplyLocalization;
+
+        // Re-hook the collections: Unloaded removes these, and the cached page can be shown
+        // again without going through the constructor.
+        ViewModel.ActiveDownloads.CollectionChanged -= OnCollectionChanged;
+        ViewModel.ActiveDownloads.CollectionChanged += OnCollectionChanged;
+        ViewModel.CompletedDownloads.CollectionChanged -= OnCollectionChanged;
+        ViewModel.CompletedDownloads.CollectionChanged += OnCollectionChanged;
+
         await ViewModel.InitializeAsync();
         NotifyVisibilityChanged();
     }

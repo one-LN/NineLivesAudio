@@ -43,6 +43,15 @@ public interface ILocalDatabase
     Task ClearPendingProgressForItemsAsync(IEnumerable<string> itemIds);
     Task<int> GetPendingProgressCountAsync();
 
+    // On-device listening history (Statistics page).
+    Task AddListeningSecondsAsync(string dateKey, double seconds);
+    Task<List<ListeningDay>> GetListeningDaysAsync(int days);
+
+    // Offline bookmark queue — created while offline, uploaded when the server is back.
+    Task EnqueuePendingBookmarkAsync(string itemId, string title, double time);
+    Task<List<PendingBookmarkEntry>> GetPendingBookmarksAsync();
+    Task DeletePendingBookmarkAsync(long id);
+
     // Bulk operations
     Task SaveAudioBooksAsync(IEnumerable<AudioBook> audioBooks);
     Task SaveLibrariesAsync(IEnumerable<Library> libraries);
