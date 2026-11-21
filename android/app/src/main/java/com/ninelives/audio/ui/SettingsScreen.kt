@@ -109,7 +109,7 @@ fun SettingsScreen(vm: MainViewModel) {
                         value = serverUrl,
                         onValueChange = { serverUrl = it },
                         label = { Text("服务器地址") },
-                        placeholder = { Text("https://cfabs.ccoff.com") },
+                        placeholder = { Text("https://example.com") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )

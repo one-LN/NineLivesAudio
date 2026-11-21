@@ -105,14 +105,14 @@ class AbsApiClient {
 
                     for (el in results) {
                         val item = el.asJsonObject
-                        val id = item.get("id")?.asString ?: continue
+                        val id = item.get("id")?.takeIf { !it.isJsonNull }?.asString ?: continue
                         val media = item.getAsJsonObject("media")
                         val metadata = media?.getAsJsonObject("metadata")
-                        val title = metadata?.get("title")?.asString ?: "Untitled"
-                        val author = metadata?.get("authorName")?.asString ?: ""
-                        val narrator = metadata?.get("narratorName")?.asString ?: ""
-                        val desc = metadata?.get("description")?.asString ?: ""
-                        val duration = media?.get("duration")?.asDouble ?: 0.0
+                        val title = metadata?.get("title")?.takeIf { !it.isJsonNull }?.asString ?: "Untitled"
+                        val author = metadata?.get("authorName")?.takeIf { !it.isJsonNull }?.asString ?: ""
+                        val narrator = metadata?.get("narratorName")?.takeIf { !it.isJsonNull }?.asString ?: ""
+                        val desc = metadata?.get("description")?.takeIf { !it.isJsonNull }?.asString ?: ""
+                        val duration = media?.get("duration")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
 
                         allBooks.add(
                             BookItem(

@@ -197,6 +197,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 } else b
             }
+        }.onFailure {
+            addLog("拉取书籍失败: ${it.message}")
         }
     }
 
