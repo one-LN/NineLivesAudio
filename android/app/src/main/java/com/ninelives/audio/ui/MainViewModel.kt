@@ -1,16 +1,30 @@
 package com.ninelives.audio.ui
 
 import android.app.Application
+import android.content.ComponentName
+import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import com.ninelives.audio.data.AbsApiClient
 import com.ninelives.audio.data.BookItem
 import com.ninelives.audio.data.LibraryInfo
+import com.ninelives.audio.data.PlaybackSessionData
 import com.ninelives.audio.data.SavedServer
 import com.ninelives.audio.data.SettingsStore
+import com.ninelives.audio.player.PlaybackService
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -174,5 +188,152 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else b
             }
         }
+    }
+
+    // --- Player state ---
+    private var mediaController: MediaController? = null
+
+    var currentSession by mutableStateOf<PlaybackSessionData?>(null)
+        private set
+    var isPlaying by mutableStateOf(false)
+        private set
+    var currentPositionSec by mutableDoubleStateOf(0.0)
+        private set
+    var totalDurationSec by mutableDoubleStateOf(0.0)
+        private set
+    var playbackSpeed by mutableFloatStateOf(1.0f)
+        private set
+    var sleepTimerMinutes by mutableIntStateOf(0)
+        private set
+    var sleepRemainingSec by mutableIntStateOf(0)
+        private set
+    var playerError by mutableStateOf<String?>(null)
+        private set
+
+    init {
+        val sessionToken = SessionToken(
+            application,
+            ComponentName(application, PlaybackService::class.java)
+        )
+        val future = MediaController.Builder(application, sessionToken).buildAsync()
+        future.addListener({
+            try {
+                val controller = future.get()
+                mediaController = controller
+                controller.addListener(object : Player.Listener {
+                    override fun onIsPlayingChanged(playing: Boolean) {
+                        isPlaying = playing
+                    }
+                })
+            } catch (_: Exception) {
+            }
+        }, ContextCompat.getMainExecutor(application))
+
+        viewModelScope.launch {
+            var tick = 0
+            while (true) {
+                delay(1000)
+                val c = mediaController
+                val sess = currentSession
+                if (c != null && sess != null) {
+                    val posSec = c.currentPosition / 1000.0
+                    currentPositionSec = posSec
+                    if (c.duration > 0) {
+                        totalDurationSec = c.duration / 1000.0
+                    }
+                    if (isPlaying) {
+                        tick++
+                        if (tick % 10 == 0 && activeUrl.isNotBlank() && activeToken.isNotBlank()) {
+                            api.syncProgress(activeUrl, activeToken, sess.itemId, posSec, totalDurationSec)
+                        }
+                        if (sleepRemainingSec > 0) {
+                            sleepRemainingSec--
+                            if (sleepRemainingSec == 0) {
+                                c.pause()
+                                sleepTimerMinutes = 0
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun playBook(book: BookItem) {
+        if (!isConnected) return
+        playerError = null
+        viewModelScope.launch {
+            val res = api.startPlaybackSession(activeUrl, activeToken, book.id)
+            res.onSuccess { sess ->
+                currentSession = sess
+                totalDurationSec = sess.duration
+                currentPositionSec = sess.currentTime
+                val c = mediaController ?: return@onSuccess
+                val item = MediaItem.Builder()
+                    .setUri(sess.streamUrl)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(sess.title)
+                            .setArtist(sess.author)
+                            .setArtworkUri(Uri.parse(sess.coverUrl))
+                            .build()
+                    )
+                    .build()
+                c.setMediaItem(item)
+                c.prepare()
+                if (sess.currentTime > 0) {
+                    c.seekTo((sess.currentTime * 1000).toLong())
+                }
+                c.setPlaybackSpeed(playbackSpeed)
+                c.play()
+            }.onFailure { e ->
+                playerError = e.message ?: "播放失败"
+            }
+        }
+    }
+
+    fun togglePlayPause() {
+        val c = mediaController ?: return
+        if (c.isPlaying) {
+            c.pause()
+            val sess = currentSession
+            if (sess != null && activeUrl.isNotBlank() && activeToken.isNotBlank()) {
+                val pos = c.currentPosition / 1000.0
+                viewModelScope.launch {
+                    api.syncProgress(activeUrl, activeToken, sess.itemId, pos, totalDurationSec)
+                }
+            }
+        } else {
+            c.play()
+        }
+    }
+
+    fun seekToSec(sec: Double) {
+        val c = mediaController ?: return
+        val clamped = sec.coerceIn(0.0, totalDurationSec.coerceAtLeast(0.0))
+        c.seekTo((clamped * 1000).toLong())
+        currentPositionSec = clamped
+    }
+
+    fun skipBy(deltaSec: Double) {
+        seekToSec(currentPositionSec + deltaSec)
+    }
+
+    fun cycleSpeed() {
+        val speeds = listOf(1.0f, 1.25f, 1.5f, 2.0f)
+        val next = speeds[(speeds.indexOf(playbackSpeed) + 1) % speeds.size]
+        playbackSpeed = next
+        mediaController?.setPlaybackSpeed(next)
+    }
+
+    fun setSleepTimer(minutes: Int) {
+        sleepTimerMinutes = minutes
+        sleepRemainingSec = minutes * 60
+    }
+
+    override fun onCleared() {
+        mediaController?.release()
+        mediaController = null
+        super.onCleared()
     }
 }

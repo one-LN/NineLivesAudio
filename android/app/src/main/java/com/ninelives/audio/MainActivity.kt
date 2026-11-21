@@ -28,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ninelives.audio.ui.HomeScreen
 import com.ninelives.audio.ui.LibraryScreen
 import com.ninelives.audio.ui.MainViewModel
+import com.ninelives.audio.ui.PlayerScreen
 import com.ninelives.audio.ui.SettingsScreen
 import com.ninelives.audio.ui.theme.NineLivesTheme
 
@@ -73,11 +74,15 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                 .padding(innerPadding)
         ) {
             when (selectedTab) {
-                0 -> HomeScreen(vm, onBookClick = { selectedTab = 2 })
-                1 -> LibraryScreen(vm, onBookClick = { selectedTab = 2 })
-                2 -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("播放器模块下一步接入 Media3")
-                }
+                0 -> HomeScreen(vm, onBookClick = { book ->
+                    vm.playBook(book)
+                    selectedTab = 2
+                })
+                1 -> LibraryScreen(vm, onBookClick = { book ->
+                    vm.playBook(book)
+                    selectedTab = 2
+                })
+                2 -> PlayerScreen(vm)
                 3 -> SettingsScreen(vm)
             }
         }

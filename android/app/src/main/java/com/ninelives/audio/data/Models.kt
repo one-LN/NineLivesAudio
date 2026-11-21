@@ -1,5 +1,23 @@
 package com.ninelives.audio.data
 
+data class ChapterInfo(
+    val id: Int,
+    val title: String,
+    val start: Double,
+    val end: Double
+)
+
+data class PlaybackSessionData(
+    val itemId: String,
+    val title: String,
+    val author: String,
+    val coverUrl: String,
+    val streamUrl: String,
+    val currentTime: Double,
+    val duration: Double,
+    val chapters: List<ChapterInfo>
+)
+
 data class SavedServer(
     val name: String = "",
     val url: String = "",
@@ -18,13 +36,6 @@ data class SavedServer(
 data class LibraryInfo(
     val id: String,
     val name: String
-)
-
-data class ChapterInfo(
-    val id: Int,
-    val title: String,
-    val start: Double,
-    val end: Double
 )
 
 data class BookItem(

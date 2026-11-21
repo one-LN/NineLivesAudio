@@ -169,4 +169,103 @@ class AbsApiClient {
                 emptyMap()
             }
         }
+
+    suspend fun startPlaybackSession(
+        serverUrl: String,
+        token: String,
+        itemId: String
+    ): Result<PlaybackSessionData> = withContext(Dispatchers.IO) {
+        try {
+            val base = serverUrl.trim().trimEnd('/')
+            val bodyJson = JSONObject()
+                .put("deviceInfo", JSONObject().put("clientName", "NineLivesAudio-Android"))
+                .put("forceDirectPlay", true)
+                .put("supportedMimeTypes", org.json.JSONArray(listOf("audio/mpeg", "audio/mp4", "audio/flac", "audio/ogg", "audio/aac")))
+                .toString()
+
+            val req = Request.Builder()
+                .url("$base/api/items/$itemId/play")
+                .header("Authorization", "Bearer $token")
+                .post(bodyJson.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            client.newCall(req).execute().use { resp ->
+                val text = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    return@withContext Result.failure(Exception("HTTP ${resp.code}: $text"))
+                }
+                val root = JsonParser.parseString(text).asJsonObject
+                val title = root.get("displayTitle")?.asString ?: "Unknown"
+                val author = root.get("displayAuthor")?.asString ?: ""
+                val currentTime = root.get("currentTime")?.asDouble ?: 0.0
+                val duration = root.get("duration")?.asDouble ?: 0.0
+
+                val tracks = root.getAsJsonArray("audioTracks")
+                val firstTrackUrl = if (tracks != null && tracks.size() > 0) {
+                    val contentUrl = tracks[0].asJsonObject.get("contentUrl")?.asString ?: ""
+                    if (contentUrl.startsWith("http")) contentUrl else "$base$contentUrl?token=$token"
+                } else {
+                    return@withContext Result.failure(Exception("No audioTracks in play response"))
+                }
+
+                val chaptersList = mutableListOf<ChapterInfo>()
+                val chaptersArr = root.getAsJsonArray("chapters")
+                if (chaptersArr != null) {
+                    for (el in chaptersArr) {
+                        val obj = el.asJsonObject
+                        chaptersList.add(
+                            ChapterInfo(
+                                id = obj.get("id")?.asInt ?: chaptersList.size,
+                                title = obj.get("title")?.asString ?: "Chapter ${chaptersList.size + 1}",
+                                start = obj.get("start")?.asDouble ?: 0.0,
+                                end = obj.get("end")?.asDouble ?: 0.0
+                            )
+                        )
+                    }
+                }
+
+                Result.success(
+                    PlaybackSessionData(
+                        itemId = itemId,
+                        title = title,
+                        author = author,
+                        coverUrl = "$base/api/items/$itemId/cover?token=$token",
+                        streamUrl = firstTrackUrl,
+                        currentTime = currentTime,
+                        duration = duration,
+                        chapters = chaptersList
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun syncProgress(
+        serverUrl: String,
+        token: String,
+        itemId: String,
+        currentTime: Double,
+        duration: Double
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val base = serverUrl.trim().trimEnd('/')
+            val progress = if (duration > 0) (currentTime / duration).coerceIn(0.0, 1.0) else 0.0
+            val bodyJson = JSONObject()
+                .put("currentTime", currentTime)
+                .put("duration", duration)
+                .put("progress", progress)
+                .toString()
+
+            val req = Request.Builder()
+                .url("$base/api/me/progress/$itemId")
+                .header("Authorization", "Bearer $token")
+                .patch(bodyJson.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            client.newCall(req).execute().close()
+        } catch (_: Exception) {
+        }
+    }
 }
