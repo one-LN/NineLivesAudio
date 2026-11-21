@@ -16,10 +16,13 @@ class AbsApiClient {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    private fun cleanUrl(url: String): String =
+        url.replace(Regex("[\\s\\u200B-\\u200D\\uFEFF\"']+"), "").trimEnd('/')
+
     suspend fun login(serverUrl: String, username: String, password: String): Result<String> =
         withContext(Dispatchers.IO) {
             try {
-                val base = serverUrl.trim().trimEnd('/')
+                val base = cleanUrl(serverUrl)
                 val bodyJson = JSONObject()
                     .put("username", username.trim())
                     .put("password", password)
