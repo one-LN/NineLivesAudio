@@ -1,0 +1,38 @@
+# Build results
+bin/
+obj/
+binpublish/
+installer_output/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# VS / Rider
+.vs/
+.idea/
+*.csproj.user
+
+# NuGet
+packages/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Secrets
+*.env
+appsettings.Development.json
+# Private keys and certificates
+*.pfx
+*.pem
+*.key
+*.crt
+*.cer
+
+# App runtime data (local only)
+Logs/
+Exports/
+*.log

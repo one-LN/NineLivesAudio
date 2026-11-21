@@ -1,0 +1,103 @@
+<Window
+    x:Class="NineLivesAudio.Views.MiniPlayerWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Nine Lives Audio">
+
+    <Grid Background="{ThemeResource VoidDeepBrush}" Padding="16,8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top Bar: Pin + Expand -->
+        <Grid Grid.Row="0" Margin="0,0,0,4">
+            <ToggleButton x:Name="PinToggle"
+                          Click="PinToggle_Click"
+                          HorizontalAlignment="Left"
+                          Background="Transparent" BorderThickness="0"
+                          Padding="6"
+                          ToolTipService.ToolTip="Keep on top">
+                <FontIcon x:Name="PinIcon" Glyph="&#xE718;" FontSize="14"
+                          Foreground="{ThemeResource MistFaintBrush}"/>
+            </ToggleButton>
+
+            <Button x:Name="ExpandButton" Click="Expand_Click"
+                    HorizontalAlignment="Right"
+                    Background="Transparent" BorderThickness="0"
+                    Padding="6"
+                    ToolTipService.ToolTip="Back to full player">
+                <FontIcon Glyph="&#xE740;" FontSize="14"
+                          Foreground="{ThemeResource MistFaintBrush}"/>
+            </Button>
+        </Grid>
+
+        <!-- Progress Section -->
+        <Grid Grid.Row="1" Margin="0,0,0,4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Slider x:Name="ProgressSlider"
+                    Grid.Row="0"
+                    Minimum="0"
+                    Maximum="100"
+                    ValueChanged="ProgressSlider_ValueChanged"/>
+
+            <Grid Grid.Row="1" Margin="0,2,0,0">
+                <TextBlock x:Name="CurrentTimeText"
+                           Style="{StaticResource CaptionStyle}"
+                           HorizontalAlignment="Left"
+                           Text="0:00:00"/>
+                <TextBlock x:Name="RemainingTimeText"
+                           Style="{StaticResource CaptionStyle}"
+                           HorizontalAlignment="Right"
+                           Text="-0:00:00"/>
+            </Grid>
+        </Grid>
+
+        <!-- Transport Controls — same rhythm as the full player (see docs §11):
+             58x44 text pills for the skips, 72px gold circle for play, 10px spacing. -->
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="10"
+                    Margin="0,4,0,8">
+
+            <!-- Skip Back 10s -->
+            <Button x:Name="SkipBackButton"
+                    Click="SkipBack_Click"
+                    Style="{StaticResource SkipPillButtonStyle}"
+                    ToolTipService.ToolTip="Skip back 10 seconds">
+                <TextBlock Text="&#x2212;10s"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+            </Button>
+
+            <!-- Play/Pause -->
+            <Button x:Name="PlayPauseButton"
+                    Click="PlayPause_Click"
+                    Style="{StaticResource SigilPlayButtonStyle}">
+                <FontIcon x:Name="PlayPauseIcon" Glyph="&#xE768;" FontSize="28"
+                          Foreground="{ThemeResource VoidDeepBrush}"/>
+            </Button>
+
+            <!-- Skip Forward 30s -->
+            <Button x:Name="SkipForwardButton"
+                    Click="SkipForward_Click"
+                    Style="{StaticResource SkipPillButtonStyle}"
+                    ToolTipService.ToolTip="Skip forward 30 seconds">
+                <TextBlock Text="+30s"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>

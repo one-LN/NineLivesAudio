@@ -1,0 +1,231 @@
+<Page
+    x:Class="NineLivesAudio.Views.HomePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:loc="using:NineLivesAudio.Helpers"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    NavigationCacheMode="Enabled">
+
+    <Grid x:Name="HomeRootGrid" Padding="24,32,24,32" Background="{ThemeResource VoidDeepBrush}">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="AltarLayoutStates">
+                <!-- Wide: > 900px — centered list with generous padding -->
+                <VisualState x:Name="AltarWideState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="900"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="HomeRootGrid.Padding" Value="48,32,48,32"/>
+                        <Setter Target="LivesContainer.MaxWidth" Value="800"/>
+                        <Setter Target="LogoImage.Width" Value="88"/>
+                        <Setter Target="LogoImage.Height" Value="88"/>
+                    </VisualState.Setters>
+                </VisualState>
+
+                <!-- Medium: 600-900px -->
+                <VisualState x:Name="AltarMediumState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="600"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="HomeRootGrid.Padding" Value="24,24,24,24"/>
+                        <Setter Target="LivesContainer.MaxWidth" Value="700"/>
+                        <Setter Target="LogoImage.Width" Value="80"/>
+                        <Setter Target="LogoImage.Height" Value="80"/>
+                    </VisualState.Setters>
+                </VisualState>
+
+                <!-- Narrow: < 600px — tighter spacing, smaller logo/covers -->
+                <VisualState x:Name="AltarNarrowState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="HomeRootGrid.Padding" Value="8,16,8,16"/>
+                        <Setter Target="LogoImage.Width" Value="56"/>
+                        <Setter Target="LogoImage.Height" Value="56"/>
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Logo Header -->
+        <StackPanel Grid.Row="0" HorizontalAlignment="Center" Spacing="4" Margin="0,0,0,20">
+            <Image x:Name="LogoImage"
+                   Width="80" Height="80"
+                   HorizontalAlignment="Center"
+                   Margin="0,0,0,4"/>
+            <TextBlock x:Name="HomeTitleText" Text="NINE LIVES"
+                       Style="{StaticResource RitualLabelStyle}"
+                       HorizontalAlignment="Center"
+                       Foreground="{ThemeResource SigilGoldDimBrush}"/>
+            <TextBlock Text="{x:Bind ViewModel.TotalListeningTimeText, Mode=OneWay}"
+                       Style="{StaticResource CaptionStyle}"
+                       HorizontalAlignment="Center"
+                       Opacity="0.5"
+                       Visibility="{x:Bind ViewModel.ShowGrid, Mode=OneWay}"/>
+        </StackPanel>
+
+        <!-- Loading -->
+        <ProgressRing Grid.Row="1"
+                      IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}"
+                      Visibility="{x:Bind ViewModel.IsLoading, Mode=OneWay}"
+                      Width="36" Height="36"
+                      Foreground="{ThemeResource SigilGoldDimBrush}"
+                      VerticalAlignment="Center" HorizontalAlignment="Center"/>
+
+        <!-- Empty State -->
+        <StackPanel Grid.Row="1"
+                    Visibility="{x:Bind ViewModel.ShowEmptyState, Mode=OneWay}"
+                    VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
+            <TextBlock x:Name="HomeEmptyTitleText" Text="NINE LIVES AWAIT"
+                       Style="{StaticResource RitualTitleStyle}"
+                       HorizontalAlignment="Center"/>
+            <TextBlock x:Name="HomeEmptySubtitleText" Text="Begin listening to summon your nine lives."
+                       Style="{StaticResource SubtitleStyle}"
+                       Foreground="{ThemeResource MistBrush}"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"/>
+            <Button loc:Loc.Content="GoToLibrary" Content="Go to Library"
+                    Style="{ThemeResource AccentButtonStyle}"
+                    Background="{ThemeResource SigilGoldBrush}"
+                    Foreground="{ThemeResource VoidDeepBrush}"
+                    Margin="0,16,0,0"
+                    HorizontalAlignment="Center"
+                    Click="GoToLibrary_Click"/>
+        </StackPanel>
+
+        <!-- Nine Lives List -->
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      Visibility="{x:Bind ViewModel.ShowGrid, Mode=OneWay}">
+            <StackPanel x:Name="LivesContainer" MaxWidth="800" HorizontalAlignment="Center">
+                <ItemsRepeater x:Name="LivesGrid"
+                               ItemsSource="{x:Bind ViewModel.Lives, Mode=OneWay}">
+                    <ItemsRepeater.Layout>
+                        <StackLayout Spacing="2"/>
+                    </ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate>
+                            <!-- Row Container -->
+                            <!-- No selected state: the first row used to be highlighted as
+                                 "most recent", which read like a selection the user never
+                                 made. Hover is the only feedback now. -->
+                            <Grid Background="Transparent"
+                                  Padding="12,10"
+                                  CornerRadius="8"
+                                  PointerEntered="Card_PointerEntered"
+                                  PointerExited="Card_PointerExited"
+                                  PointerPressed="Card_PointerPressed"
+                                  PointerMoved="Card_PointerMoved"
+                                  PointerReleased="Card_PointerReleased"
+                                  Tag="{Binding}">
+
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Gold accent bar for most recent -->
+                                <Border Width="3"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Stretch"
+                                        CornerRadius="2"
+                                        Background="{ThemeResource SigilGoldBrush}"
+                                        Margin="-12,4,0,4"
+                                        Visibility="{Binding IsMostRecent,
+                                            Converter={StaticResource BoolToVisibilityConverter}}"/>
+
+                                <!-- LEFT: Cover Art with Cosmic Energy Border -->
+                                <Grid Grid.Column="0" Margin="0,0,14,0">
+                                    <Border Width="64" Height="64"
+                                            CornerRadius="6"
+                                            BorderThickness="2"
+                                            BorderBrush="{Binding HoursListened,
+                                                Converter={StaticResource HoursToCosmicBrushConverter}}">
+                                        <Grid>
+                                            <Border CornerRadius="4"
+                                                    Background="{ThemeResource VoidElevatedBrush}">
+                                                <FontIcon Glyph="&#xE8F1;" FontSize="20" Opacity="0.15"
+                                                          Foreground="{ThemeResource MistFaintBrush}"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"/>
+                                            </Border>
+                                            <Image Source="{Binding CoverPath,
+                                                       Converter={StaticResource StringToImageSourceConverter}}"
+                                                   Stretch="UniformToFill"/>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Downloaded indicator dot -->
+                                    <Ellipse Width="10" Height="10"
+                                             Fill="{ThemeResource RitualSuccessBrush}"
+                                             HorizontalAlignment="Right"
+                                             VerticalAlignment="Bottom"
+                                             Margin="0,0,-2,-2"
+                                             Visibility="{Binding IsDownloaded,
+                                                 Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                </Grid>
+
+                                <!-- CENTER: Book Info -->
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="{Binding DisplayTitle}"
+                                               Style="{StaticResource CardTitleStyle}"
+                                               MaxLines="1"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding DisplayAuthor}"
+                                               Style="{StaticResource SubtitleStyle}"
+                                               MaxLines="1"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
+                                        <TextBlock Text="{Binding LifeLabel}"
+                                                   Style="{StaticResource RitualLabelStyle}"
+                                                   Foreground="{ThemeResource SigilGoldDimBrush}"
+                                                   Opacity="0.7"/>
+                                        <TextBlock Text="·"
+                                                   Style="{StaticResource RitualLabelStyle}"
+                                                   Foreground="{ThemeResource DustBrush}"/>
+                                        <TextBlock Text="{Binding Weight}"
+                                                   Style="{StaticResource RitualLabelStyle}"
+                                                   Foreground="{Binding Weight,
+                                                       Converter={StaticResource WeightToBrushConverter}}"/>
+                                        <TextBlock Text="·"
+                                                   Style="{StaticResource RitualLabelStyle}"
+                                                   Foreground="{ThemeResource DustBrush}"/>
+                                        <TextBlock Text="{Binding LastPlayedLabel}"
+                                                   Style="{StaticResource CaptionStyle}"
+                                                   Opacity="0.6"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- RIGHT: Progress + Time -->
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center"
+                                            HorizontalAlignment="Right" Spacing="4"
+                                            Margin="12,0,0,0" MinWidth="56">
+                                    <ProgressRing IsIndeterminate="False"
+                                                  Value="{Binding ProgressPercent}"
+                                                  Width="32" Height="32"
+                                                  Foreground="{Binding HoursListened,
+                                                      Converter={StaticResource HoursToCosmicBrushConverter}}"
+                                                  Background="{ThemeResource DustBrush}"
+                                                  HorizontalAlignment="Center"/>
+                                    <TextBlock Text="{Binding TimeGiven}"
+                                               Style="{StaticResource CaptionStyle}"
+                                               HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>
