@@ -146,7 +146,7 @@ class AbsApiClient {
     suspend fun getProgressMap(serverUrl: String, token: String): Map<String, Triple<Double, Double, Long>> =
         withContext(Dispatchers.IO) {
             try {
-                val base = serverUrl.trim().trimEnd('/')
+                val base = cleanUrl(serverUrl)
                 val req = Request.Builder()
                     .url("$base/api/me")
                     .header("Authorization", "Bearer $token")

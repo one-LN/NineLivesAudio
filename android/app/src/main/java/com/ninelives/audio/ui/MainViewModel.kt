@@ -55,6 +55,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var books by mutableStateOf<List<BookItem>>(emptyList())
         private set
+    var logs by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    private fun addLog(msg: String) {
+        logs = (listOf(msg) + logs).take(20)
+    }
 
     val nineLives: List<BookItem>
         get() = books
@@ -78,7 +84,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             statusMessage = "正在连接..."
             val res = api.login(url, username, password)
             res.onSuccess { token ->
-                val normalized = url.trim().trimEnd('/')
+                val normalized = url.replace(Regex("[\\s\\u200B-\\u200D\\uFEFF\"']+"), "").trimEnd('/')
+                addLog("登录成功: $normalized")
                 store.setActiveServer(normalized, username.trim(), token)
                 activeUrl = normalized
                 activeUsername = username.trim()
@@ -152,12 +159,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val libsRes = api.getLibraries(activeUrl, activeToken)
             libsRes.onSuccess { libs ->
                 libraries = libs
+                addLog("书库: ${libs.size} 个")
                 val target = selectedLibrary?.takeIf { s -> libs.any { it.id == s.id } } ?: libs.firstOrNull()
                 selectedLibrary = target
                 if (target != null) {
                     loadBooksWithProgress(target.id)
                 }
             }.onFailure {
+                addLog("拉取书库失败: ${it.message}")
                 statusMessage = "拉取书库失败: ${it.message}"
             }
             isSyncing = false
@@ -176,6 +185,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val booksRes = api.getLibraryBooks(activeUrl, activeToken, libraryId)
         val progressMap = api.getProgressMap(activeUrl, activeToken)
         booksRes.onSuccess { list ->
+            addLog("书籍: ${list.size} 本, 进度: ${progressMap.size} 条")
             books = list.map { b ->
                 val p = progressMap[b.id]
                 if (p != null) {
