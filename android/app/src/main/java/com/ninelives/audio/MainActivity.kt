@@ -34,6 +34,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate as drawRotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -196,7 +197,7 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                                             cornerRadius = CornerRadius(1.5.dp.toPx()),
                                             style = Stroke(width = s)
                                         )
-                                        androidx.compose.ui.graphics.drawscope.rotate(
+                                        drawRotate(
                                             degrees = -14f,
                                             pivot = Offset(w * 0.72f, h * 0.86f)
                                         ) {
