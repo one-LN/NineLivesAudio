@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +28,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -162,12 +167,46 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                                     .height(50.dp)
                                     .clickable { scope.launch { pagerState.animateScrollToPage(index) } }
                             ) {
-                                Icon(
-                                    icon,
-                                    contentDescription = label,
-                                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.scale(scale)
-                                )
+                                val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                if (index == 1) {
+                                    Canvas(
+                                        modifier = Modifier
+                                            .size(22.dp)
+                                            .scale(scale)
+                                    ) {
+                                        val s = 2.dp.toPx()
+                                        val w = size.width
+                                        val h = size.height
+                                        drawRoundRect(
+                                            color = tint,
+                                            topLeft = Offset(w * 0.08f, h * 0.14f),
+                                            size = Size(w * 0.22f, h * 0.72f),
+                                            cornerRadius = CornerRadius(2.dp.toPx()),
+                                            style = Stroke(width = s)
+                                        )
+                                        drawRoundRect(
+                                            color = tint,
+                                            topLeft = Offset(w * 0.39f, h * 0.08f),
+                                            size = Size(w * 0.22f, h * 0.78f),
+                                            cornerRadius = CornerRadius(2.dp.toPx()),
+                                            style = Stroke(width = s)
+                                        )
+                                        drawRoundRect(
+                                            color = tint,
+                                            topLeft = Offset(w * 0.70f, h * 0.20f),
+                                            size = Size(w * 0.22f, h * 0.66f),
+                                            cornerRadius = CornerRadius(2.dp.toPx()),
+                                            style = Stroke(width = s)
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        icon,
+                                        contentDescription = label,
+                                        tint = tint,
+                                        modifier = Modifier.scale(scale)
+                                    )
+                                }
                             }
                         }
                     }
