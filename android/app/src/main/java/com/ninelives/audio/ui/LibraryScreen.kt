@@ -44,6 +44,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -118,9 +126,38 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(filtered, key = { it.id }) { book ->
+                    val prog = (book.progressPercent / 100.0).toFloat().coerceIn(0f, 1f)
+                    val ringColor = MaterialTheme.colorScheme.primary
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .drawWithContent {
+                                drawContent()
+                                if (book.hasProgress && prog > 0f) {
+                                    val stroke = 3.dp.toPx()
+                                    val half = stroke / 2f
+                                    val radius = 12.dp.toPx()
+                                    val fullPath = Path().apply {
+                                        addRoundRect(
+                                            RoundRect(
+                                                left = half,
+                                                top = half,
+                                                right = size.width - half,
+                                                bottom = size.height - half,
+                                                cornerRadius = CornerRadius(radius, radius)
+                                            )
+                                        )
+                                    }
+                                    val measure = PathMeasure().apply { setPath(fullPath, false) }
+                                    val segPath = Path()
+                                    measure.getSegment(0f, measure.length * prog, segPath, true)
+                                    drawPath(
+                                        path = segPath,
+                                        color = ringColor,
+                                        style = Stroke(width = stroke, cap = StrokeCap.Round)
+                                    )
+                                }
+                            }
                             .clickable { selectedBook = book }
                     ) {
                         Column(modifier = Modifier.padding(6.dp)) {
@@ -149,17 +186,6 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            if (book.hasProgress) {
-                                LinearProgressIndicator(
-                                    progress = { (book.progressPercent / 100.0).toFloat().coerceIn(0f, 1f) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(4.dp)
-                                )
-                            } else {
-                                Spacer(modifier = Modifier.height(4.dp))
-                            }
                         }
                     }
                 }
