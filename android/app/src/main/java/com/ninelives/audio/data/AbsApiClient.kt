@@ -173,6 +173,25 @@ class AbsApiClient {
             }
         }
 
+    suspend fun getListeningStats(serverUrl: String, token: String): Double =
+        withContext(Dispatchers.IO) {
+            try {
+                val base = cleanUrl(serverUrl)
+                val req = Request.Builder()
+                    .url("$base/api/me/listening-stats")
+                    .header("Authorization", "Bearer $token")
+                    .build()
+                client.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@withContext 0.0
+                    val text = resp.body?.string().orEmpty()
+                    val root = JsonParser.parseString(text).asJsonObject
+                    root.get("totalTime")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
+                }
+            } catch (_: Exception) {
+                0.0
+            }
+        }
+
     suspend fun startPlaybackSession(
         serverUrl: String,
         token: String,

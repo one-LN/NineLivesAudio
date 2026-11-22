@@ -50,6 +50,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var isRefreshing by mutableStateOf(false)
         private set
+    var totalListeningSec by mutableDoubleStateOf(0.0)
+        private set
 
     var libraries by mutableStateOf<List<LibraryInfo>>(emptyList())
         private set
@@ -426,6 +428,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!isConnected || books.isEmpty()) return
         viewModelScope.launch {
             isRefreshing = true
+            val statsTime = api.getListeningStats(activeUrl, activeToken)
+            if (statsTime > 0) totalListeningSec = statsTime
             val progressMap = api.getProgressMap(activeUrl, activeToken)
             if (progressMap.isNotEmpty()) {
                 books = books.map { b ->

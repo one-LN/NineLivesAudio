@@ -39,7 +39,7 @@ import com.ninelives.audio.data.BookItem
 @Composable
 fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
     val lives = vm.nineLives
-    val totalListeningSec = vm.books.sumOf { it.currentTime }.toLong()
+    val totalListeningSec = if (vm.totalListeningSec > 0) vm.totalListeningSec.toLong() else vm.books.sumOf { it.currentTime }.toLong()
     val totalHours = totalListeningSec / 3600
     val totalMins = (totalListeningSec % 3600) / 60
 
