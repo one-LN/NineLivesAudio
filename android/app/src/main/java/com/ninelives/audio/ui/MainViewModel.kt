@@ -392,10 +392,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun cycleSpeed() {
         val speeds = listOf(1.0f, 1.25f, 1.5f, 2.0f)
         val next = speeds[(speeds.indexOf(playbackSpeed) + 1) % speeds.size]
-        setPlaybackSpeed(next)
+        changeSpeed(next)
     }
 
-    fun setPlaybackSpeed(speed: Float) {
+    fun changeSpeed(speed: Float) {
         playbackSpeed = speed
         mediaController?.setPlaybackSpeed(speed)
     }

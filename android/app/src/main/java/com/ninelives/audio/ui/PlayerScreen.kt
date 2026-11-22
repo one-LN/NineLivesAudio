@@ -385,7 +385,7 @@ fun PlayerScreen(vm: MainViewModel) {
                                 Text(if (vm.playbackSpeed == spd) "✓  ${spd}x" else "    ${spd}x")
                             },
                             onClick = {
-                                vm.setPlaybackSpeed(spd)
+                                vm.changeSpeed(spd)
                                 showSpeedMenu = false
                             }
                         )
