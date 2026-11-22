@@ -3,6 +3,7 @@ package com.ninelives.audio.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,7 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -66,7 +71,8 @@ fun PlayerScreen(vm: MainViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(20.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.height(12.dp))
@@ -83,6 +89,7 @@ fun PlayerScreen(vm: MainViewModel) {
             text = sess.title,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
@@ -135,20 +142,51 @@ fun PlayerScreen(vm: MainViewModel) {
             Text(formatTime(displayDuration), style = MaterialTheme.typography.bodySmall)
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        val currentChapterIdx = sess.chapters.indexOfLast { vm.currentPositionSec >= it.start }
+
+        Spacer(modifier = Modifier.height(16.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedButton(onClick = { vm.skipBy(-15.0) }) {
+            TextButton(
+                enabled = currentChapterIdx > 0,
+                onClick = {
+                    sess.chapters.getOrNull(currentChapterIdx - 1)?.let { vm.seekToSec(it.start) }
+                },
+                contentPadding = PaddingValues(horizontal = 6.dp)
+            ) {
+                Text("上一章", style = MaterialTheme.typography.labelMedium)
+            }
+            OutlinedButton(
+                onClick = { vm.skipBy(-15.0) },
+                contentPadding = PaddingValues(horizontal = 12.dp)
+            ) {
                 Text("-15s")
             }
-            Button(onClick = { vm.togglePlayPause() }) {
-                Text(if (vm.isPlaying) "暂停" else "播放")
+            Button(
+                onClick = { vm.togglePlayPause() },
+                shape = CircleShape,
+                modifier = Modifier.size(64.dp),
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Text(if (vm.isPlaying) "暂停" else "播放", fontWeight = FontWeight.Bold)
             }
-            OutlinedButton(onClick = { vm.skipBy(30.0) }) {
+            OutlinedButton(
+                onClick = { vm.skipBy(30.0) },
+                contentPadding = PaddingValues(horizontal = 12.dp)
+            ) {
                 Text("+30s")
+            }
+            TextButton(
+                enabled = currentChapterIdx >= 0 && currentChapterIdx + 1 < sess.chapters.size,
+                onClick = {
+                    sess.chapters.getOrNull(currentChapterIdx + 1)?.let { vm.seekToSec(it.start) }
+                },
+                contentPadding = PaddingValues(horizontal = 6.dp)
+            ) {
+                Text("下一章", style = MaterialTheme.typography.labelMedium)
             }
         }
 
