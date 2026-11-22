@@ -80,15 +80,23 @@ fun PlayerScreen(vm: MainViewModel) {
             .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        AsyncImage(
-            model = sess.coverUrl,
-            contentDescription = sess.title,
-            contentScale = ContentScale.Crop,
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            tonalElevation = 4.dp,
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth(0.82f)
-                .clip(RoundedCornerShape(16.dp))
-        )
+                .fillMaxWidth(0.94f)
+        ) {
+            AsyncImage(
+                model = sess.coverUrl,
+                contentDescription = sess.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(4.dp)
+                    .clip(RoundedCornerShape(14.dp))
+            )
+        }
         Spacer(modifier = Modifier.height(14.dp))
         Text(
             text = sess.title,

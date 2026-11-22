@@ -118,30 +118,32 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                if (book.author.isNotBlank()) {
-                                    Text(
-                                        text = book.author,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
+                                Text(
+                                    text = formatRelativeTime(book.lastUpdate),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
                             }
                             Spacer(modifier = Modifier.width(10.dp))
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.size(44.dp)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                CircularProgressIndicator(
-                                    progress = { (book.progressPercent / 100.0).toFloat().coerceIn(0f, 1f) },
-                                    strokeWidth = 4.dp,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    CircularProgressIndicator(
+                                        progress = { (book.progressPercent / 100.0).toFloat().coerceIn(0f, 1f) },
+                                        strokeWidth = 3.dp,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(3.dp))
                                 Text(
-                                    text = "${book.progressPercent.toInt()}%",
+                                    text = formatShortDuration(book.currentTime),
                                     style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -151,4 +153,25 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
         }
     }
 }
+}
+
+private fun formatShortDuration(sec: Double): String {
+    val totalMin = (sec / 60.0).toInt()
+    if (totalMin < 1) return "< 1m"
+    val h = totalMin / 60
+    val m = totalMin % 60
+    return if (h > 0) "${h}h ${m}m" else "${m}m"
+}
+
+private fun formatRelativeTime(lastUpdateMs: Long): String {
+    if (lastUpdateMs <= 0L) return "刚刚"
+    val diffSec = ((System.currentTimeMillis() - lastUpdateMs) / 1000L).coerceAtLeast(0L)
+    return when {
+        diffSec < 60 -> "刚刚"
+        diffSec < 3600 -> "${diffSec / 60} 分钟前"
+        diffSec < 86400 -> "${diffSec / 3600} 小时前"
+        diffSec < 172800 -> "昨天"
+        diffSec < 604800 -> "${diffSec / 86400} 天前"
+        else -> "${diffSec / 604800} 周前"
+    }
 }
