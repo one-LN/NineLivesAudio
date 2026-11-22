@@ -198,6 +198,7 @@ class AbsApiClient {
                     return@withContext Result.failure(Exception("HTTP ${resp.code}: $text"))
                 }
                 val root = JsonParser.parseString(text).asJsonObject
+                val sessionId = root.get("id")?.takeIf { !it.isJsonNull }?.asString ?: ""
                 val title = root.get("displayTitle")?.asString ?: "Unknown"
                 val author = root.get("displayAuthor")?.asString ?: ""
                 val currentTime = root.get("currentTime")?.asDouble ?: 0.0
@@ -239,6 +240,7 @@ class AbsApiClient {
 
                 Result.success(
                     PlaybackSessionData(
+                        sessionId = sessionId,
                         itemId = itemId,
                         title = title,
                         author = author,
@@ -258,12 +260,27 @@ class AbsApiClient {
     suspend fun syncProgress(
         serverUrl: String,
         token: String,
+        sessionId: String,
         itemId: String,
         currentTime: Double,
-        duration: Double
+        duration: Double,
+        timeListenedSec: Double = 10.0
     ) = withContext(Dispatchers.IO) {
         try {
-            val base = serverUrl.trim().trimEnd('/')
+            val base = cleanUrl(serverUrl)
+            if (sessionId.isNotBlank()) {
+                val sessJson = JSONObject()
+                    .put("currentTime", currentTime)
+                    .put("duration", duration)
+                    .put("timeListened", timeListenedSec.coerceAtLeast(0.0))
+                    .toString()
+                val sessReq = Request.Builder()
+                    .url("$base/api/session/$sessionId/sync")
+                    .header("Authorization", "Bearer $token")
+                    .post(sessJson.toRequestBody("application/json".toMediaType()))
+                    .build()
+                client.newCall(sessReq).execute().close()
+            }
             val progress = if (duration > 0) (currentTime / duration).coerceIn(0.0, 1.0) else 0.0
             val bodyJson = JSONObject()
                 .put("currentTime", currentTime)

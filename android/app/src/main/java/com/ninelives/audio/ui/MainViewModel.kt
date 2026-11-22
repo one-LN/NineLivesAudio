@@ -357,9 +357,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             c.pause()
             val sess = currentSession
             if (sess != null && activeUrl.isNotBlank() && activeToken.isNotBlank()) {
-                val pos = c.currentPosition / 1000.0
+                val trackOffset = sess.tracks.getOrNull(currentTrackIndex)?.startOffset ?: 0.0
+                val pos = trackOffset + (c.currentPosition.coerceAtLeast(0L) / 1000.0)
                 viewModelScope.launch {
-                    api.syncProgress(activeUrl, activeToken, sess.itemId, pos, totalDurationSec)
+                    syncProgressAndUpdateLocal(sess.itemId, pos, totalDurationSec)
                 }
             }
         } else {
@@ -444,7 +445,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun syncProgressAndUpdateLocal(itemId: String, posSec: Double, durSec: Double) {
-        api.syncProgress(activeUrl, activeToken, itemId, posSec, durSec)
+        val sid = currentSession?.sessionId ?: ""
+        api.syncProgress(activeUrl, activeToken, sid, itemId, posSec, durSec, 10.0)
         val prog = if (durSec > 0) (posSec / durSec).coerceIn(0.0, 1.0) else 0.0
         val now = System.currentTimeMillis()
         books = books.map { b ->

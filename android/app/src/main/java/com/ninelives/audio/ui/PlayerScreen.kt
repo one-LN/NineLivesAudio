@@ -85,7 +85,8 @@ fun PlayerScreen(vm: MainViewModel) {
             contentDescription = sess.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .size(240.dp)
+                .weight(1f)
+                .fillMaxWidth(0.82f)
                 .clip(RoundedCornerShape(16.dp))
         )
         Spacer(modifier = Modifier.height(14.dp))
@@ -118,7 +119,7 @@ fun PlayerScreen(vm: MainViewModel) {
             )
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(8.dp))
         var showChapterMode by remember { mutableStateOf(true) }
         val hasChapter = currentChapter != null && currentChapter.end > currentChapter.start
         val displayStart = if (showChapterMode && hasChapter) currentChapter!!.start else 0.0

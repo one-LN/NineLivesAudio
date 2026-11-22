@@ -15,6 +15,7 @@ data class AudioTrackInfo(
 )
 
 data class PlaybackSessionData(
+    val sessionId: String,
     val itemId: String,
     val title: String,
     val author: String,
