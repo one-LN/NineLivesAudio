@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,11 +15,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,10 +42,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ninelives.audio.ui.HomeScreen
@@ -64,9 +67,13 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun NineLivesApp(vm: MainViewModel = viewModel()) {
-    var selectedTab by rememberSaveable { mutableIntStateOf(if (vm.isConnected) 0 else 3) }
-    LaunchedEffect(selectedTab) {
-        if (selectedTab == 0) {
+    val pagerState = rememberPagerState(
+        initialPage = if (vm.isConnected) 0 else 3,
+        pageCount = { 4 }
+    )
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage == 0) {
             vm.refreshProgressOnly()
         }
     }
@@ -81,12 +88,12 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
         bottomBar = {
             Column {
                 val sess = vm.currentSession
-                if (sess != null && selectedTab != 2) {
+                if (sess != null && pagerState.currentPage != 2) {
                     Surface(
                         tonalElevation = 3.dp,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { selectedTab = 2 }
+                            .clickable { scope.launch { pagerState.animateScrollToPage(2) } }
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -128,30 +135,41 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                 }
                 NavigationBar {
                     tabs.forEachIndexed { index, (label, icon) ->
+                        val selected = pagerState.currentPage == index
+                        val scale by animateFloatAsState(
+                            targetValue = if (selected) 1.22f else 1.0f,
+                            label = "navScale"
+                        )
                         NavigationBarItem(
-                            selected = selectedTab == index,
-                            onClick = { selectedTab = index },
-                            icon = { Icon(icon, contentDescription = label) },
-                            label = { Text(label) }
+                            selected = selected,
+                            onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                            icon = {
+                                Icon(
+                                    icon,
+                                    contentDescription = label,
+                                    modifier = Modifier.scale(scale)
+                                )
+                            }
                         )
                     }
                 }
             }
         }
     ) { innerPadding ->
-        Box(
+        HorizontalPager(
+            state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-        ) {
-            when (selectedTab) {
+        ) { page ->
+            when (page) {
                 0 -> HomeScreen(vm, onBookClick = { book ->
                     vm.playBook(book)
-                    selectedTab = 2
+                    scope.launch { pagerState.animateScrollToPage(2) }
                 })
                 1 -> LibraryScreen(vm, onBookClick = { book ->
                     vm.playBook(book)
-                    selectedTab = 2
+                    scope.launch { pagerState.animateScrollToPage(2) }
                 })
                 2 -> PlayerScreen(vm)
                 3 -> SettingsScreen(vm)
