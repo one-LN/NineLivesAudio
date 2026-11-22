@@ -6,12 +6,15 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -133,24 +136,40 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                         }
                     }
                 }
-                NavigationBar {
-                    tabs.forEachIndexed { index, (label, icon) ->
-                        val selected = pagerState.currentPage == index
-                        val scale by animateFloatAsState(
-                            targetValue = if (selected) 1.22f else 1.0f,
-                            label = "navScale"
-                        )
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                            icon = {
+                Surface(
+                    tonalElevation = 2.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        tabs.forEachIndexed { index, (label, icon) ->
+                            val selected = pagerState.currentPage == index
+                            val scale by animateFloatAsState(
+                                targetValue = if (selected) 1.25f else 1.0f,
+                                label = "navScale"
+                            )
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(50.dp)
+                                    .clickable { scope.launch { pagerState.animateScrollToPage(index) } }
+                            ) {
                                 Icon(
                                     icon,
                                     contentDescription = label,
+                                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.scale(scale)
                                 )
                             }
-                        )
+                        }
                     }
                 }
             }

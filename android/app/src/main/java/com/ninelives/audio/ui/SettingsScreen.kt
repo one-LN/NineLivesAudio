@@ -56,26 +56,25 @@ fun SettingsScreen(vm: MainViewModel) {
                 Text("服务器连接", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
 
                 if (vm.savedServers.isNotEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            onClick = { expanded = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(currentSaved?.displayName ?: "选择已保存的服务器")
-                        }
-                        DropdownMenu(
-                            expanded = expanded,
-                            onDismissRequest = { expanded = false }
-                        ) {
+                    OutlinedButton(
+                        onClick = { expanded = !expanded },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(currentSaved?.displayName ?: "选择已保存的服务器")
+                    }
+                    if (expanded) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             vm.savedServers.forEach { s ->
-                                DropdownMenuItem(
-                                    text = { Text(s.displayName) },
+                                OutlinedButton(
                                     onClick = {
                                         expanded = false
                                         isAdding = false
                                         vm.switchServer(s)
-                                    }
-                                )
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(s.displayName)
+                                }
                             }
                         }
                     }
