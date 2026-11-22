@@ -122,9 +122,18 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                 CircularProgressIndicator()
             }
         } else {
+            var isRefreshing by remember { mutableStateOf(false) }
+            val scope = rememberCoroutineScope()
             PullToRefreshBox(
-                isRefreshing = vm.isSyncing,
-                onRefresh = { vm.refreshAll() },
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    scope.launch {
+                        isRefreshing = true
+                        vm.refreshAll()
+                        delay(400)
+                        isRefreshing = false
+                    }
+                },
                 modifier = Modifier.fillMaxSize()
             ) {
                 LazyVerticalGrid(
