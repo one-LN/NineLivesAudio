@@ -15,9 +15,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -26,6 +30,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +55,8 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
             it.title.contains(query, ignoreCase = true) || it.author.contains(query, ignoreCase = true)
         }
     }
+
+    var selectedBook by remember { mutableStateOf<com.ninelives.audio.data.BookItem?>(null) }
 
     Column(
         modifier = Modifier
@@ -95,7 +102,7 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onBookClick(book) }
+                            .clickable { selectedBook = book }
                     ) {
                         Column(modifier = Modifier.padding(6.dp)) {
                             AsyncImage(
@@ -111,20 +118,79 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                             Text(
                                 text = book.title,
                                 style = MaterialTheme.typography.bodySmall,
+                                minLines = 2,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
                             if (book.hasProgress) {
-                                Spacer(modifier = Modifier.height(4.dp))
                                 LinearProgressIndicator(
                                     progress = { (book.progressPercent / 100.0).toFloat().coerceIn(0f, 1f) },
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(4.dp)
                                 )
+                            } else {
+                                Spacer(modifier = Modifier.height(4.dp))
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    selectedBook?.let { book ->
+        AlertDialog(
+            onDismissRequest = { selectedBook = null },
+            title = {
+                Text(
+                    text = book.title,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .height(300.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (book.author.isNotBlank()) {
+                        Text("作者：${book.author}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (book.narrator.isNotBlank()) {
+                        Text("演播：${book.narrator}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (book.hasProgress) {
+                        Text(
+                            "当前进度：${book.progressPercent}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(
+                        text = book.description.ifBlank { "暂无简介" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val b = book
+                    selectedBook = null
+                    onBookClick(b)
+                }) {
+                    Text(if (book.hasProgress) "继续收听" else "开始播放")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedBook = null }) {
+                    Text("关闭")
+                }
+            }
+        )
     }
 }
