@@ -207,11 +207,13 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                                         )
                                     }
                                 } else {
+                                    val iconSize = if (index == 2) 26.dp else 22.dp
                                     Icon(
                                         icon,
                                         contentDescription = label,
                                         tint = tint,
                                         modifier = Modifier
+                                            .size(iconSize)
                                             .scale(scale)
                                             .rotate(gearRotation)
                                     )
