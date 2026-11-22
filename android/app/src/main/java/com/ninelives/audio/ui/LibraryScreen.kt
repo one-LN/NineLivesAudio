@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -24,10 +25,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,14 +54,28 @@ import com.ninelives.audio.data.BookItem
 @Composable
 fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
     var query by remember { mutableStateOf("") }
-    val filtered = remember(vm.books, query) {
-        if (query.isBlank()) vm.books
-        else vm.books.filter {
+    var filterMode by remember { mutableStateOf(0) } // 0=全部, 1=在听, 2=未开始, 3=已完成
+    var sortMode by remember { mutableStateOf(0) }   // 0=书名, 1=最近收听, 2=时长
+    var libMenuExpanded by remember { mutableStateOf(false) }
+
+    val filtered = remember(vm.books, query, filterMode, sortMode) {
+        val searched = if (query.isBlank()) vm.books else vm.books.filter {
             it.title.contains(query, ignoreCase = true) || it.author.contains(query, ignoreCase = true)
+        }
+        val byStatus = when (filterMode) {
+            1 -> searched.filter { it.hasProgress && !it.isFinished }
+            2 -> searched.filter { !it.hasProgress && !it.isFinished }
+            3 -> searched.filter { it.isFinished }
+            else -> searched
+        }
+        when (sortMode) {
+            1 -> byStatus.sortedByDescending { it.lastUpdate }
+            2 -> byStatus.sortedByDescending { it.duration }
+            else -> byStatus.sortedBy { it.title }
         }
     }
 
-    var selectedBook by remember { mutableStateOf<com.ninelives.audio.data.BookItem?>(null) }
+    var selectedBook by remember { mutableStateOf<BookItem?>(null) }
 
     Column(
         modifier = Modifier
@@ -118,8 +137,16 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                             Text(
                                 text = book.title,
                                 style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
                                 minLines = 2,
                                 maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = book.author.ifBlank { " " },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.height(4.dp))
