@@ -175,8 +175,8 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                                 text = book.title,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.SemiBold,
-                                minLines = 2,
-                                maxLines = 2,
+                                minLines = 1,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
