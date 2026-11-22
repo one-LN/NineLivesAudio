@@ -43,19 +43,9 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
     val totalHours = totalListeningSec / 3600
     val totalMins = (totalListeningSec % 3600) / 60
 
-    var isRefreshing by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
     PullToRefreshBox(
-        isRefreshing = isRefreshing,
-        onRefresh = {
-            scope.launch {
-                isRefreshing = true
-                vm.refreshProgressOnly()
-                delay(400)
-                isRefreshing = false
-            }
-        },
+        isRefreshing = vm.isRefreshing,
+        onRefresh = { vm.refreshProgressOnly() },
         modifier = Modifier.fillMaxSize()
     ) {
         Column(

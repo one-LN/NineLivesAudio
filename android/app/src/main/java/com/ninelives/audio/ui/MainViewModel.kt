@@ -48,6 +48,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var isSyncing by mutableStateOf(false)
         private set
+    var isRefreshing by mutableStateOf(false)
+        private set
 
     var libraries by mutableStateOf<List<LibraryInfo>>(emptyList())
         private set
@@ -425,6 +427,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshProgressOnly() {
         if (!isConnected || books.isEmpty()) return
         viewModelScope.launch {
+            isRefreshing = true
             val progressMap = api.getProgressMap(activeUrl, activeToken)
             if (progressMap.isNotEmpty()) {
                 books = books.map { b ->
@@ -439,6 +442,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else b
                 }
             }
+            isRefreshing = false
         }
     }
 
