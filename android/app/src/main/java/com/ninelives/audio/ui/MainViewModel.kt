@@ -345,11 +345,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .setUri(track.streamUrl)
             .setMediaMetadata(meta)
             .build()
-        c.setMediaItem(item)
+        c.setMediaItem(item, offsetMs.coerceAtLeast(0L))
         c.prepare()
-        if (offsetMs > 0) {
-            c.seekTo(offsetMs)
-        }
         c.setPlaybackSpeed(playbackSpeed)
         c.play()
     }

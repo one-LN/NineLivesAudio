@@ -269,6 +269,7 @@ class AbsApiClient {
                 .put("currentTime", currentTime)
                 .put("duration", duration)
                 .put("progress", progress)
+                .put("isFinished", progress >= 0.995)
                 .toString()
 
             val req = Request.Builder()

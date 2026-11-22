@@ -77,7 +77,6 @@ fun PlayerScreen(vm: MainViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -86,21 +85,10 @@ fun PlayerScreen(vm: MainViewModel) {
             contentDescription = sess.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .size(180.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .size(240.dp)
+                .clip(RoundedCornerShape(16.dp))
         )
-        Spacer(modifier = Modifier.height(10.dp))
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            tonalElevation = 2.dp
-        ) {
-            Text(
-                text = "正在从服务器串流",
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(14.dp))
         Text(
             text = sess.title,
             style = MaterialTheme.typography.titleMedium,
@@ -130,7 +118,7 @@ fun PlayerScreen(vm: MainViewModel) {
             )
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.weight(1f))
         var showChapterMode by remember { mutableStateOf(true) }
         val hasChapter = currentChapter != null && currentChapter.end > currentChapter.start
         val displayStart = if (showChapterMode && hasChapter) currentChapter!!.start else 0.0
@@ -141,10 +129,16 @@ fun PlayerScreen(vm: MainViewModel) {
         }
         val displayPos = (vm.currentPositionSec - displayStart).coerceIn(0.0, displayDuration)
         val remaining = (displayDuration - displayPos).coerceAtLeast(0.0)
+        var draggingRatio by remember { mutableStateOf<Float?>(null) }
+        val sliderVal = draggingRatio ?: (displayPos / displayDuration).toFloat().coerceIn(0f, 1f)
 
         Slider(
-            value = (displayPos / displayDuration).toFloat().coerceIn(0f, 1f),
-            onValueChange = { ratio -> vm.seekToSec(displayStart + ratio * displayDuration) },
+            value = sliderVal,
+            onValueChange = { ratio -> draggingRatio = ratio },
+            onValueChangeFinished = {
+                draggingRatio?.let { r -> vm.seekToSec(displayStart + r * displayDuration) }
+                draggingRatio = null
+            },
             modifier = Modifier.fillMaxWidth()
         )
         Row(
