@@ -17,13 +17,26 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.FormatListBulleted
+import androidx.compose.material.icons.rounded.Forward30
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Replay10
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -148,6 +161,11 @@ fun PlayerScreen(vm: MainViewModel) {
                 draggingRatio?.let { r -> vm.seekToSec(displayStart + r * displayDuration) }
                 draggingRatio = null
             },
+            colors = SliderDefaults.colors(
+                thumbColor = Color(0xFFD4AF37),
+                activeTrackColor = Color(0xFFD4AF37),
+                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+            ),
             modifier = Modifier.fillMaxWidth()
         )
         Row(
@@ -175,25 +193,27 @@ fun PlayerScreen(vm: MainViewModel) {
         Spacer(modifier = Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedButton(
+            IconButton(
                 enabled = currentChapterIdx > 0,
                 onClick = {
                     sess.chapters.getOrNull(currentChapterIdx - 1)?.let { vm.seekToSec(it.start) }
-                },
-                shape = CircleShape,
-                modifier = Modifier.size(44.dp),
-                contentPadding = PaddingValues(0.dp)
+                }
             ) {
-                Text("|<", style = MaterialTheme.typography.labelSmall)
+                Icon(
+                    Icons.Rounded.SkipPrevious,
+                    contentDescription = "上一章",
+                    modifier = Modifier.size(28.dp)
+                )
             }
-            OutlinedButton(
-                onClick = { vm.skipBy(-10.0) },
-                contentPadding = PaddingValues(horizontal = 12.dp)
-            ) {
-                Text("-10s")
+            IconButton(onClick = { vm.skipBy(-10.0) }) {
+                Icon(
+                    Icons.Rounded.Replay10,
+                    contentDescription = "快退10秒",
+                    modifier = Modifier.size(28.dp)
+                )
             }
             Button(
                 onClick = { vm.togglePlayPause() },
@@ -205,24 +225,30 @@ fun PlayerScreen(vm: MainViewModel) {
                 modifier = Modifier.size(64.dp),
                 contentPadding = PaddingValues(0.dp)
             ) {
-                Text(if (vm.isPlaying) "||" else "▶", fontWeight = FontWeight.Bold)
+                Icon(
+                    if (vm.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    contentDescription = if (vm.isPlaying) "暂停" else "播放",
+                    modifier = Modifier.size(34.dp)
+                )
             }
-            OutlinedButton(
-                onClick = { vm.skipBy(30.0) },
-                contentPadding = PaddingValues(horizontal = 12.dp)
-            ) {
-                Text("+30s")
+            IconButton(onClick = { vm.skipBy(30.0) }) {
+                Icon(
+                    Icons.Rounded.Forward30,
+                    contentDescription = "快进30秒",
+                    modifier = Modifier.size(28.dp)
+                )
             }
-            OutlinedButton(
+            IconButton(
                 enabled = currentChapterIdx >= 0 && currentChapterIdx + 1 < sess.chapters.size,
                 onClick = {
                     sess.chapters.getOrNull(currentChapterIdx + 1)?.let { vm.seekToSec(it.start) }
-                },
-                shape = CircleShape,
-                modifier = Modifier.size(44.dp),
-                contentPadding = PaddingValues(0.dp)
+                }
             ) {
-                Text(">|", style = MaterialTheme.typography.labelSmall)
+                Icon(
+                    Icons.Rounded.SkipNext,
+                    contentDescription = "下一章",
+                    modifier = Modifier.size(28.dp)
+                )
             }
         }
 
@@ -234,10 +260,14 @@ fun PlayerScreen(vm: MainViewModel) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            TextButton(onClick = { vm.cycleSpeed() }) {
-                Text("倍速\n${vm.playbackSpeed}x", textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall)
+            IconButton(onClick = { vm.cycleSpeed() }) {
+                Icon(
+                    Icons.Rounded.Speed,
+                    contentDescription = "倍速 ${vm.playbackSpeed}x",
+                    tint = if (vm.playbackSpeed != 1.0f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            TextButton(onClick = {
+            IconButton(onClick = {
                 if (vm.sleepEndOfChapter) {
                     vm.toggleSleepEndOfChapter()
                 } else {
@@ -250,19 +280,28 @@ fun PlayerScreen(vm: MainViewModel) {
                     }
                 }
             }) {
-                val label = when {
-                    vm.sleepEndOfChapter -> "睡眠\n本章"
-                    vm.sleepRemainingSec > 0 -> "睡眠\n${vm.sleepRemainingSec / 60}m"
-                    else -> "睡眠\n关闭"
-                }
-                Text(label, textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall)
+                val sleepActive = vm.sleepEndOfChapter || vm.sleepRemainingSec > 0
+                Icon(
+                    Icons.Rounded.Bedtime,
+                    contentDescription = "睡眠定时",
+                    tint = if (sleepActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            TextButton(onClick = { showSkipDialog = true }) {
-                Text("跳过\n${vm.currentIntroSec}/${vm.currentOutroSec}s", textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall)
+            IconButton(onClick = { showSkipDialog = true }) {
+                val skipActive = vm.currentIntroSec > 0 || vm.currentOutroSec > 0
+                Icon(
+                    Icons.Rounded.FastForward,
+                    contentDescription = "跳过片头片尾",
+                    tint = if (skipActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             if (sess.chapters.isNotEmpty()) {
-                TextButton(onClick = { showChaptersDialog = true }) {
-                    Text("章节\n${sess.chapters.size}", textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall)
+                IconButton(onClick = { showChaptersDialog = true }) {
+                    Icon(
+                        Icons.Rounded.FormatListBulleted,
+                        contentDescription = "章节列表",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
