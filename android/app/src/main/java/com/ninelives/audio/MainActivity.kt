@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +28,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -160,6 +162,11 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                                 targetValue = if (selected) 1.25f else 1.0f,
                                 label = "navScale"
                             )
+                            val gearRotation by animateFloatAsState(
+                                targetValue = if (index == 3 && selected) 180f else 0f,
+                                animationSpec = tween(450),
+                                label = "gearRotate"
+                            )
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
@@ -204,7 +211,9 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                                         icon,
                                         contentDescription = label,
                                         tint = tint,
-                                        modifier = Modifier.scale(scale)
+                                        modifier = Modifier
+                                            .scale(scale)
+                                            .rotate(gearRotation)
                                     )
                                 }
                             }

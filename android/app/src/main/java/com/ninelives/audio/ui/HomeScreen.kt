@@ -28,7 +28,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -63,14 +66,15 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "NineLivesAudio",
+                text = "九命",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
             if (vm.isConnected) {
+                val livesSec = lives.sumOf { it.currentTime }
                 Text(
-                    text = "总听书时长：${totalHours}小时${totalMins}分钟",
+                    text = formatShortDuration(livesSec),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -107,22 +111,25 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "生命 ${index + 1}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
                                     text = book.title,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = formatRelativeTime(book.lastUpdate),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
+                                    text = buildAnnotatedString {
+                                        withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) {
+                                            append("生命 ${toRoman(index + 1)}  ·  ${bookWeight(book.duration)}")
+                                        }
+                                        withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                                            append("  ·  ${formatRelativeTime(book.lastUpdate)}")
+                                        }
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                             Spacer(modifier = Modifier.width(10.dp))
@@ -153,6 +160,21 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
         }
     }
 }
+}
+
+private fun toRoman(n: Int): String = when (n) {
+    1 -> "I"; 2 -> "II"; 3 -> "III"; 4 -> "IV"; 5 -> "V"
+    6 -> "VI"; 7 -> "VII"; 8 -> "VIII"; 9 -> "IX"
+    else -> n.toString()
+}
+
+private fun bookWeight(durationSec: Double): String {
+    val hours = durationSec / 3600.0
+    return when {
+        hours < 4.0 -> "LIGHT"
+        hours < 15.0 -> "MEDIUM"
+        else -> "HEAVY"
+    }
 }
 
 private fun formatShortDuration(sec: Double): String {
