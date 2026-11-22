@@ -15,9 +15,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,12 +43,32 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Text(
-            text = "九命",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "九命",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (vm.isConnected) {
+                    Text(
+                        text = "当前在听 ${lives.size} / 9",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (vm.isConnected) {
+                IconButton(onClick = { vm.refreshProgressOnly() }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "刷新进度")
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(12.dp))
 
         if (!vm.isConnected) {
@@ -82,14 +105,19 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                                 Text(
                                     text = book.title,
                                     style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                LinearProgressIndicator(
-                                    progress = { (book.progressPercent / 100.0).toFloat().coerceIn(0f, 1f) },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                if (book.author.isNotBlank()) {
+                                    Text(
+                                        text = book.author,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Box(
