@@ -102,7 +102,7 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                                     modifier = Modifier.fillMaxSize()
                                 )
                                 Text(
-                                    text = "${book.progressPercent}%",
+                                    text = "${book.progressPercent.toInt()}%",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold
                                 )
