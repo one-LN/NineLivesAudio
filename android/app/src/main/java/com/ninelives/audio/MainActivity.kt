@@ -40,10 +40,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -88,10 +86,10 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
         }
     }
     val tabs = listOf(
-        "九命" to Icons.Default.Home,
-        "书库" to Icons.Default.Menu,
-        "播放" to Icons.Default.PlayArrow,
-        "设置" to Icons.Default.Settings
+        "九命" to Icons.Outlined.Home,
+        "书库" to Icons.Outlined.Home,
+        "播放" to Icons.Outlined.Home,
+        "设置" to Icons.Outlined.Settings
     )
 
     Scaffold(
@@ -206,14 +204,36 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                                             style = Stroke(width = s)
                                         )
                                     }
+                                } else if (index == 2) {
+                                    Canvas(
+                                        modifier = Modifier
+                                            .size(20.dp)
+                                            .scale(scale)
+                                    ) {
+                                        val w = size.width
+                                        val h = size.height
+                                        val path = androidx.compose.ui.graphics.Path().apply {
+                                            moveTo(w * 0.20f, h * 0.12f)
+                                            lineTo(w * 0.88f, h * 0.50f)
+                                            lineTo(w * 0.20f, h * 0.88f)
+                                            close()
+                                        }
+                                        drawPath(
+                                            path = path,
+                                            color = tint,
+                                            style = Stroke(
+                                                width = 2.dp.toPx(),
+                                                join = androidx.compose.ui.graphics.StrokeJoin.Round
+                                            )
+                                        )
+                                    }
                                 } else {
-                                    val iconSize = if (index == 2) 26.dp else 22.dp
                                     Icon(
                                         icon,
                                         contentDescription = label,
                                         tint = tint,
                                         modifier = Modifier
-                                            .size(iconSize)
+                                            .size(22.dp)
                                             .scale(scale)
                                             .rotate(gearRotation)
                                     )

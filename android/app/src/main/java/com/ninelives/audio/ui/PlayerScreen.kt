@@ -1,7 +1,11 @@
 package com.ninelives.audio.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,16 +22,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Bedtime
-import androidx.compose.material.icons.rounded.FastForward
-import androidx.compose.material.icons.rounded.FormatListBulleted
-import androidx.compose.material.icons.rounded.Forward30
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Replay10
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.outlined.ContentCut
+import androidx.compose.material.icons.outlined.FormatListBulleted
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.SkipNext
+import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,8 +35,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -49,7 +47,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -154,20 +159,65 @@ fun PlayerScreen(vm: MainViewModel) {
         var draggingRatio by remember { mutableStateOf<Float?>(null) }
         val sliderVal = draggingRatio ?: (displayPos / displayDuration).toFloat().coerceIn(0f, 1f)
 
-        Slider(
-            value = sliderVal,
-            onValueChange = { ratio -> draggingRatio = ratio },
-            onValueChangeFinished = {
-                draggingRatio?.let { r -> vm.seekToSec(displayStart + r * displayDuration) }
-                draggingRatio = null
-            },
-            colors = SliderDefaults.colors(
-                thumbColor = Color(0xFFD4AF37),
-                activeTrackColor = Color(0xFFD4AF37),
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(26.dp)
+                .pointerInput(displayStart, displayDuration) {
+                    detectTapGestures { offset ->
+                        val r = (offset.x / size.width).coerceIn(0f, 1f)
+                        vm.seekToSec(displayStart + r * displayDuration)
+                    }
+                }
+                .pointerInput(displayStart, displayDuration) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            draggingRatio = (offset.x / size.width).coerceIn(0f, 1f)
+                        },
+                        onHorizontalDrag = { change, _ ->
+                            change.consume()
+                            draggingRatio = (change.position.x / size.width).coerceIn(0f, 1f)
+                        },
+                        onDragEnd = {
+                            draggingRatio?.let { r -> vm.seekToSec(displayStart + r * displayDuration) }
+                            draggingRatio = null
+                        },
+                        onDragCancel = { draggingRatio = null }
+                    )
+                }
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val trackH = 4.dp.toPx()
+                val cy = size.height / 2f
+                val trackTop = cy - trackH / 2f
+                val activeW = size.width * sliderVal
+                drawRoundRect(
+                    color = Color(0xFF3A3F4B),
+                    topLeft = Offset(0f, trackTop),
+                    size = Size(size.width, trackH),
+                    cornerRadius = CornerRadius(trackH / 2f)
+                )
+                if (activeW > 0f) {
+                    drawRoundRect(
+                        color = Color(0xFFD4AF37),
+                        topLeft = Offset(0f, trackTop),
+                        size = Size(activeW, trackH),
+                        cornerRadius = CornerRadius(trackH / 2f)
+                    )
+                }
+                drawCircle(
+                    color = Color(0xFF232730),
+                    radius = 7.dp.toPx(),
+                    center = Offset(activeW.coerceIn(7.dp.toPx(), size.width - 7.dp.toPx()), cy)
+                )
+                drawCircle(
+                    color = Color(0xFFD4AF37),
+                    radius = 4.dp.toPx(),
+                    center = Offset(activeW.coerceIn(7.dp.toPx(), size.width - 7.dp.toPx()), cy)
+                )
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -196,23 +246,38 @@ fun PlayerScreen(vm: MainViewModel) {
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
-                enabled = currentChapterIdx > 0,
-                onClick = {
-                    sess.chapters.getOrNull(currentChapterIdx - 1)?.let { vm.seekToSec(it.start) }
-                }
+            Surface(
+                shape = CircleShape,
+                color = Color(0xFF1A1F2B),
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = currentChapterIdx > 0) {
+                        sess.chapters.getOrNull(currentChapterIdx - 1)?.let { vm.seekToSec(it.start) }
+                    }
             ) {
-                Icon(
-                    Icons.Rounded.SkipPrevious,
-                    contentDescription = "上一章",
-                    modifier = Modifier.size(28.dp)
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Outlined.SkipPrevious,
+                        contentDescription = "上一章",
+                        tint = if (currentChapterIdx > 0) Color.White else Color.Gray,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
-            IconButton(onClick = { vm.skipBy(-10.0) }) {
-                Icon(
-                    Icons.Rounded.Replay10,
-                    contentDescription = "快退10秒",
-                    modifier = Modifier.size(28.dp)
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = Color(0xFF1A1F2B),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(22.dp))
+                    .clickable { vm.skipBy(-10.0) }
+            ) {
+                Text(
+                    "-10s",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                 )
             }
             Button(
@@ -225,30 +290,61 @@ fun PlayerScreen(vm: MainViewModel) {
                 modifier = Modifier.size(64.dp),
                 contentPadding = PaddingValues(0.dp)
             ) {
-                Icon(
-                    if (vm.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    contentDescription = if (vm.isPlaying) "暂停" else "播放",
-                    modifier = Modifier.size(34.dp)
-                )
-            }
-            IconButton(onClick = { vm.skipBy(30.0) }) {
-                Icon(
-                    Icons.Rounded.Forward30,
-                    contentDescription = "快进30秒",
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-            IconButton(
-                enabled = currentChapterIdx >= 0 && currentChapterIdx + 1 < sess.chapters.size,
-                onClick = {
-                    sess.chapters.getOrNull(currentChapterIdx + 1)?.let { vm.seekToSec(it.start) }
+                Canvas(modifier = Modifier.size(22.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    if (vm.isPlaying) {
+                        val strokeW = 2.5.dp.toPx()
+                        drawLine(Color.Black, Offset(w * 0.30f, h * 0.15f), Offset(w * 0.30f, h * 0.85f), strokeWidth = strokeW)
+                        drawLine(Color.Black, Offset(w * 0.70f, h * 0.15f), Offset(w * 0.70f, h * 0.85f), strokeWidth = strokeW)
+                    } else {
+                        val path = Path().apply {
+                            moveTo(w * 0.22f, h * 0.12f)
+                            lineTo(w * 0.86f, h * 0.50f)
+                            lineTo(w * 0.22f, h * 0.88f)
+                            close()
+                        }
+                        drawPath(
+                            path = path,
+                            color = Color.Black,
+                            style = Stroke(width = 2.2.dp.toPx(), join = StrokeJoin.Round)
+                        )
+                    }
                 }
+            }
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = Color(0xFF1A1F2B),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(22.dp))
+                    .clickable { vm.skipBy(30.0) }
             ) {
-                Icon(
-                    Icons.Rounded.SkipNext,
-                    contentDescription = "下一章",
-                    modifier = Modifier.size(28.dp)
+                Text(
+                    "+30s",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                 )
+            }
+            Surface(
+                shape = CircleShape,
+                color = Color(0xFF1A1F2B),
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = currentChapterIdx >= 0 && currentChapterIdx + 1 < sess.chapters.size) {
+                        sess.chapters.getOrNull(currentChapterIdx + 1)?.let { vm.seekToSec(it.start) }
+                    }
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Outlined.SkipNext,
+                        contentDescription = "下一章",
+                        tint = if (currentChapterIdx >= 0 && currentChapterIdx + 1 < sess.chapters.size) Color.White else Color.Gray,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
         }
 
@@ -262,7 +358,7 @@ fun PlayerScreen(vm: MainViewModel) {
         ) {
             IconButton(onClick = { vm.cycleSpeed() }) {
                 Icon(
-                    Icons.Rounded.Speed,
+                    Icons.Outlined.PlayCircle,
                     contentDescription = "倍速 ${vm.playbackSpeed}x",
                     tint = if (vm.playbackSpeed != 1.0f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -282,7 +378,7 @@ fun PlayerScreen(vm: MainViewModel) {
             }) {
                 val sleepActive = vm.sleepEndOfChapter || vm.sleepRemainingSec > 0
                 Icon(
-                    Icons.Rounded.Bedtime,
+                    Icons.Outlined.Timer,
                     contentDescription = "睡眠定时",
                     tint = if (sleepActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -290,7 +386,7 @@ fun PlayerScreen(vm: MainViewModel) {
             IconButton(onClick = { showSkipDialog = true }) {
                 val skipActive = vm.currentIntroSec > 0 || vm.currentOutroSec > 0
                 Icon(
-                    Icons.Rounded.FastForward,
+                    Icons.Outlined.ContentCut,
                     contentDescription = "跳过片头片尾",
                     tint = if (skipActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -298,7 +394,7 @@ fun PlayerScreen(vm: MainViewModel) {
             if (sess.chapters.isNotEmpty()) {
                 IconButton(onClick = { showChaptersDialog = true }) {
                     Icon(
-                        Icons.Rounded.FormatListBulleted,
+                        Icons.Outlined.FormatListBulleted,
                         contentDescription = "章节列表",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
