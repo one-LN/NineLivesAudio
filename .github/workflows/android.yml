@@ -1,0 +1,63 @@
+name: Android Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master, "arena/**" ]
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+    tags:
+      - "android-v*"
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build Debug APK
+        working-directory: android
+        run: gradle assembleDebug --no-daemon > build.log 2>&1 || (tail -n 60 build.log; exit 1)
+
+      - name: Comment build error on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BODY=$(tail -n 60 android/build.log)
+          gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments -f body="\`\`\`
+          $BODY
+          \`\`\`"
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk NineLivesAudio-android.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NineLivesAudio-android-apk
+          path: NineLivesAudio-android.apk
+
+      - name: Publish Android Release (on android-v* tag)
+        if: startsWith(github.ref, 'refs/tags/android-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: NineLivesAudio-android.apk
+          make_latest: false
+          prerelease: true
