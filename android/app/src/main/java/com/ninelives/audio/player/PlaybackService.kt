@@ -17,7 +17,7 @@ class PlaybackService : MediaSessionService() {
                     .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
                     .setUsage(C.USAGE_MEDIA)
                     .build(),
-                true
+                false
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
