@@ -34,8 +34,15 @@ private val LightColors = lightColorScheme(
     onPrimary = Color.White,
     background = LightBg,
     surface = LightSurface,
+    surfaceVariant = Color(0xFFEDEFF2),
+    surfaceContainerLowest = LightSurface,
+    surfaceContainerLow = Color(0xFFFAFBFD),
+    surfaceContainer = LightSurface,
+    surfaceContainerHigh = Color(0xFFF0F2F5),
+    surfaceContainerHighest = Color(0xFFE8EBF0),
     onBackground = Color(0xFF1F2328),
-    onSurface = Color(0xFF1F2328)
+    onSurface = Color(0xFF1F2328),
+    onSurfaceVariant = Color(0xFF656D76)
 )
 
 @Composable

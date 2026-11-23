@@ -40,9 +40,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -67,8 +70,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            NineLivesTheme {
-                NineLivesApp()
+            val vm: MainViewModel = viewModel()
+            val isDark = when (vm.themeMode) {
+                "dark" -> true
+                "light" -> false
+                else -> isSystemInDarkTheme()
+            }
+            NineLivesTheme(darkTheme = isDark) {
+                NineLivesApp(vm)
             }
         }
     }
@@ -77,8 +86,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun NineLivesApp(vm: MainViewModel = viewModel()) {
     val pagerState = rememberPagerState(
-        initialPage = if (vm.isConnected) 0 else 3,
-        pageCount = { 4 }
+        initialPage = if (vm.isConnected) 0 else 5,
+        pageCount = { 6 }
     )
     val scope = rememberCoroutineScope()
     LaunchedEffect(pagerState.currentPage) {
@@ -90,6 +99,8 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
         "九命" to Icons.Outlined.Home,
         "书库" to Icons.Outlined.Home,
         "播放" to Icons.Outlined.Home,
+        "下载" to Icons.Outlined.Download,
+        "统计" to Icons.Outlined.Timer,
         "设置" to Icons.Outlined.Settings
     )
 
@@ -162,7 +173,7 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                                 label = "navScale"
                             )
                             val gearRotation by animateFloatAsState(
-                                targetValue = if (index == 3 && selected) 180f else 0f,
+                                targetValue = if (index == 5 && selected) 180f else 0f,
                                 animationSpec = tween(450),
                                 label = "gearRotate"
                             )
@@ -180,31 +191,31 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                                             .size(22.dp)
                                             .scale(scale)
                                     ) {
-                                        val s = 2.dp.toPx()
+                                        val s = 1.5.dp.toPx()
                                         val w = size.width
                                         val h = size.height
                                         drawRoundRect(
                                             color = tint,
-                                            topLeft = Offset(w * 0.12f, h * 0.14f),
+                                            topLeft = Offset(w * 0.06f, h * 0.14f),
                                             size = Size(w * 0.18f, h * 0.72f),
                                             cornerRadius = CornerRadius(1.5.dp.toPx()),
                                             style = Stroke(width = s)
                                         )
                                         drawRoundRect(
                                             color = tint,
-                                            topLeft = Offset(w * 0.38f, h * 0.14f),
+                                            topLeft = Offset(w * 0.34f, h * 0.14f),
                                             size = Size(w * 0.18f, h * 0.72f),
                                             cornerRadius = CornerRadius(1.5.dp.toPx()),
                                             style = Stroke(width = s)
                                         )
                                         drawRotate(
-                                            degrees = -14f,
-                                            pivot = Offset(w * 0.72f, h * 0.86f)
+                                            degrees = -16f,
+                                            pivot = Offset(w * 0.82f, h * 0.86f)
                                         ) {
                                             drawRoundRect(
                                                 color = tint,
-                                                topLeft = Offset(w * 0.64f, h * 0.16f),
-                                                size = Size(w * 0.18f, h * 0.70f),
+                                                topLeft = Offset(w * 0.72f, h * 0.24f),
+                                                size = Size(w * 0.18f, h * 0.62f),
                                                 cornerRadius = CornerRadius(1.5.dp.toPx()),
                                                 style = Stroke(width = s)
                                             )

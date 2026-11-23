@@ -18,6 +18,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -142,6 +143,64 @@ fun SettingsScreen(vm: MainViewModel) {
                 if (vm.statusMessage.isNotBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(vm.statusMessage, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("外观", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("system" to "跟随系统", "dark" to "深色", "light" to "浅色").forEach { (mode, label) ->
+                        if (vm.themeMode == mode) {
+                            Button(onClick = { vm.themeMode = mode }) { Text(label) }
+                        } else {
+                            OutlinedButton(onClick = { vm.themeMode = mode }) { Text(label) }
+                        }
+                    }
+                }
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("下载与同步", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("仅在 Wi-Fi 下下载", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = vm.wifiOnlyDownload, onCheckedChange = { vm.wifiOnlyDownload = it })
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("自动同步播放进度", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = vm.autoSyncEnabled, onCheckedChange = { vm.autoSyncEnabled = it })
+                }
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("数据", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                OutlinedButton(
+                    onClick = { vm.refreshAll() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("立即同步服务器数据")
                 }
             }
         }
