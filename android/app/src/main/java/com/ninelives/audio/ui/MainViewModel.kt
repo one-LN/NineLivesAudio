@@ -226,6 +226,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var sleepRemainingSec by mutableIntStateOf(0)
         private set
     var sleepEndOfChapter by mutableStateOf(false)
+        private set
     var themeMode by mutableStateOf("system")
     var autoSyncEnabled by mutableStateOf(true)
     var wifiOnlyDownload by mutableStateOf(true)
