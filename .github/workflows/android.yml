@@ -39,10 +39,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          BODY=$(tail -n 60 android/build.log)
-          gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments -f body="\`\`\`
-          $BODY
-          \`\`\`"
+          BODY=$(tail -n 60 android/build.log || true)
+          if [ -n "$BODY" ]; then
+            gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments -f body="\`\`\`\n$BODY\n\`\`\`" || echo "::warning::Could not post Android build diagnostics"
+          else
+            echo "::warning::Android build log file was not found"
+          fi
 
       - name: Rename APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk NineLivesAudio-android.apk

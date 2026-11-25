@@ -74,6 +74,8 @@ else:
         ("release-android:", "Android tag release must be a separate job"),
         ("needs: build-android", "Android release must wait for a successful APK build"),
         ("contents: write", "Android release job must declare contents: write"),
+        ("tail -n 60 android/build.log || true", "Android build failure diagnostics must not fail on a missing log"),
+        ("::warning::Could not post Android build diagnostics", "Android log-comment errors must not mask the build failure"),
     ]
     for snippet, message in checks:
         if snippet not in android_workflow:
