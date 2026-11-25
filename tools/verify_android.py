@@ -14,6 +14,9 @@ REQUIRED = [
     "app/src/main/java/com/ninelives/audio/data/AbsApiClient.kt",
     "app/src/main/java/com/ninelives/audio/data/Models.kt",
     "app/src/main/java/com/ninelives/audio/data/SettingsStore.kt",
+    "app/src/main/java/com/ninelives/audio/data/DownloadModels.kt",
+    "app/src/main/java/com/ninelives/audio/data/DownloadStore.kt",
+    "app/src/main/java/com/ninelives/audio/data/DownloadManager.kt",
     "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt",
     "app/src/main/java/com/ninelives/audio/ui/HomeScreen.kt",
     "app/src/main/java/com/ninelives/audio/ui/LibraryScreen.kt",
@@ -63,12 +66,39 @@ main_activity = ANDROID / "app/src/main/java/com/ninelives/audio/MainActivity.kt
 if main_activity.is_file():
     text = main_activity.read_text(encoding="utf-8")
     for page, screen in ((3, "DownloadsScreen"), (4, "StatsScreen")):
-        if f"{page} -> {screen}(vm)" not in text:
+        if f"{page} -> {screen}(vm" not in text:
             problems.append(f"pager page {page} does not route to {screen}")
         if f"import com.ninelives.audio.ui.{screen}" not in text:
             problems.append(f"MainActivity.kt is missing the {screen} import")
     if "pageCount = { 6 }" not in text:
         problems.append("MainActivity pager should expose six matching navigation tabs")
+
+# Offline download pipeline: metadata endpoint, byte endpoint and UI wiring must stay connected.
+api_client = ANDROID / "app/src/main/java/com/ninelives/audio/data/AbsApiClient.kt"
+if api_client.is_file():
+    api_text = api_client.read_text(encoding="utf-8")
+    for snippet, message in (
+        ("expanded=1", "Download metadata must be read from the expanded item endpoint"),
+        ("/file/${segment(", "Audio bytes must come from the ABS file endpoint"),
+        ('header("Range", "bytes=', "Resumable downloads must send a Range header"),
+    ):
+        if snippet not in api_text:
+            problems.append(message)
+download_store = ANDROID / "app/src/main/java/com/ninelives/audio/data/DownloadStore.kt"
+if download_store.is_file() and "hashCode()" in download_store.read_text(encoding="utf-8"):
+    problems.append("Download directories must not be keyed by a 32-bit hashCode")
+download_screen = ANDROID / "app/src/main/java/com/ninelives/audio/ui/DownloadsScreen.kt"
+if download_screen.is_file():
+    screen_text = download_screen.read_text(encoding="utf-8")
+    for snippet, message in (
+        ("vm.downloadTasks", "Downloads screen must render the real queue"),
+        ("vm.downloadedBooks", "Downloads screen must render completed offline books"),
+        ("retryDownload", "Downloads screen must offer resume/retry"),
+    ):
+        if snippet not in screen_text:
+            problems.append(message)
+if "ACCESS_NETWORK_STATE" not in (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8"):
+    problems.append("Wi-Fi-only downloads need the ACCESS_NETWORK_STATE permission")
 
 android_workflow_path = ROOT / ".github/workflows/android.yml"
 android_workflow = android_workflow_path.read_text(encoding="utf-8") if android_workflow_path.is_file() else ""

@@ -58,7 +58,8 @@ data class BookItem(
     val progress: Double = 0.0,
     val currentTime: Double = 0.0,
     val isFinished: Boolean = false,
-    val lastUpdate: Long = 0L
+    val lastUpdate: Long = 0L,
+    val isDownloaded: Boolean = false
 ) {
     val progressPercent: Double
         get() = if (progress <= 1.0) progress * 100.0 else progress

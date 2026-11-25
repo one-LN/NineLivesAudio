@@ -42,6 +42,10 @@ class SettingsStore(context: Context) {
             .apply()
     }
 
+    fun getWifiOnlyDownload(): Boolean = prefs.getBoolean("wifi_only_download", true)
+
+    fun setWifiOnlyDownload(enabled: Boolean) = prefs.edit().putBoolean("wifi_only_download", enabled).apply()
+
     fun getDefaultIntroSec(): Int = prefs.getInt("default_intro_sec", 0)
     fun setDefaultIntroSec(sec: Int) = prefs.edit().putInt("default_intro_sec", sec.coerceAtLeast(0)).apply()
 

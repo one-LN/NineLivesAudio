@@ -207,6 +207,13 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            if (book.isDownloaded) {
+                                Text(
+                                    text = "离线",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                     }
                 }
@@ -262,8 +269,19 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { selectedBook = null }) {
-                    Text("关闭")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { selectedBook = null }) {
+                        Text("关闭")
+                    }
+                    TextButton(
+                        onClick = {
+                            vm.enqueueDownload(book)
+                            selectedBook = null
+                        },
+                        enabled = !book.isDownloaded
+                    ) {
+                        Text(if (book.isDownloaded) "已离线" else "下载离线")
+                    }
                 }
             }
         )

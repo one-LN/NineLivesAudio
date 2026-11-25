@@ -1,7 +1,12 @@
 package com.ninelives.audio.data
 
 import com.google.gson.JsonParser
+import java.io.File
+import java.io.RandomAccessFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -16,8 +21,17 @@ class AbsApiClient {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    private val downloadClient = OkHttpClient.Builder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .callTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
+
     private fun cleanUrl(url: String): String =
         url.replace(Regex("[\\s\\u200B-\\u200D\\uFEFF\"']+"), "").trimEnd('/')
+
+    private fun segment(value: String): String =
+        java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
     suspend fun login(serverUrl: String, username: String, password: String): Result<String> =
         withContext(Dispatchers.IO) {
@@ -142,6 +156,134 @@ class AbsApiClient {
             Result.failure(e)
         }
     }
+
+    suspend fun getDownloadManifest(
+        serverUrl: String,
+        token: String,
+        itemId: String,
+        fallbackTitle: String,
+        fallbackAuthor: String,
+        fallbackDescription: String
+    ): Result<DownloadManifest> = withContext(Dispatchers.IO) {
+        try {
+            val base = cleanUrl(serverUrl)
+            val request = Request.Builder()
+                .url("$base/api/items/${segment(itemId)}?expanded=1")
+                .header("Authorization", "Bearer $token")
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext Result.failure(Exception("HTTP ${response.code}"))
+                val root = JsonParser.parseString(response.body?.string().orEmpty()).asJsonObject
+                val media = root.getAsJsonObject("media") ?: return@withContext Result.failure(Exception("缺少媒体信息"))
+                val metadata = media.getAsJsonObject("metadata")
+                val files = media.getAsJsonArray("audioFiles")
+                    ?: return@withContext Result.failure(Exception("没有可下载的音频"))
+                val audioFiles = files.mapNotNull { element ->
+                    val file = element.asJsonObject
+                    val ino = file.get("ino")?.takeIf { !it.isJsonNull }?.asString.orEmpty()
+                    if (ino.isBlank()) return@mapNotNull null
+                    val fm = file.getAsJsonObject("metadata")
+                    AudioFileInfo(
+                        ino = ino,
+                        index = file.get("index")?.takeIf { !it.isJsonNull }?.asInt ?: 0,
+                        duration = file.get("duration")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0,
+                        filename = fm?.get("filename")?.takeIf { !it.isJsonNull }?.asString ?: "track.m4b",
+                        mimeType = file.get("mimeType")?.takeIf { !it.isJsonNull }?.asString ?: "application/octet-stream",
+                        size = fm?.get("size")?.takeIf { !it.isJsonNull }?.asLong ?: 0L
+                    )
+                }.sortedBy { it.index }
+                if (audioFiles.isEmpty()) return@withContext Result.failure(Exception("未找到音频文件"))
+                val chapters = media.getAsJsonArray("chapters")?.map { element ->
+                    val chapter = element.asJsonObject
+                    ChapterInfo(
+                        id = chapter.get("id")?.takeIf { !it.isJsonNull }?.asInt ?: 0,
+                        title = chapter.get("title")?.takeIf { !it.isJsonNull }?.asString ?: "章节",
+                        start = chapter.get("start")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0,
+                        end = chapter.get("end")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
+                    )
+                } ?: emptyList()
+                Result.success(
+                    DownloadManifest(
+                        title = metadata?.get("title")?.takeIf { !it.isJsonNull }?.asString ?: fallbackTitle,
+                        author = metadata?.get("authorName")?.takeIf { !it.isJsonNull }?.asString ?: fallbackAuthor,
+                        narrator = metadata?.get("narratorName")?.takeIf { !it.isJsonNull }?.asString.orEmpty(),
+                        description = metadata?.get("description")?.takeIf { !it.isJsonNull }?.asString ?: fallbackDescription,
+                        duration = media.get("duration")?.takeIf { !it.isJsonNull }?.asDouble ?: audioFiles.sumOf { it.duration },
+                        coverUrl = "$base/api/items/${segment(itemId)}/cover",
+                        files = audioFiles,
+                        chapters = chapters
+                    )
+                )
+            }
+        } catch (error: Exception) { Result.failure(error) }
+    }
+
+    suspend fun downloadAudioFile(
+        serverUrl: String,
+        token: String,
+        itemId: String,
+        fileIno: String,
+        destination: File,
+        resumeOffset: Long,
+        onProgress: (Long) -> Unit
+    ): Result<Long> = withContext(Dispatchers.IO) {
+        try {
+            destination.parentFile?.mkdirs()
+            val base = cleanUrl(serverUrl)
+            val builder = Request.Builder()
+                .url("$base/api/items/${segment(itemId)}/file/${segment(fileIno)}")
+                .header("Authorization", "Bearer $token")
+            if (resumeOffset > 0L) builder.header("Range", "bytes=$resumeOffset-")
+            downloadClient.newCall(builder.build()).execute().use { response ->
+                if (resumeOffset > 0L && response.code == 200) {
+                    RandomAccessFile(destination, "rw").use { it.setLength(0L) }
+                    return@use null
+                }
+                if (resumeOffset > 0L && response.code != 206) return@use Result.failure<Long>(Exception("HTTP ${response.code}"))
+                if (resumeOffset == 0L && response.code != 200 && response.code != 206) return@use Result.failure<Long>(Exception("HTTP ${response.code}"))
+                val body = response.body ?: return@use Result.failure<Long>(Exception("服务器返回空文件"))
+                val rangeStart = response.header("Content-Range")?.substringAfter("bytes ")?.substringBefore('-')?.toLongOrNull()
+                if (resumeOffset > 0L && rangeStart != resumeOffset) return@use Result.failure<Long>(Exception("断点响应位置不匹配"))
+                val offset = if (response.code == 206) resumeOffset else 0L
+                RandomAccessFile(destination, "rw").use { output ->
+                    output.seek(offset)
+                    body.byteStream().use { input ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            if (count == 0) continue
+                            output.write(buffer, 0, count)
+                            onProgress(count.toLong())
+                        }
+                    }
+                }
+                Result.success(destination.length())
+            } ?: downloadAudioFile(serverUrl, token, itemId, fileIno, destination, 0L, onProgress)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    suspend fun downloadCover(serverUrl: String, token: String, itemId: String, destination: File): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val request = Request.Builder()
+                    .url("${cleanUrl(serverUrl)}/api/items/${segment(itemId)}/cover")
+                    .header("Authorization", "Bearer $token")
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    val body = response.body ?: return@withContext false
+                    if (!response.isSuccessful) return@withContext false
+                    destination.parentFile?.mkdirs()
+                    destination.outputStream().use { output -> body.byteStream().use { it.copyTo(output) } }
+                    true
+                }
+            } catch (_: Exception) { false }
+        }
 
     suspend fun getProgressMap(serverUrl: String, token: String): Map<String, Triple<Double, Double, Long>> =
         withContext(Dispatchers.IO) {

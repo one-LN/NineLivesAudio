@@ -18,6 +18,11 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.ninelives.audio.data.AbsApiClient
+import com.ninelives.audio.data.AudioTrackInfo
+import com.ninelives.audio.data.DownloadManager
+import com.ninelives.audio.data.DownloadStore
+import com.ninelives.audio.data.DownloadedBook
+import com.ninelives.audio.data.DownloadTask
 import com.ninelives.audio.data.BookItem
 import com.ninelives.audio.data.LibraryInfo
 import com.ninelives.audio.data.PlaybackSessionData
@@ -30,6 +35,21 @@ import kotlinx.coroutines.launch
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SettingsStore(application)
     private val api = AbsApiClient()
+    private val offlineStore = DownloadStore(application)
+    private val downloadManager = DownloadManager(application, api, offlineStore)
+
+    var downloadTasks by mutableStateOf(downloadManager.tasks())
+        private set
+    var downloadedBooks by mutableStateOf(downloadManager.downloadedBooks())
+        private set
+
+    private val downloadObserver: () -> Unit = {
+        downloadTasks = downloadManager.tasks()
+        downloadedBooks = downloadManager.downloadedBooks()
+        books = books.map { book ->
+            book.copy(isDownloaded = downloadedBooks.any { it.serverUrl == activeUrl && it.itemId == book.id })
+        }
+    }
 
     var savedServers by mutableStateOf(store.getSavedServers())
         private set
@@ -74,6 +94,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .take(9)
 
     init {
+        downloadManager.setWifiOnly(store.getWifiOnlyDownload())
+        downloadManager.observe(downloadObserver)
+        viewModelScope.launch {
+            downloadManager.retryAll { server, user ->
+                store.getSavedServers().firstOrNull {
+                    it.url.trimEnd('/').equals(server.trimEnd('/'), true) && it.username.equals(user, true)
+                }?.token?.takeIf { it.isNotBlank() }
+            }
+        }
         if (isConnected) {
             refreshAll()
         }
@@ -104,6 +133,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 savedServers = trimmed
 
                 statusMessage = "已连接到 $normalized"
+                viewModelScope.launch { retryDownloadsFor(normalized, username.trim(), token) }
                 refreshAll()
             }.onFailure { err ->
                 statusMessage = "连接失败: ${err.message}"
@@ -157,6 +187,73 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshBooks(lib.id)
     }
 
+    fun isBookDownloaded(itemId: String): Boolean = downloadManager.isDownloaded(activeUrl, itemId)
+
+    fun enqueueDownload(book: BookItem) {
+        if (!isConnected) {
+            statusMessage = "请先连接服务器再下载"
+            return
+        }
+        downloadManager.enqueue(book, activeUrl, activeUsername, activeToken)
+        statusMessage = "已加入下载队列：${book.title}"
+    }
+
+    fun playDownloadedBook(book: DownloadedBook) {
+        val session = PlaybackSessionData(
+            sessionId = "",
+            itemId = book.itemId,
+            title = book.title,
+            author = book.author,
+            coverUrl = book.localCoverUri.ifBlank { book.coverUri },
+            tracks = book.tracks.map {
+                AudioTrackInfo(it.index, it.startOffset, it.duration, it.fileUri)
+            },
+            currentTime = book.currentTime,
+            duration = book.duration,
+            chapters = book.chapters
+        )
+        startPlaybackSession(session)
+    }
+
+    fun retryAllDownloads() {
+        downloadManager.retryAll { server, user ->
+            store.getSavedServers().firstOrNull {
+                it.url.trimEnd('/').equals(server.trimEnd('/'), true) && it.username.equals(user, true)
+            }?.token?.takeIf { it.isNotBlank() } ?: activeToken.takeIf {
+                activeUrl.trimEnd('/').equals(server.trimEnd('/'), true) && activeUsername.equals(user, true)
+            }
+        }
+    }
+
+    fun retryDownload(key: String) {
+        val task = downloadManager.tasks().firstOrNull { it.key == key } ?: return
+        val token = store.getSavedServers().firstOrNull {
+            it.url.trimEnd('/').equals(task.serverUrl.trimEnd('/'), true) && it.username.equals(task.username, true)
+        }?.token ?: activeToken.takeIf { activeUrl.trimEnd('/').equals(task.serverUrl.trimEnd('/'), true) }
+        if (token.isNullOrBlank()) {
+            statusMessage = "请先登录对应服务器后重试下载"
+            return
+        }
+        downloadManager.resume(key) { _, _ -> token }
+    }
+
+    fun pauseDownload(key: String) = downloadManager.pause(key)
+
+    fun cancelDownload(key: String) {
+        viewModelScope.launch { downloadManager.cancel(key) }
+    }
+
+    fun deleteDownloadedBook(book: DownloadedBook) = downloadManager.delete(book.serverUrl, book.itemId)
+
+    private fun retryDownloadsFor(server: String, username: String, token: String) {
+        downloadManager.retryAll { savedServer, savedUser ->
+            if (savedServer.trimEnd('/').equals(server.trimEnd('/'), true) && savedUser.equals(username, true)) token
+            else store.getSavedServers().firstOrNull {
+                it.url.trimEnd('/').equals(savedServer.trimEnd('/'), true) && it.username.equals(savedUser, true)
+            }?.token
+        }
+    }
+
     fun refreshAll() {
         if (!isConnected) return
         viewModelScope.launch {
@@ -193,14 +290,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             addLog("书籍: ${list.size} 本, 进度: ${progressMap.size} 条")
             books = list.map { b ->
                 val p = progressMap[b.id]
-                if (p != null) {
-                    b.copy(
-                        progress = p.first,
-                        currentTime = p.second,
-                        isFinished = p.first >= 0.995,
-                        lastUpdate = p.third
-                    )
-                } else b
+                b.copy(
+                    progress = p?.first ?: 0.0,
+                    currentTime = p?.second ?: 0.0,
+                    isFinished = (p?.first ?: 0.0) >= 0.995,
+                    lastUpdate = p?.third ?: 0L,
+                    isDownloaded = downloadedBooks.any { it.serverUrl == activeUrl && it.itemId == b.id }
+                )
             }
         }.onFailure {
             addLog("拉取书籍失败: ${it.message}")
@@ -229,7 +325,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var themeMode by mutableStateOf("system")
     var autoSyncEnabled by mutableStateOf(true)
-    var wifiOnlyDownload by mutableStateOf(true)
+    var wifiOnlyDownload by mutableStateOf(store.getWifiOnlyDownload())
+        private set
+
+    fun setWifiOnlyDownload(enabled: Boolean) {
+        wifiOnlyDownload = enabled
+        store.setWifiOnlyDownload(enabled)
+        downloadManager.setWifiOnly(enabled)
+        retryAllDownloads()
+    }
     private var sleepTargetChapterIdx = -1
     var currentIntroSec by mutableIntStateOf(0)
         private set
@@ -316,25 +420,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun playBook(book: BookItem) {
-        if (!isConnected) return
         playerError = null
+        val local = offlineStore.findBook(activeUrl, book.id)
+        if (local != null && local.tracks.isNotEmpty()) {
+            playDownloadedBook(local)
+            return
+        }
+        if (!isConnected) {
+            playerError = "当前离线，且这本书尚未下载到本机"
+            return
+        }
         viewModelScope.launch {
             val res = api.startPlaybackSession(activeUrl, activeToken, book.id)
             res.onSuccess { sess ->
-                currentSession = sess
-                totalDurationSec = sess.duration
-                currentPositionSec = sess.currentTime
-                currentIntroSec = store.getBookIntroSec(sess.itemId)
-                currentOutroSec = store.getBookOutroSec(sess.itemId)
-                lastChapterIdx = sess.chapters.indexOfLast { sess.currentTime >= it.start }
-                val targetIdx = sess.tracks.indexOfLast { sess.currentTime >= it.startOffset }.coerceAtLeast(0)
-                val trackStart = sess.tracks.getOrNull(targetIdx)?.startOffset ?: 0.0
-                val offsetMs = ((sess.currentTime - trackStart).coerceAtLeast(0.0) * 1000).toLong()
-                loadTrackAndPlay(targetIdx, offsetMs)
+                startPlaybackSession(sess)
             }.onFailure { e ->
                 playerError = e.message ?: "播放失败"
             }
         }
+    }
+
+    private fun startPlaybackSession(sess: PlaybackSessionData) {
+        currentSession = sess
+        totalDurationSec = sess.duration
+        currentPositionSec = sess.currentTime
+        currentIntroSec = store.getBookIntroSec(sess.itemId)
+        currentOutroSec = store.getBookOutroSec(sess.itemId)
+        lastChapterIdx = sess.chapters.indexOfLast { sess.currentTime >= it.start }
+        val targetIdx = sess.tracks.indexOfLast { sess.currentTime >= it.startOffset }.coerceAtLeast(0)
+        val trackStart = sess.tracks.getOrNull(targetIdx)?.startOffset ?: 0.0
+        val offsetMs = ((sess.currentTime - trackStart).coerceAtLeast(0.0) * 1000).toLong()
+        loadTrackAndPlay(targetIdx, offsetMs)
     }
 
     private fun loadTrackAndPlay(trackIndex: Int, offsetMs: Long) {
@@ -458,9 +574,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun syncProgressAndUpdateLocal(itemId: String, posSec: Double, durSec: Double) {
         val sid = currentSession?.sessionId ?: ""
-        api.syncProgress(activeUrl, activeToken, sid, itemId, posSec, durSec, 10.0)
-        val prog = if (durSec > 0) (posSec / durSec).coerceIn(0.0, 1.0) else 0.0
         val now = System.currentTimeMillis()
+        offlineStore.updateProgress(activeUrl, itemId, posSec, now)
+        downloadedBooks = offlineStore.allBooks()
+        if (sid.isNotBlank()) {
+            api.syncProgress(activeUrl, activeToken, sid, itemId, posSec, durSec, 10.0)
+        }
+        val prog = if (durSec > 0) (posSec / durSec).coerceIn(0.0, 1.0) else 0.0
         books = books.map { b ->
             if (b.id == itemId) {
                 b.copy(
