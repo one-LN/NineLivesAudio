@@ -204,10 +204,12 @@ Without `-Installer` you still get `binpublish` — just run the exe from that f
 **Option B — let GitHub Actions build it**
 
 Push a commit, open a pull request, or run the **Build** workflow manually
-(*Actions → Build → Run workflow*). When the run finishes, download these artifacts from the run page:
+(*Actions → Build → Run workflow*). Pull requests and feature branches build for validation; they do not replace public downloads. When a run finishes, download these artifacts from the run page:
 
 - `NineLivesAudio-win-x64-portable` — the `binpublish` folder as a zip
 - `NineLivesAudio-win-x64-installer` — `NineLivesAudioSetup.exe`
+
+Only pushes to `master` or `main` publish the stable `v<version>` release consumed by the in-app updater. To ship an update, merge the change into the default branch and bump `<Version>`, `<AssemblyVersion>`, and `<FileVersion>` in `NineLivesAudio.csproj` (also update `MyAppVersion` in `installer.iss`). The CI self-check fails if the installer version drifts. An arena/feature-branch build is for testing; it does not replace the stable installer or release.
 
 No local toolchain needed, and no Windows machine needed to *start* the build.
 (The Windows runner compiles it; you only download the result.)

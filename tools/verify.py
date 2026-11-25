@@ -338,6 +338,17 @@ if version:
         if dpath.exists() and f'"{version}"' not in read(dpath):
             fail(f"[pack] {doc} version does not match the project version {version}")
 
+# Only stable branch builds may update releases consumed by the in-app updater.
+workflow_path = ROOT / ".github" / "workflows" / "build.yml"
+if workflow_path.exists():
+    workflow = read(workflow_path)
+    if "if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')" not in workflow:
+        fail("[release] user-facing releases must publish only from master/main pushes")
+    if 'TAG="v$VERSION"' not in workflow:
+        fail("[release] stable release tag must match the project version")
+    if "latest-build" in workflow.split("- name: Publish download release", 1)[-1]:
+        fail("[release] development builds must not overwrite the stable latest release")
+
 # installer source dir must match the publish profile output
 iss = (ROOT / "installer.iss")
 if iss.exists() and publish_profile.exists():

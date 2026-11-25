@@ -7,6 +7,11 @@ on:
     branches: [master, main]
   workflow_dispatch:
 
+# Serialize builds per branch so an older run cannot finish last and overwrite newer assets.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -132,8 +137,9 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path binpublish/* -DestinationPath NineLivesAudio-win-x64-portable.zip -Force
 
+      # Feature/arena branches still build artifacts, but must never replace user-facing releases.
       - name: Publish download release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -146,37 +152,36 @@ jobs:
           ASSETS="installer_output/NineLivesAudioSetup.exe NineLivesAudio-win-x64-portable.zip"
           NAMES="NineLivesAudioSetup.exe NineLivesAudio-win-x64-portable.zip"
 
-          # Two tags: a rolling "latest-build" and a normal version release (v1.0.4), so the
-          # downloads look like every other GitHub project instead of one odd tag.
-          for TAG in latest-build "v$VERSION"; do
-            {
-              echo "Build of \`$SHA\` from \`$REF\` — $VERSION."
-              echo ""
-              echo "| File | What it is |"
-              echo "| --- | --- |"
-              echo "| **NineLivesAudioSetup.exe** | Installer: Start Menu shortcut, uninstall entry, keeps your data |"
-              echo "| **NineLivesAudio-win-x64-portable.zip** | Portable: unzip anywhere, run NineLivesAudio.exe |"
-              echo ""
-              echo "Data lives in \`<app folder>\\data\` in both cases. Every build replaces the files in this release."
-            } > release-notes.md
+          # This workflow runs only on master/main, so only stable releases publish here.
+          # The in-app updater reads GitHub's latest stable release and compares this version.
+          TAG="v$VERSION"
+          {
+            echo "Stable build of \`$SHA\` from \`$REF\` — $VERSION."
+            echo ""
+            echo "| File | What it is |"
+            echo "| --- | --- |"
+            echo "| **NineLivesAudioSetup.exe** | Installer: Start Menu shortcut, uninstall entry, keeps your data |"
+            echo "| **NineLivesAudio-win-x64-portable.zip** | Portable: unzip anywhere, run NineLivesAudio.exe |"
+            echo ""
+            echo "Data lives in \`<app folder>\\data\` in both cases. Every build replaces the files in this release."
+          } > release-notes.md
 
-            if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
-                --title "NineLivesAudio $VERSION" --notes-file release-notes.md
-            else
-              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
-            fi
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$TAG" --target "$SHA" --latest --repo "$GITHUB_REPOSITORY" \
+              --title "NineLivesAudio $VERSION" --notes-file release-notes.md
+          else
+            gh release edit "$TAG" --latest --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
+          fi
 
-            gh release upload "$TAG" $ASSETS --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload "$TAG" $ASSETS --clobber --repo "$GITHUB_REPOSITORY"
 
-            # Drop assets a previous layout left behind (e.g. the withdrawn single-file build),
-            # otherwise a stale file keeps sitting on the download page.
-            for name in $(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'); do
-              case " $NAMES " in
-                *" $name "*) ;;
-                *) gh release delete-asset "$TAG" "$name" -y --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 || true ;;
-              esac
-            done
-
-            echo "Download: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          # Drop assets a previous layout left behind (e.g. the withdrawn single-file build),
+          # otherwise a stale file keeps sitting on the download page.
+          for name in $(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'); do
+            case " $NAMES " in
+              *" $name "*) ;;
+              *) gh release delete-asset "$TAG" "$name" -y --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 || true ;;
+            esac
           done
+
+          echo "Download: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
