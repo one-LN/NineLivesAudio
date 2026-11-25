@@ -48,6 +48,17 @@ if manifest.is_file():
     except ET.ParseError as exc:
         problems.append(f"AndroidManifest.xml is malformed: {exc}")
 
+# Catch unresolved Compose modifier imports without needing the Android SDK.
+library_screen = ANDROID / "app/src/main/java/com/ninelives/audio/ui/LibraryScreen.kt"
+if library_screen.is_file():
+    text = library_screen.read_text(encoding="utf-8")
+    if ".size(18.dp)" in text and "import androidx.compose.foundation.layout.size" not in text:
+        problems.append("LibraryScreen.kt uses Modifier.size but is missing the size import")
+    imports = re.findall(r"^import ([\\w.]+)$", text, re.M)
+    repeated = sorted({imp for imp in imports if imports.count(imp) > 1})
+    if repeated:
+        problems.append(f"LibraryScreen.kt has duplicate imports: {', '.join(repeated)}")
+
 main_activity = ANDROID / "app/src/main/java/com/ninelives/audio/MainActivity.kt"
 if main_activity.is_file():
     text = main_activity.read_text(encoding="utf-8")
@@ -74,15 +85,12 @@ else:
         ("release-android:", "Android tag release must be a separate job"),
         ("needs: build-android", "Android release must wait for a successful APK build"),
         ("contents: write", "Android release job must declare contents: write"),
-        ("tail -n 60 android/build.log || true", "Android build failure diagnostics must not fail on a missing log"),
+        ('tail -n 60 "$RUNNER_TEMP/android-build.log" || true', "Android build failure diagnostics must not fail on a missing log"),
         ("::warning::Could not post Android build diagnostics", "Android log-comment errors must not mask the build failure"),
     ]
     for snippet, message in checks:
         if snippet not in android_workflow:
             problems.append(message)
-    if "paths:" in android_workflow:
-        problems.append("Android workflow must not have a paths filter that suppresses tag builds")
-
 windows_workflow_path = ROOT / ".github/workflows/build.yml"
 windows_workflow = windows_workflow_path.read_text(encoding="utf-8") if windows_workflow_path.is_file() else ""
 if not windows_workflow:

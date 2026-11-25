@@ -32,18 +32,18 @@ jobs:
 
       - name: Build Debug APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon > build.log 2>&1 || (tail -n 60 build.log; exit 1)
+        run: gradle assembleDebug --no-daemon > "$RUNNER_TEMP/android-build.log" 2>&1 || (tail -n 60 "$RUNNER_TEMP/android-build.log"; exit 1)
 
       - name: Comment build error on failure
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          BODY=$(tail -n 60 android/build.log || true)
+          BODY=$(tail -n 60 "$RUNNER_TEMP/android-build.log" || true)
           if [ -n "$BODY" ]; then
             gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments -f body="\`\`\`\n$BODY\n\`\`\`" || echo "::warning::Could not post Android build diagnostics"
           else
-            echo "::warning::Android build log file was not found"
+            echo "::warning::Android build log file was not found in either workflow root or android/"
           fi
 
       - name: Rename APK
