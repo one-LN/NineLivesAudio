@@ -43,12 +43,14 @@ jobs:
         run: |
           LOG="$RUNNER_TEMP/android-build.log"
           # Surface the actual Kotlin/Java errors, not the final Gradle task lines.
-          ERRORS=$(grep -nE '^(e: |w: .*\.kt)|error:|FAILURE:|What went wrong' "$LOG" | head -40 || true)
-          BODY=$(printf '%s\n' "$ERRORS" | tail -n 40)
-          if [ -z "$BODY" ]; then
-            echo "::error title=Android build::Gradle log file was not created"
+          if [ ! -f "$LOG" ]; then
+            echo "::error title=Android build::Gradle log was not created at $LOG"
             exit 0
           fi
+          echo "::notice title=Android build::Gradle log size $(wc -c < "$LOG") bytes"
+          ERRORS=$(grep -nE '^(e: |w: )|error:|ERROR|FAILURE:|What went wrong|Caused by|Could not' "$LOG" | head -40 || true)
+          BODY="$ERRORS"
+          [ -z "$BODY" ] && BODY=$(tail -n 80 "$LOG")
           # Public fallback: failure annotations are readable without signing in.
           printf '%s\n' "$BODY" | while IFS= read -r line; do
             [ -n "$line" ] && echo "::error title=Gradle::${line//$'%'/%25}"
