@@ -41,7 +41,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          BODY=$(tail -n 60 "$RUNNER_TEMP/android-build.log" || true)
+          LOG="$RUNNER_TEMP/android-build.log"
+          # Surface the actual Kotlin/Java errors, not the final Gradle task lines.
+          ERRORS=$(grep -nE '^(e: |w: .*\.kt)|error:|FAILURE:|What went wrong' "$LOG" | head -40 || true)
+          BODY=$(printf '%s\n' "$ERRORS" | tail -n 40)
           if [ -z "$BODY" ]; then
             echo "::error title=Android build::Gradle log file was not created"
             exit 0
