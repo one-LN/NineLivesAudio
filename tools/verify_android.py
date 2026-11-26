@@ -158,6 +158,16 @@ if strings.is_file():
 update_checker = ANDROID / "app/src/main/java/com/ninelives/audio/data/UpdateChecker.kt"
 if update_checker.is_file() and "isJsonNull" not in update_checker.read_text(encoding="utf-8"):
     problems.append("Release JSON must be read defensively (null body fields crash Gson)")
+playback_service = ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt"
+if playback_service.is_file():
+    text = playback_service.read_text(encoding="utf-8")
+    for snippet, message in (
+        ("AUDIO_CONTENT_TYPE_SPEECH", "Audiobooks must announce speech content to the system"),
+        ("DefaultLoadControl", "Playback needs an explicit buffering policy"),
+        ("setAudioAttributes(audioAttributes, true)", "The player must request audio focus"),
+    ):
+        if snippet not in text:
+            problems.append(message)
 vm_source = ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt"
 if vm_source.is_file():
     text = vm_source.read_text(encoding="utf-8")
