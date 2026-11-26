@@ -141,6 +141,13 @@ if library_screen.is_file():
 stats_screen = ANDROID / "app/src/main/java/com/ninelives/audio/ui/StatsScreen.kt"
 if stats_screen.is_file() and "vm.listenWeek" not in stats_screen.read_text(encoding="utf-8"):
     problems.append("Stats screen must render the 7-day listening chart")
+home_screen = ANDROID / "app/src/main/java/com/ninelives/audio/ui/HomeScreen.kt"
+if home_screen.is_file():
+    text = home_screen.read_text(encoding="utf-8")
+    if "R.mipmap" in text:
+        problems.append("painterResource cannot load an adaptive icon; use a PNG drawable")
+    if "R.drawable.ic_logo" not in text:
+        problems.append("Home header must show the desktop logo PNG")
 library_detail = ANDROID / "app/src/main/java/com/ninelives/audio/ui/LibraryScreen.kt"
 if library_detail.is_file() and "BookDetailScreen(" not in library_detail.read_text(encoding="utf-8"):
     problems.append("Book details must open as a full screen page, not a dialog")
