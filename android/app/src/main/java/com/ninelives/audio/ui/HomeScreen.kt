@@ -59,7 +59,7 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Image(
-                painter = painterResource(id = R.drawable.ic_launcher),
+                painter = painterResource(id = R.mipmap.ic_launcher),
                 contentDescription = "NineLivesAudio",
                 modifier = Modifier
                     .size(56.dp)
