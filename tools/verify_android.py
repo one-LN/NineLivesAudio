@@ -110,6 +110,9 @@ if api_client.is_file():
     ):
         if snippet not in api_text:
             problems.append(message)
+    for name in ("getBookmarks", "createBookmark", "deleteBookmark"):
+        if api_text.count("suspend fun " + name + "(") != 1:
+            problems.append("Duplicate or missing API definition: " + name)
 player_screen = ANDROID / "app/src/main/java/com/ninelives/audio/ui/PlayerScreen.kt"
 if player_screen.is_file():
     text = player_screen.read_text(encoding="utf-8")
