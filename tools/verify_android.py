@@ -22,6 +22,8 @@ REQUIRED = [
     "app/src/main/java/com/ninelives/audio/data/ListenLog.kt",
     "app/src/main/java/com/ninelives/audio/data/BookmarkStore.kt",
     "app/src/main/java/com/ninelives/audio/ui/Strings.kt",
+    "app/src/main/java/com/ninelives/audio/ui/BookDetailScreen.kt",
+    "app/src/main/java/com/ninelives/audio/ui/NavGlyphs.kt",
     "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt",
     "app/src/main/java/com/ninelives/audio/ui/HomeScreen.kt",
     "app/src/main/java/com/ninelives/audio/ui/LibraryScreen.kt",
@@ -30,7 +32,8 @@ REQUIRED = [
     "app/src/main/java/com/ninelives/audio/ui/SettingsScreen.kt",
     "app/src/main/java/com/ninelives/audio/ui/DownloadsScreen.kt",
     "app/src/main/java/com/ninelives/audio/ui/StatsScreen.kt",
-    "app/src/main/res/drawable/ic_launcher.png",
+    "app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+    "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
 ]
 problems = []
 for rel in REQUIRED:
@@ -138,6 +141,11 @@ if library_screen.is_file():
 stats_screen = ANDROID / "app/src/main/java/com/ninelives/audio/ui/StatsScreen.kt"
 if stats_screen.is_file() and "vm.listenWeek" not in stats_screen.read_text(encoding="utf-8"):
     problems.append("Stats screen must render the 7-day listening chart")
+library_detail = ANDROID / "app/src/main/java/com/ninelives/audio/ui/LibraryScreen.kt"
+if library_detail.is_file() and "BookDetailScreen(" not in library_detail.read_text(encoding="utf-8"):
+    problems.append("Book details must open as a full screen page, not a dialog")
+if "adaptive-icon" not in (ANDROID / "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml").read_text(encoding="utf-8"):
+    problems.append("Launcher icon must be an adaptive icon matching the desktop artwork")
 strings = ANDROID / "app/src/main/java/com/ninelives/audio/ui/Strings.kt"
 if strings.is_file():
     text = strings.read_text(encoding="utf-8")

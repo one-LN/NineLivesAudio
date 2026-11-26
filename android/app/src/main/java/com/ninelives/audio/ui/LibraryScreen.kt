@@ -94,6 +94,20 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
 
     var selectedBook by remember { mutableStateOf<BookItem?>(null) }
 
+    val detailBook = selectedBook
+    if (detailBook != null) {
+        BookDetailScreen(
+            vm = vm,
+            book = detailBook,
+            onBack = { selectedBook = null },
+            onPlay = { picked ->
+                selectedBook = null
+                onBookClick(picked)
+            }
+        )
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -325,70 +339,5 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
             }
             }
         }
-    }
-
-    selectedBook?.let { book ->
-        AlertDialog(
-            onDismissRequest = { selectedBook = null },
-            title = {
-                Text(
-                    text = book.title,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .height(300.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (book.author.isNotBlank()) {
-                        Text(t("作者：${book.author}", "Author: ${book.author}"), style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (book.narrator.isNotBlank()) {
-                        Text(t("演播：${book.narrator}", "Narrator: ${book.narrator}"), style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (book.hasProgress) {
-                        Text(
-                            t("当前进度：${book.progressPercent}%", "Progress: ${book.progressPercent}%"),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Text(
-                        text = book.description.ifBlank { t("暂无简介", "No description") },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    val b = book
-                    selectedBook = null
-                    onBookClick(b)
-                }) {
-                    Text(if (book.hasProgress) t("继续收听", "Continue") else t("开始播放", "Play"))
-                }
-            },
-            dismissButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { selectedBook = null }) {
-                        Text(t("关闭", "Close"))
-                    }
-                    TextButton(
-                        onClick = {
-                            vm.enqueueDownload(book)
-                            selectedBook = null
-                        },
-                        enabled = !book.isDownloaded
-                    ) {
-                        Text(if (book.isDownloaded) t("已离线", "Downloaded") else t("下载离线", "Download"))
-                    }
-                }
-            }
-        )
     }
 }

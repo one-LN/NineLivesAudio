@@ -26,7 +26,7 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ContentCut
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FormatListBulleted
-import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
@@ -375,7 +375,7 @@ fun PlayerScreen(vm: MainViewModel) {
             Box {
                 IconButton(onClick = { showSpeedMenu = true }) {
                     Icon(
-                        Icons.Outlined.PlayCircle,
+                        Icons.Outlined.Speed,
                         contentDescription = t("倍速 ${vm.playbackSpeed}x", "Speed ${vm.playbackSpeed}x"),
                         tint = if (vm.playbackSpeed != 1.0f) Color(0xFF4FC3F7) else MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -66,6 +66,7 @@ import com.ninelives.audio.ui.PlayerScreen
 import com.ninelives.audio.ui.SettingsScreen
 import com.ninelives.audio.ui.StatsScreen
 import com.ninelives.audio.ui.theme.NineLivesTheme
+import com.ninelives.audio.ui.NavGlyph
 import com.ninelives.audio.ui.t
 
 class MainActivity : ComponentActivity() {
@@ -188,76 +189,14 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                                     .clickable { scope.launch { pagerState.animateScrollToPage(index) } }
                             ) {
                                 val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                if (index == 1) {
-                                    Canvas(
-                                        modifier = Modifier
-                                            .size(22.dp)
-                                            .scale(scale)
-                                    ) {
-                                        val s = 1.5.dp.toPx()
-                                        val w = size.width
-                                        val h = size.height
-                                        drawRoundRect(
-                                            color = tint,
-                                            topLeft = Offset(w * 0.06f, h * 0.14f),
-                                            size = Size(w * 0.18f, h * 0.72f),
-                                            cornerRadius = CornerRadius(1.5.dp.toPx()),
-                                            style = Stroke(width = s)
-                                        )
-                                        drawRoundRect(
-                                            color = tint,
-                                            topLeft = Offset(w * 0.34f, h * 0.14f),
-                                            size = Size(w * 0.18f, h * 0.72f),
-                                            cornerRadius = CornerRadius(1.5.dp.toPx()),
-                                            style = Stroke(width = s)
-                                        )
-                                        drawRotate(
-                                            degrees = -16f,
-                                            pivot = Offset(w * 0.82f, h * 0.86f)
-                                        ) {
-                                            drawRoundRect(
-                                                color = tint,
-                                                topLeft = Offset(w * 0.72f, h * 0.24f),
-                                                size = Size(w * 0.18f, h * 0.62f),
-                                                cornerRadius = CornerRadius(1.5.dp.toPx()),
-                                                style = Stroke(width = s)
-                                            )
-                                        }
-                                    }
-                                } else if (index == 2) {
-                                    Canvas(
-                                        modifier = Modifier
-                                            .size(20.dp)
-                                            .scale(scale)
-                                    ) {
-                                        val w = size.width
-                                        val h = size.height
-                                        val path = androidx.compose.ui.graphics.Path().apply {
-                                            moveTo(w * 0.20f, h * 0.12f)
-                                            lineTo(w * 0.88f, h * 0.50f)
-                                            lineTo(w * 0.20f, h * 0.88f)
-                                            close()
-                                        }
-                                        drawPath(
-                                            path = path,
-                                            color = tint,
-                                            style = Stroke(
-                                                width = 2.dp.toPx(),
-                                                join = androidx.compose.ui.graphics.StrokeJoin.Round
-                                            )
-                                        )
-                                    }
-                                } else {
-                                    Icon(
-                                        icon,
-                                        contentDescription = label,
-                                        tint = tint,
-                                        modifier = Modifier
-                                            .size(22.dp)
-                                            .scale(scale)
-                                            .rotate(gearRotation)
-                                    )
-                                }
+                                NavGlyph(
+                                    index = index,
+                                    tint = tint,
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .scale(scale)
+                                        .rotate(if (index == 5) gearRotation else 0f)
+                                )
                             }
                         }
                     }
