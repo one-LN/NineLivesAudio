@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,6 +49,10 @@ fun BookDetailScreen(
 ) {
     BackHandler { onBack() }
     val percent = book.progressPercent.coerceIn(0.0, 100.0).toFloat()
+    val description = remember(book.description) {
+        android.text.Html.fromHtml(book.description, android.text.Html.FROM_HTML_MODE_LEGACY)
+            .toString().trim()
+    }
     val listened = book.currentTime.coerceAtLeast(0.0)
 
     Column(
@@ -178,7 +183,7 @@ fun BookDetailScreen(
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            book.description.ifBlank { t("暂无简介", "No description") },
+            description.ifBlank { t("暂无简介", "No description") },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -190,5 +195,10 @@ private fun formatDuration(sec: Double): String {
     val total = sec.toInt().coerceAtLeast(0)
     val h = total / 3600
     val m = (total % 3600) / 60
-    return if (h > 0) "${h}h ${m}m" else "${m}m"
+    return when {
+        Lang.isZh && h > 0 -> "${h} 小时 ${m} 分钟"
+        Lang.isZh -> "${m} 分钟"
+        h > 0 -> "${h}h ${m}m"
+        else -> "${m}m"
+    }
 }
