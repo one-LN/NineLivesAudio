@@ -34,41 +34,41 @@ fun DownloadsScreen(vm: MainViewModel, onBookClick: (DownloadedBook) -> Unit) {
     ) {
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("下载管理", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(t("下载管理", "Downloads"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 if (active.any { it.state == "failed" || it.state == "waiting_wifi" }) {
-                    TextButton(onClick = { vm.retryAllDownloads() }) { Text("重试全部") }
+                    TextButton(onClick = { vm.retryAllDownloads() }) { Text(t("重试全部", "Retry all")) }
                 }
             }
         }
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("下载设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(t("下载设置", "Download settings"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        if (vm.wifiOnlyDownload) "仅在 Wi-Fi / 以太网下下载" else "允许使用移动网络下载",
+                        if (vm.wifiOnlyDownload) t("仅在 Wi-Fi / 以太网下下载", "Download on Wi-Fi / Ethernet only") else t("允许使用移动网络下载", "Allow downloads on mobile data"),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text("当前下载队列 ${active.size} 项 · 已下载 ${completed.size} 本", style = MaterialTheme.typography.bodySmall)
+                    Text(t("当前下载队列 ${active.size} 项 · 已下载 ${completed.size} 本", "${active.size} queued · ${completed.size} downloaded"), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
         if (active.isNotEmpty()) {
-            item { Text("下载队列", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
+            item { Text(t("下载队列", "Queue"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
             items(active, key = { it.key }) { task -> DownloadTaskCard(task, vm) }
         }
         if (completed.isNotEmpty()) {
-            item { Text("离线书籍", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
+            item { Text(t("离线书籍", "Offline books"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
             items(completed, key = { "${it.serverUrl}:${it.itemId}" }) { book -> DownloadedBookCard(book, vm, onBookClick) }
         }
         if (active.isEmpty() && completed.isEmpty()) {
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("还没有离线书籍", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(t("还没有离线书籍", "No offline books yet"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text("在书库中打开一本书，点「下载离线」即可在本机保存音频。")
+                        Text(t("在书库中打开一本书，点「下载离线」即可在本机保存音频。", "Open a book in the library and tap Download to keep its audio on this device."))
                     }
                 }
             }
@@ -81,28 +81,28 @@ private fun DownloadTaskCard(task: DownloadTask, vm: MainViewModel) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(task.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text(task.author.ifBlank { "未知作者" }, style = MaterialTheme.typography.bodySmall)
+            Text(task.author.ifBlank { t("未知作者", "Unknown author") }, style = MaterialTheme.typography.bodySmall)
             LinearProgressIndicator(
                 progress = { task.progress / 100f },
                 modifier = Modifier.fillMaxWidth()
             )
             Text("${task.progress}% · ${formatBytes(task.downloadedBytes)} / ${formatBytes(task.totalBytes)}", style = MaterialTheme.typography.bodySmall)
             val stateText = when (task.state) {
-                "queued" -> "排队中"
-                "downloading" -> "正在下载"
-                "paused" -> "已暂停"
-                "waiting_wifi" -> "等待 Wi-Fi"
-                "failed" -> "失败：${task.error}"
+                "queued" -> t("排队中", "Queued")
+                "downloading" -> t("正在下载", "Downloading")
+                "paused" -> t("已暂停", "Paused")
+                "waiting_wifi" -> t("等待 Wi-Fi", "Waiting for Wi-Fi")
+                "failed" -> t("失败：${task.error}", "Failed: ${task.error}")
                 else -> task.state
             }
             Text(stateText, color = if (task.state == "failed") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (task.state == "downloading" || task.state == "queued") {
-                    OutlinedButton(onClick = { vm.pauseDownload(task.key) }) { Text("暂停") }
+                    OutlinedButton(onClick = { vm.pauseDownload(task.key) }) { Text(t("暂停", "Pause")) }
                 } else {
-                    Button(onClick = { vm.retryDownload(task.key) }, enabled = task.state != "downloading") { Text("继续") }
+                    Button(onClick = { vm.retryDownload(task.key) }, enabled = task.state != "downloading") { Text(t("继续", "Resume")) }
                 }
-                TextButton(onClick = { vm.cancelDownload(task.key) }) { Text("取消") }
+                TextButton(onClick = { vm.cancelDownload(task.key) }) { Text(t("取消", "Cancel")) }
             }
         }
     }
@@ -114,12 +114,12 @@ private fun DownloadedBookCard(book: DownloadedBook, vm: MainViewModel, onBookCl
         Row(modifier = Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(book.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(book.author.ifBlank { "未知作者" }, style = MaterialTheme.typography.bodySmall)
-                Text("离线可播放 · ${formatDuration(book.duration)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text(book.author.ifBlank { t("未知作者", "Unknown author") }, style = MaterialTheme.typography.bodySmall)
+                Text(t("离线可播放 · ${formatDuration(book.duration)}", "Playable offline · ${formatDuration(book.duration)}"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
             Column {
-                Button(onClick = { onBookClick(book) }) { Text("播放") }
-                TextButton(onClick = { vm.deleteDownloadedBook(book) }) { Text("删除") }
+                Button(onClick = { onBookClick(book) }) { Text(t("播放", "Player")) }
+                TextButton(onClick = { vm.deleteDownloadedBook(book) }) { Text(t("删除", "Delete")) }
             }
         }
     }
@@ -135,5 +135,5 @@ private fun formatBytes(bytes: Long): String = when {
 private fun formatDuration(seconds: Double): String {
     val hours = (seconds / 3600).toInt()
     val minutes = ((seconds % 3600) / 60).toInt()
-    return if (hours > 0) "${hours}小时${minutes}分钟" else "${minutes}分钟"
+    return if (hours > 0) t("${hours}小时${minutes}分钟", "${hours}h ${minutes}m") else t("${minutes}分钟", "${minutes} min")
 }

@@ -24,6 +24,9 @@ import com.ninelives.audio.data.DownloadStore
 import com.ninelives.audio.data.DownloadedBook
 import com.ninelives.audio.data.DownloadTask
 import com.ninelives.audio.data.Bookmark
+import com.ninelives.audio.data.BookmarkStore
+import com.ninelives.audio.data.ListenLog
+import com.ninelives.audio.data.PendingBookmarkOp
 import com.ninelives.audio.data.BookItem
 import com.ninelives.audio.data.LibraryCache
 import com.ninelives.audio.data.LibraryInfo
@@ -135,7 +138,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (cached.totalListeningSec > 0.0) totalListeningSec = cached.totalListeningSec
         lastSyncAt = cached.savedAt
-        statusMessage = "已显示本地缓存，正在后台同步"
+        statusMessage = t("已显示本地缓存，正在后台同步", "Showing cached library, syncing in the background")
     }
 
     private fun isStale(maxAgeMs: Long): Boolean =
@@ -164,16 +167,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loginAndConnect(name: String, url: String, username: String, password: String) {
         if (url.isBlank() || username.isBlank() || password.isBlank()) {
-            statusMessage = "请填写服务器地址、用户名和密码"
+            statusMessage = t("请填写服务器地址、用户名和密码", "Enter server address, username and password")
             return
         }
         viewModelScope.launch {
             isSyncing = true
-            statusMessage = "正在连接..."
+            statusMessage = t("正在连接...", "Connecting...")
             val res = api.login(url, username, password)
             res.onSuccess { token ->
                 val normalized = url.replace(Regex("[\\s\\u200B-\\u200D\\uFEFF\"']+"), "").trimEnd('/')
-                addLog("登录成功: $normalized")
+                addLog(t("登录成功: $normalized", "Signed in: $normalized"))
                 store.setActiveServer(normalized, username.trim(), token)
                 activeUrl = normalized
                 activeUsername = username.trim()
@@ -186,11 +189,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 store.saveServers(trimmed)
                 savedServers = trimmed
 
-                statusMessage = "已连接到 $normalized"
+                statusMessage = t("已连接到 $normalized", "Connected to $normalized")
                 viewModelScope.launch { retryDownloadsFor(normalized, username.trim(), token) }
                 refreshAll()
             }.onFailure { err ->
-                statusMessage = "连接失败: ${err.message}"
+                statusMessage = t("连接失败: ${err.message}", "Connection failed: ${err.message}")
                 isSyncing = false
             }
         }
@@ -201,7 +204,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         activeUrl = server.url
         activeUsername = server.username
         activeToken = server.token
-        statusMessage = "已切换到 ${server.displayName}"
+        statusMessage = t("已切换到 ${server.displayName}", "Switched to ${server.displayName}")
         books = emptyList()
         libraries = emptyList()
         selectedLibrary = null
@@ -236,7 +239,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         booksByLibrary.clear()
         libraryCache.clear()
         lastSyncAt = 0L
-        statusMessage = "已断开连接"
+        statusMessage = t("已断开连接", "Disconnected")
     }
 
     fun selectLibrary(lib: LibraryInfo) {
@@ -253,11 +256,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun enqueueDownload(book: BookItem) {
         if (!isConnected) {
-            statusMessage = "请先连接服务器再下载"
+            statusMessage = t("请先连接服务器再下载", "Connect to a server before downloading")
             return
         }
         downloadManager.enqueue(book, activeUrl, activeUsername, activeToken)
-        statusMessage = "已加入下载队列：${book.title}"
+        statusMessage = t("已加入下载队列：${book.title}", "Queued: ${book.title}")
     }
 
     fun playDownloadedBook(book: DownloadedBook) {
@@ -293,7 +296,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.url.trimEnd('/').equals(task.serverUrl.trimEnd('/'), true) && it.username.equals(task.username, true)
         }?.token ?: activeToken.takeIf { activeUrl.trimEnd('/').equals(task.serverUrl.trimEnd('/'), true) }
         if (token.isNullOrBlank()) {
-            statusMessage = "请先登录对应服务器后重试下载"
+            statusMessage = t("请先登录对应服务器后重试下载", "Sign in to that server and retry the download")
             return
         }
         downloadManager.resume(key) { _, _ -> token }
@@ -335,16 +338,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (isCheckingUpdate || isDownloadingUpdate) return
         viewModelScope.launch {
             isCheckingUpdate = true
-            updateStatus = "正在检查更新…"
+            updateStatus = t("正在检查更新…", "Checking for updates...")
             val result = updater.check()
             result.onSuccess { update ->
                 pendingUpdate = update
                 updateStatus = when {
-                    update == null -> "已是最新版本（$currentVersion）"
-                    else -> "发现新版本 ${update.versionName}"
+                    update == null -> t("已是最新版本（$currentVersion）", "Up to date ($currentVersion)")
+                    else -> t("发现新版本 ${update.versionName}", "New version ${update.versionName} available")
                 }
             }.onFailure {
-                updateStatus = "检查失败：${it.message ?: "网络错误"}"
+                updateStatus = t("检查失败：", "Update check failed: ") + (it.message ?: t("网络错误", "network error"))
             }
             isCheckingUpdate = false
         }
@@ -356,14 +359,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             isDownloadingUpdate = true
             updateProgress = 0
-            updateStatus = "正在下载 ${update.versionName}…"
+            updateStatus = t("正在下载 ${update.versionName}…", "Downloading ${update.versionName}...")
             val result = updater.download(update) { percent -> updateProgress = percent }
             result.onSuccess { file ->
                 downloadedUpdate = file
-                updateStatus = "下载完成，正在打开系统安装…"
+                updateStatus = t("下载完成，正在打开系统安装…", "Downloaded, opening the installer...")
                 installUpdate()
             }.onFailure {
-                updateStatus = "下载失败：${it.message ?: "网络错误"}"
+                updateStatus = t("下载失败：", "Download failed: ") + (it.message ?: t("网络错误", "network error"))
             }
             isDownloadingUpdate = false
         }
@@ -376,13 +379,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         if (!updater.canInstall()) {
-            updateStatus = "请允许“安装未知应用”，返回后再点安装"
+            updateStatus = t("请允许“安装未知应用”，返回后再点安装", "Allow installing unknown apps, then come back and install")
             updater.openInstallPermission()
             return
         }
         runCatching { updater.install(file) }
-            .onSuccess { updateStatus = "已打开系统安装界面，确认即可覆盖升级" }
-            .onFailure { updateStatus = "无法启动安装：${it.message}" }
+            .onSuccess { updateStatus = t("已打开系统安装界面，确认即可覆盖升级", "Installer opened, confirm to upgrade in place") }
+            .onFailure { updateStatus = t("无法启动安装：${it.message}", "Cannot start the installer: ${it.message}") }
     }
 
     fun refreshVersionLabel() {
@@ -391,6 +394,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshAll() {
         if (!isConnected || isSyncing) return
+        flushBookmarkOps()
         viewModelScope.launch {
             isSyncing = true
             val libsRes = api.getLibraries(activeUrl, activeToken)
@@ -403,8 +407,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     loadBooksWithProgress(target.id)
                 }
             }.onFailure {
-                addLog("拉取书库失败: ${it.message}")
-                statusMessage = "拉取书库失败: ${it.message}"
+                addLog(t("拉取书库失败: ${it.message}", "Failed to load libraries: ${it.message}"))
+                statusMessage = t("拉取书库失败: ${it.message}", "Failed to load libraries: ${it.message}")
             }
             isSyncing = false
         }
@@ -436,7 +440,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             booksByLibrary[libraryId] = books
             persistLibraryCache()
         }.onFailure {
-            addLog("拉取书籍失败: ${it.message}")
+            addLog(t("拉取书籍失败: ${it.message}", "Failed to load books: ${it.message}"))
         }
     }
 
@@ -465,6 +469,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var autoSyncEnabled by mutableStateOf(store.getAutoSync())
         private set
 
+    fun updateLanguage(code: String) {
+        Lang.code = code
+        store.setLanguage(code)
+    }
+
     fun updateThemeMode(mode: String) {
         themeMode = mode
         store.setThemeMode(mode)
@@ -483,6 +492,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var bookmarkStatus by mutableStateOf("")
         private set
     private var bookmarksItemId: String = ""
+    private val bookmarkStore = BookmarkStore(application)
+
+    // --- Local listening log for the stats chart ---
+    private val listenLog = ListenLog(application)
+    var listenWeek by mutableStateOf<List<Pair<Long, Long>>>(emptyList())
+        private set
 
     fun updateWifiOnlyDownload(enabled: Boolean) {
         wifiOnlyDownload = enabled
@@ -500,6 +515,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     init {
+        Lang.code = store.getLanguage()
+        refreshListenWeek()
         val sessionToken = SessionToken(
             application,
             ComponentName(application, PlaybackService::class.java)
@@ -537,7 +554,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val posSec = trackOffset + (c.currentPosition.coerceAtLeast(0L) / 1000.0)
                     currentPositionSec = posSec
                     if (isPlaying) {
+                        listenLog.addSecond()
                         tick++
+                        if (tick % 30 == 0) refreshListenWeek()
                         if (tick % 10 == 0 && activeUrl.isNotBlank() && activeToken.isNotBlank()) {
                             syncProgressAndUpdateLocal(sess.itemId, posSec, totalDurationSec)
                         }
@@ -583,7 +602,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         if (!isConnected) {
-            playerError = "当前离线，且这本书尚未下载到本机"
+            playerError = t("当前离线，且这本书尚未下载到本机", "You are offline and this book is not downloaded")
             return
         }
         viewModelScope.launch {
@@ -591,7 +610,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             res.onSuccess { sess ->
                 startPlaybackSession(sess)
             }.onFailure { e ->
-                playerError = e.message ?: "播放失败"
+                playerError = e.message ?: t("播放失败", "Playback failed")
             }
         }
     }
@@ -674,54 +693,119 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadBookmarks(itemId: String = currentSession?.itemId ?: "") {
-        if (itemId.isBlank() || activeUrl.isBlank() || activeToken.isBlank()) return
+        if (itemId.isBlank()) return
         bookmarksItemId = itemId
+        val cached = bookmarkStore.cached(itemId)
+        if (cached.isNotEmpty()) bookmarks = cached
+        if (activeUrl.isBlank() || activeToken.isBlank()) return
         viewModelScope.launch {
             api.getBookmarks(activeUrl, activeToken, itemId)
-                .onSuccess { list -> if (bookmarksItemId == itemId) bookmarks = list }
-                .onFailure { bookmarkStatus = "书签加载失败：${it.message}" }
+                .onSuccess { list ->
+                    if (bookmarksItemId == itemId) {
+                        val locals = bookmarks.filter { it.id.startsWith("local-") }
+                        bookmarks = (list + locals).sortedBy { it.time }
+                        bookmarkStore.saveCache(itemId, bookmarks)
+                    }
+                }
+                .onFailure {
+                    bookmarkStatus = t(
+                        "书签加载失败：${it.message}",
+                        "Failed to load bookmarks: ${it.message}"
+                    )
+                }
         }
     }
 
     fun addBookmarkAtCurrent(title: String = "") {
         val sess = currentSession
         if (sess == null) {
-            bookmarkStatus = "请先打开一本书"
-            return
-        }
-        if (activeUrl.isBlank() || activeToken.isBlank()) {
-            bookmarkStatus = "离线状态暂不支持书签"
+            bookmarkStatus = t("请先打开一本书", "Open a book first")
             return
         }
         val pos = currentAbsolutePosition()
-        val label = title.trim().ifBlank { "书签 " + formatClock(pos) }
+        val label = title.trim().ifBlank { t("书签 ", "Bookmark ") + formatClock(pos) }
+        val local = Bookmark(
+            id = "local-" + System.currentTimeMillis(),
+            itemId = sess.itemId,
+            title = label,
+            time = pos,
+            createdAt = System.currentTimeMillis()
+        )
+        bookmarks = (bookmarks + local).sortedBy { it.time }
+        bookmarkStore.saveCache(sess.itemId, bookmarks)
+        if (activeUrl.isBlank() || activeToken.isBlank()) {
+            bookmarkStore.addPending(PendingBookmarkOp("add", sess.itemId, label, pos))
+            bookmarkStatus = t("已离线保存，联网后自动同步", "Saved offline, will sync when online")
+            return
+        }
         viewModelScope.launch {
             api.createBookmark(activeUrl, activeToken, sess.itemId, label, pos)
                 .onSuccess {
-                    bookmarkStatus = "已添加：$label"
+                    bookmarkStatus = t("已添加：$label", "Added: $label")
                     loadBookmarks(sess.itemId)
                 }
-                .onFailure { bookmarkStatus = "添加失败：${it.message}" }
+                .onFailure {
+                    bookmarkStore.addPending(PendingBookmarkOp("add", sess.itemId, label, pos))
+                    bookmarkStatus = t("已本地保存，稍后自动重试", "Saved locally, will retry automatically")
+                }
         }
     }
 
     fun deleteBookmark(bookmark: Bookmark) {
+        bookmarks = bookmarks.filterNot { it.id == bookmark.id }
+        bookmarkStore.saveCache(bookmark.itemId, bookmarks)
+        if (bookmark.id.startsWith("local-")) {
+            bookmarkStore.dropPendingAdd(bookmark.itemId, bookmark.time)
+            return
+        }
         if (activeUrl.isBlank() || activeToken.isBlank()) {
-            bookmarks = bookmarks.filterNot { it.id == bookmark.id }
+            bookmarkStore.addPending(PendingBookmarkOp("delete", bookmark.itemId, "", bookmark.time))
+            bookmarkStatus = t("已离线删除，联网后同步", "Deleted offline, will sync when online")
             return
         }
         viewModelScope.launch {
             api.deleteBookmark(activeUrl, activeToken, bookmark.itemId, bookmark.time)
-                .onSuccess {
-                    bookmarks = bookmarks.filterNot { it.id == bookmark.id && it.time == bookmark.time }
-                    bookmarkStatus = "已删除"
+                .onSuccess { bookmarkStatus = t("已删除", "Deleted") }
+                .onFailure {
+                    bookmarkStore.addPending(PendingBookmarkOp("delete", bookmark.itemId, "", bookmark.time))
+                    bookmarkStatus = t("已本地删除，稍后自动重试", "Deleted locally, will retry automatically")
                 }
-                .onFailure { bookmarkStatus = "删除失败：${it.message}" }
+        }
+    }
+
+    /** Pushes queued bookmark changes once the server is reachable. */
+    fun flushBookmarkOps() {
+        if (activeUrl.isBlank() || activeToken.isBlank()) return
+        val ops = bookmarkStore.pending()
+        if (ops.isEmpty()) return
+        viewModelScope.launch {
+            var changed = false
+            for (op in ops) {
+                val ok = if (op.type == "add") {
+                    api.createBookmark(activeUrl, activeToken, op.itemId, op.title, op.time).isSuccess
+                } else {
+                    api.deleteBookmark(activeUrl, activeToken, op.itemId, op.time).isSuccess
+                }
+                if (ok) {
+                    bookmarkStore.removePending(op)
+                    changed = true
+                } else {
+                    break
+                }
+            }
+            if (changed) {
+                bookmarkStatus = t("书签已同步", "Bookmarks synced")
+                loadBookmarks()
+            }
         }
     }
 
     fun jumpToBookmark(bookmark: Bookmark) {
         seekToSec(bookmark.time)
+    }
+
+    fun refreshListenWeek() {
+        listenWeek = listenLog.lastDays(7)
     }
 
     private fun formatClock(sec: Double): String {
@@ -828,6 +912,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        listenLog.flush()
         mediaController?.release()
         mediaController = null
         super.onCleared()

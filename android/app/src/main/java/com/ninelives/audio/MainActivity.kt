@@ -66,6 +66,7 @@ import com.ninelives.audio.ui.PlayerScreen
 import com.ninelives.audio.ui.SettingsScreen
 import com.ninelives.audio.ui.StatsScreen
 import com.ninelives.audio.ui.theme.NineLivesTheme
+import com.ninelives.audio.ui.t
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -98,12 +99,12 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
         }
     }
     val tabs = listOf(
-        "九命" to Icons.Outlined.Home,
-        "书库" to Icons.Outlined.Home,
-        "播放" to Icons.Outlined.Home,
-        "下载" to Icons.Outlined.Download,
-        "统计" to Icons.Outlined.Timer,
-        "设置" to Icons.Outlined.Settings
+        t("九命", "NineLives") to Icons.Outlined.Home,
+        t("书库", "Library") to Icons.Outlined.Home,
+        t("播放", "Player") to Icons.Outlined.Home,
+        t("下载", "Downloads") to Icons.Outlined.Download,
+        t("统计", "Stats") to Icons.Outlined.Timer,
+        t("设置", "Settings") to Icons.Outlined.Settings
     )
 
     Scaffold(
@@ -150,7 +151,7 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                                 }
                             }
                             TextButton(onClick = { vm.togglePlayPause() }) {
-                                Text(if (vm.isPlaying) "暂停" else "播放")
+                                Text(if (vm.isPlaying) t("暂停", "Pause") else t("播放", "Player"))
                             }
                         }
                     }

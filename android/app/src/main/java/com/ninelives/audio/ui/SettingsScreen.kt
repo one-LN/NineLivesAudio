@@ -52,18 +52,18 @@ fun SettingsScreen(vm: MainViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("设置", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(t("设置", "Settings"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("服务器连接", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(t("服务器连接", "Server"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
 
                 if (vm.savedServers.isNotEmpty()) {
                     OutlinedButton(
                         onClick = { expanded = !expanded },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(currentSaved?.displayName ?: "选择已保存的服务器")
+                        Text(currentSaved?.displayName ?: t("选择已保存的服务器", "Saved servers"))
                     }
                     if (expanded) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -84,33 +84,33 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
 
                 if (vm.isConnected && !isAdding) {
-                    Text("已连接到 ${vm.activeUrl} (${vm.activeUsername})", color = MaterialTheme.colorScheme.primary)
+                    Text(t("已连接到 ${vm.activeUrl} (${vm.activeUsername})", "Connected to ${vm.activeUrl} (${vm.activeUsername})"), color = MaterialTheme.colorScheme.primary)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { vm.disconnect() }) { Text("断开") }
+                        OutlinedButton(onClick = { vm.disconnect() }) { Text(t("断开", "Disconnect")) }
                         Button(onClick = {
                             isAdding = true
                             serverName = ""
                             serverUrl = ""
                             username = ""
                             password = ""
-                        }) { Text("添加服务器") }
+                        }) { Text(t("添加服务器", "Add server")) }
                         if (currentSaved != null) {
-                            OutlinedButton(onClick = { vm.deleteServer(currentSaved) }) { Text("删除") }
+                            OutlinedButton(onClick = { vm.deleteServer(currentSaved) }) { Text(t("删除", "Delete")) }
                         }
                     }
                 } else {
                     OutlinedTextField(
                         value = serverName,
                         onValueChange = { serverName = it },
-                        label = { Text("服务器名称（可选）") },
-                        placeholder = { Text("例如：家里 NAS") },
+                        label = { Text(t("服务器名称（可选）", "Server name (optional)")) },
+                        placeholder = { Text(t("例如：家里 NAS", "e.g. Home NAS")) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = serverUrl,
                         onValueChange = { serverUrl = it },
-                        label = { Text("服务器地址") },
+                        label = { Text(t("服务器地址", "Server address")) },
                         placeholder = { Text("https://example.com") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -118,14 +118,14 @@ fun SettingsScreen(vm: MainViewModel) {
                     OutlinedTextField(
                         value = username,
                         onValueChange = { username = it },
-                        label = { Text("用户名") },
+                        label = { Text(t("用户名", "Username")) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        label = { Text("密码") },
+                        label = { Text(t("密码", "Password")) },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -135,9 +135,9 @@ fun SettingsScreen(vm: MainViewModel) {
                             vm.loginAndConnect(serverName, serverUrl, username, password)
                             isAdding = false
                             password = ""
-                        }) { Text("连接") }
+                        }) { Text(t("连接", "Connect")) }
                         if (vm.isConnected) {
-                            OutlinedButton(onClick = { isAdding = false }) { Text("取消") }
+                            OutlinedButton(onClick = { isAdding = false }) { Text(t("取消", "Cancel")) }
                         }
                     }
                 }
@@ -154,13 +154,24 @@ fun SettingsScreen(vm: MainViewModel) {
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("外观", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(t("外观", "Appearance"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("system" to "跟随系统", "dark" to "深色", "light" to "浅色").forEach { (mode, label) ->
+                    listOf("system" to t("跟随系统", "System"), "dark" to t("深色", "Dark"), "light" to t("浅色", "Light")).forEach { (mode, label) ->
                         if (vm.themeMode == mode) {
                             Button(onClick = { vm.updateThemeMode(mode) }) { Text(label) }
                         } else {
                             OutlinedButton(onClick = { vm.updateThemeMode(mode) }) { Text(label) }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(t("语言", "Language"), style = MaterialTheme.typography.bodyMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("zh" to "中文", "en" to "English").forEach { (code, label) ->
+                        if (Lang.code == code) {
+                            Button(onClick = { vm.updateLanguage(code) }) { Text(label) }
+                        } else {
+                            OutlinedButton(onClick = { vm.updateLanguage(code) }) { Text(label) }
                         }
                     }
                 }
@@ -172,13 +183,13 @@ fun SettingsScreen(vm: MainViewModel) {
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("下载与同步", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(t("下载与同步", "Downloads & sync"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("仅在 Wi-Fi 下下载", style = MaterialTheme.typography.bodyMedium)
+                    Text(t("仅在 Wi-Fi 下下载", "Download on Wi-Fi only"), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = vm.wifiOnlyDownload, onCheckedChange = { vm.updateWifiOnlyDownload(it) })
                 }
                 Row(
@@ -186,7 +197,7 @@ fun SettingsScreen(vm: MainViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("自动同步播放进度", style = MaterialTheme.typography.bodyMedium)
+                    Text(t("自动同步播放进度", "Auto-sync progress"), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = vm.autoSyncEnabled, onCheckedChange = { vm.updateAutoSync(it) })
                 }
             }
@@ -197,12 +208,12 @@ fun SettingsScreen(vm: MainViewModel) {
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("数据", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(t("数据", "Data"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 OutlinedButton(
                     onClick = { vm.refreshAll() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("立即同步服务器数据")
+                    Text(t("立即同步服务器数据", "Sync now"))
                 }
             }
         }
@@ -212,9 +223,9 @@ fun SettingsScreen(vm: MainViewModel) {
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("关于与更新", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(t("关于与更新", "About & updates"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "当前版本 ${vm.currentVersion}",
+                    t("当前版本 ${vm.currentVersion}", "Version ${vm.currentVersion}"),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 if (vm.updateStatus.isNotBlank()) {
@@ -234,7 +245,7 @@ fun SettingsScreen(vm: MainViewModel) {
                     OutlinedButton(
                         onClick = { vm.checkForUpdate() },
                         enabled = !vm.isCheckingUpdate && !vm.isDownloadingUpdate
-                    ) { Text(if (vm.isCheckingUpdate) "检查中…" else "检查更新") }
+                    ) { Text(if (vm.isCheckingUpdate) t("检查中…", "Checking...") else t("检查更新", "Check for updates")) }
 
                     val pending = vm.pendingUpdate
                     if (pending != null) {
@@ -245,7 +256,7 @@ fun SettingsScreen(vm: MainViewModel) {
                             Text(
                                 when {
                                     vm.isDownloadingUpdate -> "${vm.updateProgress}%"
-                                    else -> "一键升级到 ${pending.versionName}"
+                                    else -> t("一键升级到 ${pending.versionName}", "Update to ${pending.versionName}")
                                 }
                             )
                         }

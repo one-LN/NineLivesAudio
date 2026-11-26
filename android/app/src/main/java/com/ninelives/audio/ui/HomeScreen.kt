@@ -83,9 +83,9 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
             Spacer(modifier = Modifier.height(14.dp))
 
             if (!vm.isConnected) {
-                Text("请先在「设置」中连接 Audiobookshelf 服务器", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(t("请先在「设置」中连接 Audiobookshelf 服务器", "Connect your Audiobookshelf server in Settings first"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (lives.isEmpty()) {
-                Text("暂无在听书籍", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(t("暂无在听书籍", "Nothing in progress"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -123,7 +123,7 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                                 Text(
                                     text = buildAnnotatedString {
                                         withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) {
-                                            append("生命 ${toRoman(index + 1)}  ·  ${bookWeight(book.duration)}")
+                                            append(t("生命 ${toRoman(index + 1)}  ·  ${bookWeight(book.duration)}", "Life ${toRoman(index + 1)}  ·  ${bookWeight(book.duration)}"))
                                         }
                                         withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
                                             append("  ·  ${formatRelativeTime(book.lastUpdate)}")
@@ -188,14 +188,14 @@ private fun formatShortDuration(sec: Double): String {
 }
 
 private fun formatRelativeTime(lastUpdateMs: Long): String {
-    if (lastUpdateMs <= 0L) return "刚刚"
+    if (lastUpdateMs <= 0L) return t("刚刚", "just now")
     val diffSec = ((System.currentTimeMillis() - lastUpdateMs) / 1000L).coerceAtLeast(0L)
     return when {
-        diffSec < 60 -> "刚刚"
-        diffSec < 3600 -> "${diffSec / 60} 分钟前"
-        diffSec < 86400 -> "${diffSec / 3600} 小时前"
-        diffSec < 172800 -> "昨天"
-        diffSec < 604800 -> "${diffSec / 86400} 天前"
-        else -> "${diffSec / 604800} 周前"
+        diffSec < 60 -> t("刚刚", "just now")
+        diffSec < 3600 -> t("${diffSec / 60} 分钟前", "${diffSec / 60} min ago")
+        diffSec < 86400 -> t("${diffSec / 3600} 小时前", "${diffSec / 3600} h ago")
+        diffSec < 172800 -> t("昨天", "yesterday")
+        diffSec < 604800 -> t("${diffSec / 86400} 天前", "${diffSec / 86400} d ago")
+        else -> t("${diffSec / 604800} 周前", "${diffSec / 604800} w ago")
     }
 }

@@ -11,6 +11,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.util.concurrent.TimeUnit
+import com.ninelives.audio.ui.t
 
 data class AppUpdate(
     val versionName: String,
@@ -86,7 +87,7 @@ class UpdateChecker(private val context: Context) {
                     if (!response.isSuccessful) {
                         return@withContext Result.failure(Exception("HTTP ${response.code}"))
                     }
-                    val body = response.body ?: return@withContext Result.failure(Exception("下载内容为空"))
+                    val body = response.body ?: return@withContext Result.failure(Exception(t("下载内容为空", "Empty download")))
                     val total = body.contentLength()
                     var read = 0L
                     body.byteStream().use { input ->

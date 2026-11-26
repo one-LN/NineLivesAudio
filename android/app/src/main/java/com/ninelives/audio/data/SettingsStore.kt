@@ -42,6 +42,10 @@ class SettingsStore(context: Context) {
             .apply()
     }
 
+    fun getLanguage(): String = prefs.getString("app_language", "zh") ?: "zh"
+
+    fun setLanguage(code: String) = prefs.edit().putString("app_language", code).apply()
+
     fun getThemeMode(): String = prefs.getString("theme_mode", "system") ?: "system"
 
     fun setThemeMode(mode: String) = prefs.edit().putString("theme_mode", mode).apply()

@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArraySet
+import com.ninelives.audio.ui.t
 
 class DownloadManager(context: Context, private val api: AbsApiClient, private val store: DownloadStore) {
     private val appContext = context.applicationContext
@@ -73,7 +74,7 @@ class DownloadManager(context: Context, private val api: AbsApiClient, private v
                         store.putTask(saved.copy(state = "queued"))
                         runTask(saved.key)
                     } else {
-                        store.putTask(saved.copy(state = "failed", error = "请重新登录此服务器后继续下载"))
+                        store.putTask(saved.copy(state = "failed", error = t("请重新登录此服务器后继续下载", "Sign in to this server again to continue")))
                     }
                 }
                 "failed", "paused" -> if (token != null) activeTokens[saved.key] = token
@@ -115,7 +116,7 @@ class DownloadManager(context: Context, private val api: AbsApiClient, private v
         if (jobs[key]?.isActive == true) return
         val task = store.queue().firstOrNull { it.key == key } ?: return
         if (activeTokens[key].isNullOrBlank()) {
-            store.putTask(task.copy(state = "failed", error = "请重新连接服务器后重新下载"))
+            store.putTask(task.copy(state = "failed", error = t("请重新连接服务器后重新下载", "Reconnect to the server and retry")))
             notifyObservers()
             return
         }
@@ -135,7 +136,7 @@ class DownloadManager(context: Context, private val api: AbsApiClient, private v
         var task = store.queue().firstOrNull { it.key == key } ?: return
         val token = activeTokens[key] ?: return
         if (wifiOnly && !isOnWifi()) {
-            store.putTask(task.copy(state = "waiting_wifi", error = "等待 Wi-Fi 网络"))
+            store.putTask(task.copy(state = "waiting_wifi", error = t("等待 Wi-Fi 网络", "Waiting for Wi-Fi")))
             notifyObservers()
             return
         }
@@ -157,8 +158,8 @@ class DownloadManager(context: Context, private val api: AbsApiClient, private v
             )
             val loadedManifest = manifestResult.getOrNull()
             if (loadedManifest == null) {
-                val error = manifestResult.exceptionOrNull() ?: Exception("无法获取音频文件信息")
-                store.putTask(task.copy(state = "failed", error = error.message ?: "无法获取音频文件信息"))
+                val error = manifestResult.exceptionOrNull() ?: Exception(t("无法获取音频文件信息", "Cannot read audio file info"))
+                store.putTask(task.copy(state = "failed", error = error.message ?: t("无法获取音频文件信息", "Cannot read audio file info")))
                 notifyObservers()
                 return
             }
@@ -212,10 +213,10 @@ class DownloadManager(context: Context, private val api: AbsApiClient, private v
                     }
                     val fileSize = result.getOrNull()
                     if (fileSize == null) {
-                        val error = result.exceptionOrNull() ?: Exception("下载失败")
-                        if (!jobs[key]?.isActive.orFalse()) throw CancellationException("下载已暂停或取消")
+                        val error = result.exceptionOrNull() ?: Exception(t("下载失败", "Download failed"))
+                        if (!jobs[key]?.isActive.orFalse()) throw CancellationException(t("下载已暂停或取消", "Download paused or cancelled"))
                         if (++attempts >= 3) {
-                            store.putTask(currentTask.copy(state = "failed", retryCount = attempts, error = error.message ?: "下载失败"))
+                            store.putTask(currentTask.copy(state = "failed", retryCount = attempts, error = error.message ?: t("下载失败", "Download failed")))
                             notifyObservers()
                             return
                         }
@@ -223,7 +224,7 @@ class DownloadManager(context: Context, private val api: AbsApiClient, private v
                         continue
                     }
                     if (file.size > 0L && fileSize != file.size) {
-                        store.putTask(currentTask.copy(state = "failed", error = "${file.filename} 大小校验失败"))
+                        store.putTask(currentTask.copy(state = "failed", error = t("${file.filename} 大小校验失败", "${file.filename} size check failed")))
                         notifyObservers()
                         return
                     }
@@ -268,7 +269,7 @@ class DownloadManager(context: Context, private val api: AbsApiClient, private v
             throw cancelled
         } catch (error: Exception) {
             val latest = store.queue().firstOrNull { it.key == key } ?: currentTask
-            store.putTask(latest.copy(state = "failed", error = error.message ?: "下载失败"))
+            store.putTask(latest.copy(state = "failed", error = error.message ?: t("下载失败", "Download failed")))
             notifyObservers()
         }
     }

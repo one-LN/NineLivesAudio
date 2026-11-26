@@ -19,6 +19,9 @@ REQUIRED = [
     "app/src/main/java/com/ninelives/audio/data/DownloadManager.kt",
     "app/src/main/java/com/ninelives/audio/data/LibraryCache.kt",
     "app/src/main/java/com/ninelives/audio/data/UpdateChecker.kt",
+    "app/src/main/java/com/ninelives/audio/data/ListenLog.kt",
+    "app/src/main/java/com/ninelives/audio/data/BookmarkStore.kt",
+    "app/src/main/java/com/ninelives/audio/ui/Strings.kt",
     "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt",
     "app/src/main/java/com/ninelives/audio/ui/HomeScreen.kt",
     "app/src/main/java/com/ninelives/audio/ui/LibraryScreen.kt",
@@ -120,6 +123,27 @@ if player_screen.is_file():
         ("vm.addBookmarkAtCurrent", "Player must let the listener bookmark the current position"),
         ("vm.jumpToBookmark", "Bookmarks must be jumpable"),
         ("vm.deleteBookmark", "Bookmarks must be deletable from the player"),
+    ):
+        if snippet not in text:
+            problems.append(message)
+library_screen = ANDROID / "app/src/main/java/com/ninelives/audio/ui/LibraryScreen.kt"
+if library_screen.is_file():
+    text = library_screen.read_text(encoding="utf-8")
+    for snippet, message in (
+        ("FilterChip(", "Library must expose status filter chips"),
+        ("vm.selectLibrary(", "Library title must switch between libraries"),
+    ):
+        if snippet not in text:
+            problems.append(message)
+stats_screen = ANDROID / "app/src/main/java/com/ninelives/audio/ui/StatsScreen.kt"
+if stats_screen.is_file() and "vm.listenWeek" not in stats_screen.read_text(encoding="utf-8"):
+    problems.append("Stats screen must render the 7-day listening chart")
+strings = ANDROID / "app/src/main/java/com/ninelives/audio/ui/Strings.kt"
+if strings.is_file():
+    text = strings.read_text(encoding="utf-8")
+    for snippet, message in (
+        ("fun t(", "Missing translation helper"),
+        ('mutableStateOf("zh")', "Language state must be observable"),
     ):
         if snippet not in text:
             problems.append(message)

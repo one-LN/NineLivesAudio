@@ -13,6 +13,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import com.ninelives.audio.ui.t
 
 class AbsApiClient {
     private val client = OkHttpClient.Builder()
@@ -173,10 +174,10 @@ class AbsApiClient {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext Result.failure(Exception("HTTP ${response.code}"))
                 val root = JsonParser.parseString(response.body?.string().orEmpty()).asJsonObject
-                val media = root.getAsJsonObject("media") ?: return@withContext Result.failure(Exception("缺少媒体信息"))
+                val media = root.getAsJsonObject("media") ?: return@withContext Result.failure(Exception(t("缺少媒体信息", "Missing media info")))
                 val metadata = media.getAsJsonObject("metadata")
                 val files = media.getAsJsonArray("audioFiles")
-                    ?: return@withContext Result.failure(Exception("没有可下载的音频"))
+                    ?: return@withContext Result.failure(Exception(t("没有可下载的音频", "No downloadable audio")))
                 val audioFiles = files.mapNotNull { element ->
                     val file = element.asJsonObject
                     val ino = file.get("ino")?.takeIf { !it.isJsonNull }?.asString.orEmpty()
@@ -191,12 +192,12 @@ class AbsApiClient {
                         size = fm?.get("size")?.takeIf { !it.isJsonNull }?.asLong ?: 0L
                     )
                 }.sortedBy { it.index }
-                if (audioFiles.isEmpty()) return@withContext Result.failure(Exception("未找到音频文件"))
+                if (audioFiles.isEmpty()) return@withContext Result.failure(Exception(t("未找到音频文件", "Audio file not found")))
                 val chapters = media.getAsJsonArray("chapters")?.map { element ->
                     val chapter = element.asJsonObject
                     ChapterInfo(
                         id = chapter.get("id")?.takeIf { !it.isJsonNull }?.asInt ?: 0,
-                        title = chapter.get("title")?.takeIf { !it.isJsonNull }?.asString ?: "章节",
+                        title = chapter.get("title")?.takeIf { !it.isJsonNull }?.asString ?: t("章节", "Chapter"),
                         start = chapter.get("start")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0,
                         end = chapter.get("end")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
                     )
@@ -233,7 +234,7 @@ class AbsApiClient {
             while (true) {
                 val length = fetchAudioFile(serverUrl, token, itemId, fileIno, destination, offset, onProgress)
                 if (length >= 0L) return@withContext Result.success(length)
-                if (++restarts > 2) return@withContext Result.failure(Exception("服务器不支持断点续传"))
+                if (++restarts > 2) return@withContext Result.failure(Exception(t("服务器不支持断点续传", "Server does not support resuming")))
                 offset = 0L
             }
             @Suppress("UNREACHABLE_CODE")
@@ -273,9 +274,9 @@ class AbsApiClient {
                     if (response.code != 206) throw Exception("HTTP ${response.code}")
                     val start = response.header("Content-Range")
                         ?.substringAfter("bytes ")?.substringBefore('-')?.toLongOrNull()
-                    if (start != resumeOffset) throw Exception("断点响应位置不匹配")
+                    if (start != resumeOffset) throw Exception(t("断点响应位置不匹配", "Resume offset mismatch"))
                 }
-                val body = response.body ?: throw Exception("服务器返回空文件")
+                val body = response.body ?: throw Exception(t("服务器返回空文件", "Server returned an empty file"))
                 val writeOffset = if (response.code == 206) resumeOffset else 0L
                 RandomAccessFile(destination, "rw").use { output ->
                     output.seek(writeOffset)
@@ -385,7 +386,7 @@ class AbsApiClient {
                                 Bookmark(
                                     id = obj.get("id")?.asString ?: "",
                                     itemId = owner,
-                                    title = obj.get("title")?.asString ?: "书签",
+                                    title = obj.get("title")?.asString ?: t("书签", "Bookmark"),
                                     time = obj.get("time")?.asDouble ?: 0.0,
                                     createdAt = obj.get("createdAt")?.asLong ?: 0L
                                 )

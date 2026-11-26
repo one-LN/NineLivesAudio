@@ -81,10 +81,10 @@ fun PlayerScreen(vm: MainViewModel) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("尚未选择有声书", style = MaterialTheme.typography.titleMedium)
+            Text(t("尚未选择有声书", "No audiobook selected"), style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "请在「九命」或「书库」中点击任意一本书开始收听。",
+                t("请在「九命」或「书库」中点击任意一本书开始收听。", "Tap any book in NineLives or Library to start listening."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -134,7 +134,7 @@ fun PlayerScreen(vm: MainViewModel) {
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "第 ${trackIdx + 1} 轨 / 共 ${sess.tracks.size} 轨",
+            text = t("第 ${trackIdx + 1} 轨 / 共 ${sess.tracks.size} 轨", "Track ${trackIdx + 1} / ${sess.tracks.size}"),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -147,7 +147,7 @@ fun PlayerScreen(vm: MainViewModel) {
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "开始 ${formatTime(currentChapter.start)} · 结束 ${formatTime(currentChapter.end)}",
+                text = t("开始 ${formatTime(currentChapter.start)} · 结束 ${formatTime(currentChapter.end)}", "Start ${formatTime(currentChapter.start)} · End ${formatTime(currentChapter.end)}"),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -239,7 +239,7 @@ fun PlayerScreen(vm: MainViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("全书", style = MaterialTheme.typography.labelMedium)
+                Text(t("全书", "Whole book"), style = MaterialTheme.typography.labelMedium)
                 Switch(
                     checked = showChapterMode,
                     onCheckedChange = { showChapterMode = it },
@@ -249,7 +249,7 @@ fun PlayerScreen(vm: MainViewModel) {
                     ),
                     modifier = Modifier.scale(0.72f)
                 )
-                Text("章节", style = MaterialTheme.typography.labelMedium)
+                Text(t("章节", "Chapter"), style = MaterialTheme.typography.labelMedium)
             }
         }
 
@@ -272,7 +272,7 @@ fun PlayerScreen(vm: MainViewModel) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         Icons.Outlined.SkipPrevious,
-                        contentDescription = "上一章",
+                        contentDescription = t("上一章", "Previous chapter"),
                         tint = if (currentChapterIdx > 0) Color.White else Color.Gray,
                         modifier = Modifier.size(22.dp)
                     )
@@ -353,7 +353,7 @@ fun PlayerScreen(vm: MainViewModel) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         Icons.Outlined.SkipNext,
-                        contentDescription = "下一章",
+                        contentDescription = t("下一章", "Next chapter"),
                         tint = if (currentChapterIdx >= 0 && currentChapterIdx + 1 < sess.chapters.size) Color.White else Color.Gray,
                         modifier = Modifier.size(22.dp)
                     )
@@ -376,7 +376,7 @@ fun PlayerScreen(vm: MainViewModel) {
                 IconButton(onClick = { showSpeedMenu = true }) {
                     Icon(
                         Icons.Outlined.PlayCircle,
-                        contentDescription = "倍速 ${vm.playbackSpeed}x",
+                        contentDescription = t("倍速 ${vm.playbackSpeed}x", "Speed ${vm.playbackSpeed}x"),
                         tint = if (vm.playbackSpeed != 1.0f) Color(0xFF4FC3F7) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -402,7 +402,7 @@ fun PlayerScreen(vm: MainViewModel) {
                     val sleepActive = vm.sleepEndOfChapter || vm.sleepRemainingSec > 0
                     Icon(
                         Icons.Outlined.Timer,
-                        contentDescription = "睡眠定时",
+                        contentDescription = t("睡眠定时", "Sleep timer"),
                         tint = if (sleepActive) Color(0xFF4FC3F7) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -411,21 +411,21 @@ fun PlayerScreen(vm: MainViewModel) {
                     onDismissRequest = { showSleepMenu = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text(if (vm.sleepEndOfChapter) "✓  播完本章再停" else "    播完本章再停") },
+                        text = { Text(if (vm.sleepEndOfChapter) t("✓  播完本章再停", "✓  Stop after this chapter") else t("    播完本章再停", "    Stop after this chapter")) },
                         onClick = {
                             if (!vm.sleepEndOfChapter) vm.toggleSleepEndOfChapter()
                             showSleepMenu = false
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(if (!vm.sleepEndOfChapter && vm.sleepTimerMinutes == 0) "✓  关闭" else "    关闭") },
+                        text = { Text(if (!vm.sleepEndOfChapter && vm.sleepTimerMinutes == 0) t("✓  关闭", "✓  Off") else t("    关闭", "    Off")) },
                         onClick = {
                             if (vm.sleepEndOfChapter) vm.toggleSleepEndOfChapter()
                             vm.setSleepTimer(0)
                             showSleepMenu = false
                         }
                     )
-                    listOf(5 to "5 分钟", 10 to "10 分钟", 15 to "15 分钟", 30 to "30 分钟", 45 to "45 分钟", 60 to "1 小时", 90 to "1.5 小时", 120 to "2 小时").forEach { (min, label) ->
+                    listOf(5 to t("5 分钟", "5 min"), 10 to t("10 分钟", "10 min"), 15 to t("15 分钟", "15 min"), 30 to t("30 分钟", "30 min"), 45 to t("45 分钟", "45 min"), 60 to t("1 小时", "1 hour"), 90 to t("1.5 小时", "1.5 hours"), 120 to t("2 小时", "2 hours")).forEach { (min, label) ->
                         DropdownMenuItem(
                             text = { Text(if (!vm.sleepEndOfChapter && vm.sleepTimerMinutes == min) "✓  $label" else "    $label") },
                             onClick = {
@@ -441,7 +441,7 @@ fun PlayerScreen(vm: MainViewModel) {
                 val skipActive = vm.currentIntroSec > 0 || vm.currentOutroSec > 0
                 Icon(
                     Icons.Outlined.ContentCut,
-                    contentDescription = "跳过片头片尾",
+                    contentDescription = t("跳过片头片尾", "Skip intro/outro"),
                     tint = if (skipActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -451,7 +451,7 @@ fun PlayerScreen(vm: MainViewModel) {
             }) {
                 Icon(
                     Icons.Outlined.BookmarkBorder,
-                    contentDescription = "书签",
+                    contentDescription = t("书签", "Bookmark"),
                     tint = if (vm.bookmarks.isNotEmpty()) Color(0xFF4FC3F7) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -459,7 +459,7 @@ fun PlayerScreen(vm: MainViewModel) {
                 IconButton(onClick = { showChaptersDialog = true }) {
                     Icon(
                         Icons.Outlined.FormatListBulleted,
-                        contentDescription = "章节列表",
+                        contentDescription = t("章节列表", "Chapters"),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -469,7 +469,7 @@ fun PlayerScreen(vm: MainViewModel) {
         if (showBookmarksDialog) {
             AlertDialog(
                 onDismissRequest = { showBookmarksDialog = false },
-                title = { Text("书签") },
+                title = { Text(t("书签", "Bookmark")) },
                 text = {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         if (vm.bookmarkStatus.isNotBlank()) {
@@ -481,13 +481,13 @@ fun PlayerScreen(vm: MainViewModel) {
                             Spacer(modifier = Modifier.height(6.dp))
                         }
                         Text(
-                            "当前位置 ${formatTime(vm.currentAbsolutePosition())}",
+                            t("当前位置 ${formatTime(vm.currentAbsolutePosition())}", "At ${formatTime(vm.currentAbsolutePosition())}"),
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         if (vm.bookmarks.isEmpty()) {
                             Text(
-                                "还没有书签。点下方按钮记录当前进度，之后可从列表一键跳回。",
+                                t("还没有书签。点下方按钮记录当前进度，之后可从列表一键跳回。", "No bookmarks yet. Tap below to save your place and jump back anytime."),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -521,7 +521,7 @@ fun PlayerScreen(vm: MainViewModel) {
                                         IconButton(onClick = { vm.deleteBookmark(bm) }) {
                                             Icon(
                                                 Icons.Outlined.Delete,
-                                                contentDescription = "删除书签",
+                                                contentDescription = t("删除书签", "Delete bookmark"),
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.size(20.dp)
                                             )
@@ -534,11 +534,11 @@ fun PlayerScreen(vm: MainViewModel) {
                 },
                 confirmButton = {
                     Button(onClick = { vm.addBookmarkAtCurrent() }) {
-                        Text("添加当前进度")
+                        Text(t("添加当前进度", "Bookmark this position"))
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showBookmarksDialog = false }) { Text("关闭") }
+                    TextButton(onClick = { showBookmarksDialog = false }) { Text(t("关闭", "Close")) }
                 }
             )
         }
@@ -546,7 +546,7 @@ fun PlayerScreen(vm: MainViewModel) {
         if (showChaptersDialog) {
             AlertDialog(
                 onDismissRequest = { showChaptersDialog = false },
-                title = { Text("章节列表") },
+                title = { Text(t("章节列表", "Chapters")) },
                 text = {
                     LazyColumn(modifier = Modifier.height(340.dp)) {
                         itemsIndexed(sess.chapters) { _, ch ->
@@ -579,7 +579,7 @@ fun PlayerScreen(vm: MainViewModel) {
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showChaptersDialog = false }) { Text("关闭") }
+                    TextButton(onClick = { showChaptersDialog = false }) { Text(t("关闭", "Close")) }
                 }
             )
         }
@@ -589,19 +589,19 @@ fun PlayerScreen(vm: MainViewModel) {
             var outroText by remember { mutableStateOf(vm.currentOutroSec.toString()) }
             AlertDialog(
                 onDismissRequest = { showSkipDialog = false },
-                title = { Text("本书跳过片头 / 片尾") },
+                title = { Text(t("本书跳过片头 / 片尾", "Skip intro / outro for this book")) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
                             value = introText,
                             onValueChange = { introText = it.filter { c -> c.isDigit() } },
-                            label = { Text("跳过片头（秒）") },
+                            label = { Text(t("跳过片头（秒）", "Skip intro (sec)")) },
                             singleLine = true
                         )
                         OutlinedTextField(
                             value = outroText,
                             onValueChange = { outroText = it.filter { c -> c.isDigit() } },
-                            label = { Text("跳过片尾（秒）") },
+                            label = { Text(t("跳过片尾（秒）", "Skip outro (sec)")) },
                             singleLine = true
                         )
                     }
@@ -610,10 +610,10 @@ fun PlayerScreen(vm: MainViewModel) {
                     TextButton(onClick = {
                         vm.updateBookSkip(introText.toIntOrNull() ?: 0, outroText.toIntOrNull() ?: 0)
                         showSkipDialog = false
-                    }) { Text("保存") }
+                    }) { Text(t("保存", "Save")) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showSkipDialog = false }) { Text("取消") }
+                    TextButton(onClick = { showSkipDialog = false }) { Text(t("取消", "Cancel")) }
                 }
             )
         }

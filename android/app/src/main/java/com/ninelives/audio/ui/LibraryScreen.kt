@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -69,7 +70,8 @@ import com.ninelives.audio.data.BookItem
 fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
     var query by remember { mutableStateOf("") }
     var filterMode by remember { mutableStateOf(0) } // 0=全部, 1=在听, 2=未开始, 3=已完成
-    var sortMode by remember { mutableStateOf(0) }   // 0=书名, 1=最近收听, 2=时长
+    var sortMode by remember { mutableStateOf(0) }   // 0=书名, 1=最近收听, 2=时长, 3=作者
+    var sortMenuExpanded by remember { mutableStateOf(false) }
     var libMenuExpanded by remember { mutableStateOf(false) }
 
     val filtered = remember(vm.books, query, filterMode, sortMode) {
@@ -85,6 +87,7 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
         when (sortMode) {
             1 -> byStatus.sortedByDescending { it.lastUpdate }
             2 -> byStatus.sortedByDescending { it.duration }
+            3 -> byStatus.sortedBy { it.author }
             else -> byStatus.sortedBy { it.title }
         }
     }
@@ -101,25 +104,56 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = vm.selectedLibrary?.name ?: "书库",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+            Box {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { libMenuExpanded = true }
+                ) {
+                    Text(
+                        text = vm.selectedLibrary?.name ?: t("书库", "Library"),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Icon(
+                        Icons.Default.ArrowDropDown,
+                        contentDescription = t("切换书库", "Switch library"),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                DropdownMenu(
+                    expanded = libMenuExpanded,
+                    onDismissRequest = { libMenuExpanded = false }
+                ) {
+                    vm.libraries.forEach { lib ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    (if (lib.id == vm.selectedLibrary?.id) "✓  " else "    ") + lib.name
+                                )
+                            },
+                            onClick = {
+                                vm.selectLibrary(lib)
+                                libMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
             IconButton(onClick = { vm.refreshAll() }) {
-                Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                Icon(Icons.Default.Refresh, contentDescription = t("刷新", "Refresh"))
             }
         }
 
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            placeholder = { Text("搜索书籍...", style = MaterialTheme.typography.bodySmall) },
+            placeholder = { Text(t("搜索书籍...", "Search books..."), style = MaterialTheme.typography.bodySmall) },
             singleLine = true,
             trailingIcon = {
                 Icon(
                     Icons.Outlined.Search,
-                    contentDescription = "搜索",
+                    contentDescription = t("搜索", "Search"),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
@@ -135,7 +169,57 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                 .fillMaxWidth()
                 .height(44.dp)
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            listOf(
+                0 to t("全部", "All"),
+                1 to t("在听", "In progress"),
+                2 to t("未开始", "Unstarted"),
+                3 to t("已完成", "Finished")
+            ).forEach { (mode, label) ->
+                FilterChip(
+                    selected = filterMode == mode,
+                    onClick = { filterMode = mode },
+                    label = { Text(label, style = MaterialTheme.typography.labelMedium) }
+                )
+            }
+            Box {
+                TextButton(onClick = { sortMenuExpanded = true }) {
+                    val sortLabel = listOf(
+                        t("按书名", "Title"),
+                        t("最近收听", "Recently played"),
+                        t("按时长", "Duration"),
+                        t("按作者", "Author")
+                    )[sortMode]
+                    Text(sortLabel + "  ▾", style = MaterialTheme.typography.labelMedium)
+                }
+                DropdownMenu(
+                    expanded = sortMenuExpanded,
+                    onDismissRequest = { sortMenuExpanded = false }
+                ) {
+                    listOf(
+                        0 to t("按书名", "Title"),
+                        1 to t("最近收听", "Recently played"),
+                        2 to t("按时长", "Duration"),
+                        3 to t("按作者", "Author")
+                    ).forEach { (mode, label) ->
+                        DropdownMenuItem(
+                            text = { Text((if (sortMode == mode) "✓  " else "    ") + label) },
+                            onClick = {
+                                sortMode = mode
+                                sortMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
 
         if (vm.isSyncing && vm.books.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -209,7 +293,7 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                             )
                             if (book.isDownloaded) {
                                 Text(
-                                    text = "离线",
+                                    text = t("离线", "Offline"),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -240,20 +324,20 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (book.author.isNotBlank()) {
-                        Text("作者：${book.author}", style = MaterialTheme.typography.bodySmall)
+                        Text(t("作者：${book.author}", "Author: ${book.author}"), style = MaterialTheme.typography.bodySmall)
                     }
                     if (book.narrator.isNotBlank()) {
-                        Text("演播：${book.narrator}", style = MaterialTheme.typography.bodySmall)
+                        Text(t("演播：${book.narrator}", "Narrator: ${book.narrator}"), style = MaterialTheme.typography.bodySmall)
                     }
                     if (book.hasProgress) {
                         Text(
-                            "当前进度：${book.progressPercent}%",
+                            t("当前进度：${book.progressPercent}%", "Progress: ${book.progressPercent}%"),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
                     Text(
-                        text = book.description.ifBlank { "暂无简介" },
+                        text = book.description.ifBlank { t("暂无简介", "No description") },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -265,13 +349,13 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                     selectedBook = null
                     onBookClick(b)
                 }) {
-                    Text(if (book.hasProgress) "继续收听" else "开始播放")
+                    Text(if (book.hasProgress) t("继续收听", "Continue") else t("开始播放", "Play"))
                 }
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { selectedBook = null }) {
-                        Text("关闭")
+                        Text(t("关闭", "Close"))
                     }
                     TextButton(
                         onClick = {
@@ -280,7 +364,7 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                         },
                         enabled = !book.isDownloaded
                     ) {
-                        Text(if (book.isDownloaded) "已离线" else "下载离线")
+                        Text(if (book.isDownloaded) t("已离线", "Downloaded") else t("下载离线", "Download"))
                     }
                 }
             }
