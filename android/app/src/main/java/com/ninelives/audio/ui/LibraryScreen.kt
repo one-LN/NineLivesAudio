@@ -174,7 +174,7 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
             },
             shape = RoundedCornerShape(8.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFF4FC3F7),
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
                 unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
                 focusedContainerColor = MaterialTheme.colorScheme.surface,
                 unfocusedContainerColor = MaterialTheme.colorScheme.surface

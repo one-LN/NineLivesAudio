@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -44,6 +45,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -72,6 +74,7 @@ import coil.compose.AsyncImage
 
 @Composable
 fun PlayerScreen(vm: MainViewModel) {
+    val cs = MaterialTheme.colorScheme
     val sess = vm.currentSession
     if (sess == null) {
         Column(
@@ -201,26 +204,26 @@ fun PlayerScreen(vm: MainViewModel) {
                 val trackTop = cy - trackH / 2f
                 val activeW = size.width * sliderVal
                 drawRoundRect(
-                    color = Color(0xFF3A3F4B),
+                    color = cs.outline,
                     topLeft = Offset(0f, trackTop),
                     size = Size(size.width, trackH),
                     cornerRadius = CornerRadius(trackH / 2f)
                 )
                 if (activeW > 0f) {
                     drawRoundRect(
-                        color = Color(0xFF4FC3F7),
+                        color = cs.primary,
                         topLeft = Offset(0f, trackTop),
                         size = Size(activeW, trackH),
                         cornerRadius = CornerRadius(trackH / 2f)
                     )
                 }
                 drawCircle(
-                    color = Color(0xFF232730),
+                    color = cs.surfaceContainerHighest,
                     radius = 7.dp.toPx(),
                     center = Offset(activeW.coerceIn(7.dp.toPx(), size.width - 7.dp.toPx()), cy)
                 )
                 drawCircle(
-                    color = Color(0xFF4FC3F7),
+                    color = cs.primary,
                     radius = 4.dp.toPx(),
                     center = Offset(activeW.coerceIn(7.dp.toPx(), size.width - 7.dp.toPx()), cy)
                 )
@@ -244,8 +247,8 @@ fun PlayerScreen(vm: MainViewModel) {
                     checked = showChapterMode,
                     onCheckedChange = { showChapterMode = it },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.Black,
-                        checkedTrackColor = Color(0xFF4FC3F7)
+                        checkedThumbColor = cs.onPrimary,
+                        checkedTrackColor = cs.primary
                     ),
                     modifier = Modifier.scale(0.72f)
                 )
@@ -261,7 +264,7 @@ fun PlayerScreen(vm: MainViewModel) {
         ) {
             Surface(
                 shape = CircleShape,
-                color = Color(0xFF1A1F2B),
+                color = cs.surfaceContainerHigh,
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
@@ -273,21 +276,21 @@ fun PlayerScreen(vm: MainViewModel) {
                     Icon(
                         Icons.Outlined.SkipPrevious,
                         contentDescription = t("上一章", "Previous chapter"),
-                        tint = if (currentChapterIdx > 0) Color.White else Color.Gray,
+                        tint = if (currentChapterIdx > 0) cs.onSurface else cs.onSurfaceVariant.copy(alpha = 0.4f),
                         modifier = Modifier.size(22.dp)
                     )
                 }
             }
             Surface(
                 shape = RoundedCornerShape(22.dp),
-                color = Color(0xFF1A1F2B),
+                color = cs.surfaceContainerHigh,
                 modifier = Modifier
                     .clip(RoundedCornerShape(22.dp))
                     .clickable { vm.skipBy(-10.0) }
             ) {
                 Text(
                     "-10s",
-                    color = Color.White,
+                    color = cs.onSurface,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
@@ -297,8 +300,8 @@ fun PlayerScreen(vm: MainViewModel) {
                 onClick = { vm.togglePlayPause() },
                 shape = CircleShape,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFD4AF37),
-                    contentColor = Color.Black
+                    containerColor = cs.primary,
+                    contentColor = cs.onPrimary
                 ),
                 modifier = Modifier.size(64.dp),
                 contentPadding = PaddingValues(0.dp)
@@ -308,8 +311,8 @@ fun PlayerScreen(vm: MainViewModel) {
                     val h = size.height
                     if (vm.isPlaying) {
                         val strokeW = 2.5.dp.toPx()
-                        drawLine(Color.Black, Offset(w * 0.30f, h * 0.15f), Offset(w * 0.30f, h * 0.85f), strokeWidth = strokeW)
-                        drawLine(Color.Black, Offset(w * 0.70f, h * 0.15f), Offset(w * 0.70f, h * 0.85f), strokeWidth = strokeW)
+                        drawLine(cs.onPrimary, Offset(w * 0.30f, h * 0.15f), Offset(w * 0.30f, h * 0.85f), strokeWidth = strokeW)
+                        drawLine(cs.onPrimary, Offset(w * 0.70f, h * 0.15f), Offset(w * 0.70f, h * 0.85f), strokeWidth = strokeW)
                     } else {
                         val path = Path().apply {
                             moveTo(w * 0.22f, h * 0.12f)
@@ -319,7 +322,7 @@ fun PlayerScreen(vm: MainViewModel) {
                         }
                         drawPath(
                             path = path,
-                            color = Color.Black,
+                            color = cs.onPrimary,
                             style = Stroke(width = 2.2.dp.toPx(), join = StrokeJoin.Round)
                         )
                     }
@@ -327,14 +330,14 @@ fun PlayerScreen(vm: MainViewModel) {
             }
             Surface(
                 shape = RoundedCornerShape(22.dp),
-                color = Color(0xFF1A1F2B),
+                color = cs.surfaceContainerHigh,
                 modifier = Modifier
                     .clip(RoundedCornerShape(22.dp))
                     .clickable { vm.skipBy(30.0) }
             ) {
                 Text(
                     "+30s",
-                    color = Color.White,
+                    color = cs.onSurface,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
@@ -342,7 +345,7 @@ fun PlayerScreen(vm: MainViewModel) {
             }
             Surface(
                 shape = CircleShape,
-                color = Color(0xFF1A1F2B),
+                color = cs.surfaceContainerHigh,
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
@@ -354,7 +357,7 @@ fun PlayerScreen(vm: MainViewModel) {
                     Icon(
                         Icons.Outlined.SkipNext,
                         contentDescription = t("下一章", "Next chapter"),
-                        tint = if (currentChapterIdx >= 0 && currentChapterIdx + 1 < sess.chapters.size) Color.White else Color.Gray,
+                        tint = if (currentChapterIdx >= 0 && currentChapterIdx + 1 < sess.chapters.size) cs.onSurface else cs.onSurfaceVariant.copy(alpha = 0.4f),
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -368,27 +371,22 @@ fun PlayerScreen(vm: MainViewModel) {
         Spacer(modifier = Modifier.height(14.dp))
         var showSpeedMenu by remember { mutableStateOf(false) }
         var showSleepMenu by remember { mutableStateOf(false) }
+        var showVolumeMenu by remember { mutableStateOf(false) }
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.Top
         ) {
             Box {
-                IconButton(onClick = { showSpeedMenu = true }) {
-                    Icon(
-                        Icons.Outlined.Speed,
-                        contentDescription = t("倍速 ${vm.playbackSpeed}x", "Speed ${vm.playbackSpeed}x"),
-                        tint = if (vm.playbackSpeed != 1.0f) Color(0xFF4FC3F7) else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                DropdownMenu(
-                    expanded = showSpeedMenu,
-                    onDismissRequest = { showSpeedMenu = false }
-                ) {
+                ActionButton(
+                    kind = "speed",
+                    label = t("倍速", "Speed"),
+                    active = vm.playbackSpeed != 1.0f
+                ) { showSpeedMenu = true }
+                DropdownMenu(expanded = showSpeedMenu, onDismissRequest = { showSpeedMenu = false }) {
                     listOf(0.5f, 0.8f, 1.0f, 1.3f, 1.5f, 1.8f, 2.0f, 2.5f, 3.0f).forEach { spd ->
                         DropdownMenuItem(
-                            text = {
-                                Text(if (vm.playbackSpeed == spd) "✓  ${spd}x" else "    ${spd}x")
-                            },
+                            text = { Text(if (vm.playbackSpeed == spd) "✓  ${spd}x" else "    ${spd}x") },
                             onClick = {
                                 vm.changeSpeed(spd)
                                 showSpeedMenu = false
@@ -398,18 +396,9 @@ fun PlayerScreen(vm: MainViewModel) {
                 }
             }
             Box {
-                IconButton(onClick = { showSleepMenu = true }) {
-                    val sleepActive = vm.sleepEndOfChapter || vm.sleepRemainingSec > 0
-                    Icon(
-                        Icons.Outlined.Timer,
-                        contentDescription = t("睡眠定时", "Sleep timer"),
-                        tint = if (sleepActive) Color(0xFF4FC3F7) else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                DropdownMenu(
-                    expanded = showSleepMenu,
-                    onDismissRequest = { showSleepMenu = false }
-                ) {
+                val sleepActive = vm.sleepEndOfChapter || vm.sleepRemainingSec > 0
+                ActionButton("sleep", t("睡眠", "Sleep"), sleepActive) { showSleepMenu = true }
+                DropdownMenu(expanded = showSleepMenu, onDismissRequest = { showSleepMenu = false }) {
                     DropdownMenuItem(
                         text = { Text(if (vm.sleepEndOfChapter) t("✓  播完本章再停", "✓  Stop after this chapter") else t("    播完本章再停", "    Stop after this chapter")) },
                         onClick = {
@@ -437,32 +426,29 @@ fun PlayerScreen(vm: MainViewModel) {
                     }
                 }
             }
-            IconButton(onClick = { showSkipDialog = true }) {
-                val skipActive = vm.currentIntroSec > 0 || vm.currentOutroSec > 0
-                Icon(
-                    Icons.Outlined.ContentCut,
-                    contentDescription = t("跳过片头片尾", "Skip intro/outro"),
-                    tint = if (skipActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Box {
+                ActionButton("volume", t("音量", "Volume"), vm.volume < 0.99f) { showVolumeMenu = true }
+                DropdownMenu(expanded = showVolumeMenu, onDismissRequest = { showVolumeMenu = false }) {
+                    Column(modifier = Modifier.padding(horizontal = 12.dp).width(200.dp)) {
+                        Text(
+                            t("音量 ${(vm.volume * 100).toInt()}%", "Volume ${(vm.volume * 100).toInt()}%"),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Slider(value = vm.volume, onValueChange = { vm.setVolume(it) })
+                    }
+                }
             }
-            IconButton(onClick = {
+            ActionButton(
+                kind = "cut",
+                label = t("跳过", "Skip"),
+                active = vm.currentIntroSec > 0 || vm.currentOutroSec > 0
+            ) { showSkipDialog = true }
+            if (sess.chapters.isNotEmpty()) {
+                ActionButton("chapters", t("章节", "Chapters"), false) { showChaptersDialog = true }
+            }
+            ActionButton("bookmark", t("书签", "Bookmarks"), vm.bookmarks.isNotEmpty()) {
                 vm.loadBookmarks()
                 showBookmarksDialog = true
-            }) {
-                Icon(
-                    Icons.Outlined.BookmarkBorder,
-                    contentDescription = t("书签", "Bookmark"),
-                    tint = if (vm.bookmarks.isNotEmpty()) Color(0xFF4FC3F7) else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (sess.chapters.isNotEmpty()) {
-                IconButton(onClick = { showChaptersDialog = true }) {
-                    Icon(
-                        Icons.Outlined.FormatListBulleted,
-                        contentDescription = t("章节列表", "Chapters"),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
         }
 
@@ -515,7 +501,7 @@ fun PlayerScreen(vm: MainViewModel) {
                                             Text(
                                                 formatTime(bm.time),
                                                 style = MaterialTheme.typography.bodySmall,
-                                                color = Color(0xFF4FC3F7)
+                                                color = cs.primary
                                             )
                                         }
                                         IconButton(onClick = { vm.deleteBookmark(bm) }) {
@@ -634,5 +620,23 @@ private fun formatTime(sec: Double): String {
         "%d:%02d:%02d".format(h, m, s)
     } else {
         "%02d:%02d".format(m, s)
+    }
+}
+
+@Composable
+private fun ActionButton(kind: String, label: String, active: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+            PlayerGlyph(
+                kind = kind,
+                tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

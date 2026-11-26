@@ -448,6 +448,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var playbackSpeed by mutableFloatStateOf(1.0f)
         private set
+    var volume by mutableFloatStateOf(1.0f)
+        private set
+
+    fun setVolume(value: Float) {
+        val clamped = value.coerceIn(0f, 1f)
+        volume = clamped
+        mediaController?.volume = clamped
+    }
     var sleepTimerMinutes by mutableIntStateOf(0)
         private set
     var sleepRemainingSec by mutableIntStateOf(0)
@@ -516,6 +524,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val controller = future.get()
                 mediaController = controller
+                controller.volume = volume
                 pendingSession?.let { queued ->
                     pendingSession = null
                     startPlaybackSession(queued)
