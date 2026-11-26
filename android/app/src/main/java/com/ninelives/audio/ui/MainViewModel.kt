@@ -24,6 +24,7 @@ import com.ninelives.audio.data.DownloadStore
 import com.ninelives.audio.data.DownloadedBook
 import com.ninelives.audio.data.DownloadTask
 import com.ninelives.audio.data.BookItem
+import com.ninelives.audio.data.LibraryCache
 import com.ninelives.audio.data.LibraryInfo
 import com.ninelives.audio.data.PlaybackSessionData
 import com.ninelives.audio.data.SavedServer
@@ -36,6 +37,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SettingsStore(application)
     private val api = AbsApiClient()
     private val offlineStore = DownloadStore(application)
+    private val libraryCache = LibraryCache(application)
+    private val booksByLibrary = mutableMapOf<String, List<BookItem>>()
+    private var lastSyncAt = 0L
+    private var lastProgressAt = 0L
+    private var lastStatsAt = 0L
     private val downloadManager = DownloadManager(application, api, offlineStore)
 
     var downloadTasks by mutableStateOf(downloadManager.tasks())
@@ -103,9 +109,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }?.token?.takeIf { it.isNotBlank() }
             }
         }
-        if (isConnected) {
+        restoreCachedLibrary()
+        if (isConnected && isStale(FRESH_WINDOW_MS)) {
             refreshAll()
+        } else if (isConnected) {
+            viewModelScope.launch { refreshProgress(force = true) }
         }
+    }
+
+    /** Paints the shelf from the last sync instead of blocking on the network. */
+    private fun restoreCachedLibrary() {
+        val cached = libraryCache.load() ?: return
+        if (!cached.serverUrl.trimEnd('/').equals(activeUrl.trimEnd('/'), true)) return
+        val cachedBooks = cached.books.orEmpty()
+        if (cachedBooks.isEmpty()) return
+        libraries = cached.libraries.orEmpty()
+        selectedLibrary = libraries.firstOrNull { it.id == cached.selectedLibraryId } ?: libraries.firstOrNull()
+        selectedLibrary?.let { booksByLibrary[it.id] = cachedBooks }
+        books = cachedBooks.map { b ->
+            b.copy(isDownloaded = downloadedBooks.any { it.serverUrl == activeUrl && it.itemId == b.id })
+        }
+        if (cached.totalListeningSec > 0.0) totalListeningSec = cached.totalListeningSec
+        lastSyncAt = cached.savedAt
+        statusMessage = "已显示本地缓存，正在后台同步"
+    }
+
+    private fun isStale(maxAgeMs: Long): Boolean =
+        lastSyncAt == 0L || System.currentTimeMillis() - lastSyncAt > maxAgeMs
+
+    /** Called when the home tab becomes visible; cheap and throttled. */
+    fun onHomeShown() {
+        if (!isConnected) return
+        if (System.currentTimeMillis() - lastProgressAt < PROGRESS_WINDOW_MS) return
+        viewModelScope.launch { refreshProgress(force = false) }
+    }
+
+    private fun persistLibraryCache() {
+        if (books.isEmpty()) return
+        val id = selectedLibrary?.id ?: ""
+        if (id.isNotEmpty()) booksByLibrary[id] = books
+        libraryCache.save(activeUrl, libraries, id, books, totalListeningSec)
+        lastSyncAt = System.currentTimeMillis()
+    }
+
+    private companion object {
+        const val FRESH_WINDOW_MS = 10 * 60_000L
+        const val PROGRESS_WINDOW_MS = 60_000L
+        const val STATS_WINDOW_MS = 10 * 60_000L
     }
 
     fun loginAndConnect(name: String, url: String, username: String, password: String) {
@@ -179,11 +229,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         libraries = emptyList()
         selectedLibrary = null
         books = emptyList()
+        booksByLibrary.clear()
+        libraryCache.clear()
+        lastSyncAt = 0L
         statusMessage = "已断开连接"
     }
 
     fun selectLibrary(lib: LibraryInfo) {
         selectedLibrary = lib
+        val cached = booksByLibrary[lib.id]
+        if (cached != null) {
+            books = cached
+            if (!isStale(FRESH_WINDOW_MS)) return
+        }
         refreshBooks(lib.id)
     }
 
@@ -255,7 +313,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshAll() {
-        if (!isConnected) return
+        if (!isConnected || isSyncing) return
         viewModelScope.launch {
             isSyncing = true
             val libsRes = api.getLibraries(activeUrl, activeToken)
@@ -298,6 +356,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isDownloaded = downloadedBooks.any { it.serverUrl == activeUrl && it.itemId == b.id }
                 )
             }
+            booksByLibrary[libraryId] = books
+            persistLibraryCache()
         }.onFailure {
             addLog("拉取书籍失败: ${it.message}")
         }
@@ -549,11 +609,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshProgressOnly() {
-        if (!isConnected || books.isEmpty()) return
-        viewModelScope.launch {
-            isRefreshing = true
-            val statsTime = api.getListeningStats(activeUrl, activeToken)
-            if (statsTime > 0) totalListeningSec = statsTime
+        if (!isConnected) return
+        viewModelScope.launch { refreshProgress(force = true) }
+    }
+
+    private suspend fun refreshProgress(force: Boolean) {
+        if (!isConnected) return
+        val now = System.currentTimeMillis()
+        if (!force && now - lastProgressAt < PROGRESS_WINDOW_MS) return
+        lastProgressAt = now
+        isRefreshing = true
+        try {
+            if (now - lastStatsAt > STATS_WINDOW_MS) {
+                val statsTime = api.getListeningStats(activeUrl, activeToken)
+                if (statsTime > 0) totalListeningSec = statsTime
+                lastStatsAt = now
+            }
+            if (books.isEmpty()) return
             val progressMap = api.getProgressMap(activeUrl, activeToken)
             if (progressMap.isNotEmpty()) {
                 books = books.map { b ->
@@ -567,7 +639,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     } else b
                 }
+                persistLibraryCache()
             }
+        } finally {
             isRefreshing = false
         }
     }

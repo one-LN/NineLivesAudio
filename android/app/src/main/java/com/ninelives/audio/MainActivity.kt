@@ -94,7 +94,7 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(pagerState.currentPage) {
         if (pagerState.currentPage == 0) {
-            vm.refreshProgressOnly()
+            vm.onHomeShown()
         }
     }
     val tabs = listOf(
