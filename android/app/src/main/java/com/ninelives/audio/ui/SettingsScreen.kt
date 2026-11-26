@@ -158,9 +158,9 @@ fun SettingsScreen(vm: MainViewModel) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("system" to "跟随系统", "dark" to "深色", "light" to "浅色").forEach { (mode, label) ->
                         if (vm.themeMode == mode) {
-                            Button(onClick = { vm.setThemeMode(mode) }) { Text(label) }
+                            Button(onClick = { vm.updateThemeMode(mode) }) { Text(label) }
                         } else {
-                            OutlinedButton(onClick = { vm.setThemeMode(mode) }) { Text(label) }
+                            OutlinedButton(onClick = { vm.updateThemeMode(mode) }) { Text(label) }
                         }
                     }
                 }
@@ -187,7 +187,7 @@ fun SettingsScreen(vm: MainViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("自动同步播放进度", style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = vm.autoSyncEnabled, onCheckedChange = { vm.setAutoSyncEnabled(it) })
+                    Switch(checked = vm.autoSyncEnabled, onCheckedChange = { vm.updateAutoSync(it) })
                 }
             }
         }

@@ -465,12 +465,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var autoSyncEnabled by mutableStateOf(store.getAutoSync())
         private set
 
-    fun setThemeMode(mode: String) {
+    fun updateThemeMode(mode: String) {
         themeMode = mode
         store.setThemeMode(mode)
     }
 
-    fun setAutoSyncEnabled(enabled: Boolean) {
+    fun updateAutoSync(enabled: Boolean) {
         autoSyncEnabled = enabled
         store.setAutoSync(enabled)
     }
