@@ -249,13 +249,23 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
+                        val message = when {
+                            !vm.isConnected -> t(
+                                "还没有连接服务器，请到「设置」登录",
+                                "No server connected. Sign in from Settings."
+                            )
+                            vm.statusMessage.isNotBlank() -> vm.statusMessage
+                            else -> t("书库是空的", "This library is empty")
+                        }
                         Text(
-                            vm.statusMessage.ifBlank { t("书库是空的", "This library is empty") },
+                            message,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Button(onClick = { vm.refreshAll(force = true) }) {
-                            Text(t("重新同步", "Sync again"))
+                        if (vm.isConnected) {
+                            Button(onClick = { vm.refreshAll(force = true) }) {
+                                Text(t("重新同步", "Sync again"))
+                            }
                         }
                     }
                 }
