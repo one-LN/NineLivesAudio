@@ -328,7 +328,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var wifiOnlyDownload by mutableStateOf(store.getWifiOnlyDownload())
         private set
 
-    fun setWifiOnlyDownload(enabled: Boolean) {
+    fun updateWifiOnlyDownload(enabled: Boolean) {
         wifiOnlyDownload = enabled
         store.setWifiOnlyDownload(enabled)
         downloadManager.setWifiOnly(enabled)

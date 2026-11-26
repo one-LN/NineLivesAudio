@@ -4,9 +4,8 @@ import com.google.gson.JsonParser
 import java.io.File
 import java.io.RandomAccessFile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -229,28 +228,60 @@ class AbsApiClient {
     ): Result<Long> = withContext(Dispatchers.IO) {
         try {
             destination.parentFile?.mkdirs()
-            val base = cleanUrl(serverUrl)
-            val builder = Request.Builder()
-                .url("$base/api/items/${segment(itemId)}/file/${segment(fileIno)}")
-                .header("Authorization", "Bearer $token")
-            if (resumeOffset > 0L) builder.header("Range", "bytes=$resumeOffset-")
-            downloadClient.newCall(builder.build()).execute().use { response ->
+            var offset = resumeOffset
+            var restarts = 0
+            while (true) {
+                val length = fetchAudioFile(serverUrl, token, itemId, fileIno, destination, offset, onProgress)
+                if (length >= 0L) return@withContext Result.success(length)
+                if (++restarts > 2) return@withContext Result.failure(Exception("服务器不支持断点续传"))
+                offset = 0L
+            }
+            @Suppress("UNREACHABLE_CODE")
+            Result.failure(Exception("unreachable"))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    /** Returns the finished file length, or -1 when the server ignored Range so the file must restart. */
+    private suspend fun fetchAudioFile(
+        serverUrl: String,
+        token: String,
+        itemId: String,
+        fileIno: String,
+        destination: File,
+        resumeOffset: Long,
+        onProgress: (Long) -> Unit
+    ): Long {
+        val base = cleanUrl(serverUrl)
+        val builder = Request.Builder()
+            .url("$base/api/items/${segment(itemId)}/file/${segment(fileIno)}")
+            .header("Authorization", "Bearer $token")
+        if (resumeOffset > 0L) builder.header("Range", "bytes=$resumeOffset-")
+        val call = downloadClient.newCall(builder.build())
+        val cancelHandle = kotlin.coroutines.coroutineContext[Job]?.invokeOnCompletion { call.cancel() }
+        try {
+            return call.execute().use { response ->
                 if (resumeOffset > 0L && response.code == 200) {
                     RandomAccessFile(destination, "rw").use { it.setLength(0L) }
-                    return@use null
+                    return@use -1L
                 }
-                if (resumeOffset > 0L && response.code != 206) return@use Result.failure<Long>(Exception("HTTP ${response.code}"))
-                if (resumeOffset == 0L && response.code != 200 && response.code != 206) return@use Result.failure<Long>(Exception("HTTP ${response.code}"))
-                val body = response.body ?: return@use Result.failure<Long>(Exception("服务器返回空文件"))
-                val rangeStart = response.header("Content-Range")?.substringAfter("bytes ")?.substringBefore('-')?.toLongOrNull()
-                if (resumeOffset > 0L && rangeStart != resumeOffset) return@use Result.failure<Long>(Exception("断点响应位置不匹配"))
-                val offset = if (response.code == 206) resumeOffset else 0L
+                if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
+                if (resumeOffset > 0L) {
+                    if (response.code != 206) throw Exception("HTTP ${response.code}")
+                    val start = response.header("Content-Range")
+                        ?.substringAfter("bytes ")?.substringBefore('-')?.toLongOrNull()
+                    if (start != resumeOffset) throw Exception("断点响应位置不匹配")
+                }
+                val body = response.body ?: throw Exception("服务器返回空文件")
+                val writeOffset = if (response.code == 206) resumeOffset else 0L
                 RandomAccessFile(destination, "rw").use { output ->
-                    output.seek(offset)
+                    output.seek(writeOffset)
                     body.byteStream().use { input ->
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
-                            currentCoroutineContext().ensureActive()
                             val count = input.read(buffer)
                             if (count < 0) break
                             if (count == 0) continue
@@ -259,12 +290,10 @@ class AbsApiClient {
                         }
                     }
                 }
-                Result.success(destination.length())
-            } ?: downloadAudioFile(serverUrl, token, itemId, fileIno, destination, 0L, onProgress)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            Result.failure(error)
+                destination.length()
+            }
+        } finally {
+            cancelHandle?.dispose()
         }
     }
 

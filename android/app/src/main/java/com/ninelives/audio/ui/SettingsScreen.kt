@@ -178,7 +178,7 @@ fun SettingsScreen(vm: MainViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("仅在 Wi-Fi 下下载", style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = vm.wifiOnlyDownload, onCheckedChange = { vm.setWifiOnlyDownload(it) })
+                    Switch(checked = vm.wifiOnlyDownload, onCheckedChange = { vm.updateWifiOnlyDownload(it) })
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
