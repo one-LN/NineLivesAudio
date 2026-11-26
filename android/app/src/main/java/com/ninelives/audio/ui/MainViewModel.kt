@@ -191,6 +191,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 statusMessage = t("已连接到 $normalized", "Connected to $normalized")
                 viewModelScope.launch { retryDownloadsFor(normalized, username.trim(), token) }
+                // refreshAll() bails out while isSyncing is true, so release it first.
+                isSyncing = false
                 refreshAll()
             }.onFailure { err ->
                 statusMessage = t("连接失败: ${err.message}", "Connection failed: ${err.message}")
@@ -334,6 +336,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
     private var downloadedUpdate: java.io.File? = null
 
+    fun openReleasesPage() = updater.openReleasesPage()
+
     fun checkForUpdate() {
         if (isCheckingUpdate || isDownloadingUpdate) return
         viewModelScope.launch {
@@ -392,8 +396,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         currentVersion = updater.currentVersionName()
     }
 
-    fun refreshAll() {
-        if (!isConnected || isSyncing) return
+    fun refreshAll(force: Boolean = false) {
+        if (!isConnected) return
+        if (isSyncing && !force) return
         flushBookmarkOps()
         viewModelScope.launch {
             isSyncing = true

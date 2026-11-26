@@ -247,6 +247,10 @@ fun SettingsScreen(vm: MainViewModel) {
                         enabled = !vm.isCheckingUpdate && !vm.isDownloadingUpdate
                     ) { Text(if (vm.isCheckingUpdate) t("检查中…", "Checking...") else t("检查更新", "Check for updates")) }
 
+                    TextButton(onClick = { vm.openReleasesPage() }) {
+                        Text(t("打不开？在浏览器中下载", "Open releases page"), style = MaterialTheme.typography.labelSmall)
+                    }
+
                     val pending = vm.pendingUpdate
                     if (pending != null) {
                         Button(

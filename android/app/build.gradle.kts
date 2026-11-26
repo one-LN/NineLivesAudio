@@ -13,8 +13,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Keep this above the published v0.22.0 APK (versionCode 1) so Android can upgrade it.
-        versionCode = 30
-        versionName = "0.24.4"
+        versionCode = 31
+        versionName = "0.24.5"
     }
 
     signingConfigs {

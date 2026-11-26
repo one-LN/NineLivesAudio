@@ -147,6 +147,18 @@ if strings.is_file():
     ):
         if snippet not in text:
             problems.append(message)
+update_checker = ANDROID / "app/src/main/java/com/ninelives/audio/data/UpdateChecker.kt"
+if update_checker.is_file() and "isJsonNull" not in update_checker.read_text(encoding="utf-8"):
+    problems.append("Release JSON must be read defensively (null body fields crash Gson)")
+vm_source = ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt"
+if vm_source.is_file():
+    text = vm_source.read_text(encoding="utf-8")
+    if "refreshAll()" not in text or "isSyncing = false" not in text:
+        problems.append("Login must release isSyncing before refreshing the library")
+    login = text.split("fun loginAndConnect", 1)[-1]
+    login = login.split("fun switchServer", 1)[0]
+    if "isSyncing = false" not in login or "refreshAll()" not in login:
+        problems.append("Adding a server must load libraries and books immediately")
 settings_store = ANDROID / "app/src/main/java/com/ninelives/audio/data/SettingsStore.kt"
 if settings_store.is_file() and "theme_mode" not in settings_store.read_text(encoding="utf-8"):
     problems.append("Theme choice must survive app restarts")

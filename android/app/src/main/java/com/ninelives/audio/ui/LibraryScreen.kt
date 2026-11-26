@@ -221,9 +221,30 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
         }
         Spacer(modifier = Modifier.height(4.dp))
 
-        if (vm.isSyncing && vm.books.isEmpty()) {
+        if (vm.books.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (vm.isSyncing) {
+                        CircularProgressIndicator()
+                        Text(
+                            t("正在同步书库…", "Syncing library..."),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            vm.statusMessage.ifBlank { t("书库是空的", "This library is empty") },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(onClick = { vm.refreshAll(force = true) }) {
+                            Text(t("重新同步", "Sync again"))
+                        }
+                    }
+                }
             }
         } else {
             PullToRefreshBox(

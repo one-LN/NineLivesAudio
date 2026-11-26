@@ -51,21 +51,22 @@ class UpdateChecker(private val context: Context) {
                 var bestVersion = current
                 var best: AppUpdate? = null
                 for (element in releases) {
-                    val obj = element.asJsonObject
-                    if (obj.get("draft")?.asBoolean == true) continue
-                    val tag = obj.get("tag_name")?.asString ?: continue
+                    val obj = element.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+                    if (obj.bool("draft") == true) continue
+                    val tag = obj.str("tag_name") ?: continue
                     if (!tag.startsWith("android-v")) continue
                     val version = tag.removePrefix("android-v")
-                    val assets = obj.getAsJsonArray("assets") ?: continue
+                    val assets = obj.get("assets")?.takeIf { it.isJsonArray }?.asJsonArray ?: continue
                     val asset = assets.firstOrNull {
-                        it.asJsonObject.get("name")?.asString == "NineLivesAudio-android.apk"
+                        it.takeIf { it.isJsonObject }?.asJsonObject?.str("name") == "NineLivesAudio-android.apk"
                     }?.asJsonObject ?: continue
+                    val downloadUrl = asset.str("browser_download_url") ?: continue
                     if (compareVersions(version, bestVersion) > 0) {
                         bestVersion = version
                         best = AppUpdate(
                             versionName = version,
-                            downloadUrl = asset.get("browser_download_url").asString,
-                            notes = obj.get("body")?.asString.orEmpty()
+                            downloadUrl = downloadUrl,
+                            notes = obj.str("body").orEmpty()
                         )
                     }
                 }
@@ -111,6 +112,21 @@ class UpdateChecker(private val context: Context) {
                 Result.failure(error)
             }
         }
+
+    /** Fallback when the API check cannot run: open the releases page in a browser. */
+    fun openReleasesPage() {
+        val intent = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("https://github.com/one-LN/NineLivesAudio/releases")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }
+    }
+
+    private fun com.google.gson.JsonObject.str(key: String): String? =
+        get(key)?.takeIf { !it.isJsonNull }?.let { runCatching { it.asString }.getOrNull() }
+
+    private fun com.google.gson.JsonObject.bool(key: String): Boolean? =
+        get(key)?.takeIf { !it.isJsonNull }?.let { runCatching { it.asBoolean }.getOrNull() }
 
     fun canInstall(): Boolean = context.packageManager.canRequestPackageInstalls()
 
