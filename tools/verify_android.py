@@ -168,6 +168,13 @@ if update_checker.is_file() and "isJsonNull" not in update_checker.read_text(enc
 vm_early = ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt"
 if vm_early.is_file():
     text = vm_early.read_text(encoding="utf-8")
+    props = set(re.findall(r"var\s+(\w+)\s+by\s+mutable", text))
+    for prop in props:
+        setter = "fun set" + prop[0].upper() + prop[1:] + "("
+        if setter in text:
+            problems.append("Setter clash: " + setter + " collides with var " + prop)
+if vm_early.is_file():
+    text = vm_early.read_text(encoding="utf-8")
     if "by lazy { BookmarkStore(" not in text:
         problems.append("BookmarkStore must be lazy: init runs before late fields are assigned")
     if text.rfind("init {") < text.rfind("private val bookmarkStore"):

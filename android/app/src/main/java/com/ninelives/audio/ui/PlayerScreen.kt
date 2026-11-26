@@ -434,7 +434,7 @@ fun PlayerScreen(vm: MainViewModel) {
                             t("音量 ${(vm.volume * 100).toInt()}%", "Volume ${(vm.volume * 100).toInt()}%"),
                             style = MaterialTheme.typography.labelMedium
                         )
-                        Slider(value = vm.volume, onValueChange = { vm.setVolume(it) })
+                        Slider(value = vm.volume, onValueChange = { vm.updateVolume(it) })
                     }
                 }
             }

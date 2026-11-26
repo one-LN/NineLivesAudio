@@ -451,7 +451,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var volume by mutableFloatStateOf(1.0f)
         private set
 
-    fun setVolume(value: Float) {
+    fun updateVolume(value: Float) {
         val clamped = value.coerceIn(0f, 1f)
         volume = clamped
         mediaController?.volume = clamped
