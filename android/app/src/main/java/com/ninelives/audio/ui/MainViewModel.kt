@@ -14,6 +14,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -105,24 +106,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .filter { (it.currentTime > 0.0 || it.progress > 0.0 || it.lastUpdate > 0L) && !it.isFinished }
             .sortedByDescending { it.lastUpdate }
             .take(9)
-
-    init {
-        downloadManager.setWifiOnly(store.getWifiOnlyDownload())
-        downloadManager.observe(downloadObserver)
-        viewModelScope.launch {
-            downloadManager.retryAll { server, user ->
-                store.getSavedServers().firstOrNull {
-                    it.url.trimEnd('/').equals(server.trimEnd('/'), true) && it.username.equals(user, true)
-                }?.token?.takeIf { it.isNotBlank() }
-            }
-        }
-        restoreCachedLibrary()
-        if (isConnected && isStale(FRESH_WINDOW_MS)) {
-            refreshAll()
-        } else if (isConnected) {
-            viewModelScope.launch { refreshProgress(force = true) }
-        }
-    }
 
     /** Paints the shelf from the last sync instead of blocking on the network. */
     private fun restoreCachedLibrary() {
@@ -452,6 +435,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- Player state ---
     private var mediaController: MediaController? = null
     private var currentTrackIndex = 0
+    private var pendingSession: PlaybackSessionData? = null
+    private var playbackRetries = 0
 
     var currentSession by mutableStateOf<PlaybackSessionData?>(null)
         private set
@@ -497,10 +482,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var bookmarkStatus by mutableStateOf("")
         private set
     private var bookmarksItemId: String = ""
-    private val bookmarkStore = BookmarkStore(application)
+    private val bookmarkStore by lazy { BookmarkStore(application) }
 
     // --- Local listening log for the stats chart ---
-    private val listenLog = ListenLog(application)
+    private val listenLog by lazy { ListenLog(application) }
     var listenWeek by mutableStateOf<List<Pair<Long, Long>>>(emptyList())
         private set
 
@@ -531,11 +516,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val controller = future.get()
                 mediaController = controller
+                pendingSession?.let { queued ->
+                    pendingSession = null
+                    startPlaybackSession(queued)
+                }
                 controller.addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
                     }
+                    override fun onPlayerError(error: PlaybackException) {
+                        playerError = t(
+                            "播放出错：${error.errorCodeName}",
+                            "Playback error: ${error.errorCodeName}"
+                        )
+                        if (playbackRetries >= 2) return
+                        playbackRetries++
+                        val offsetMs = mediaController?.currentPosition?.coerceAtLeast(0L) ?: 0L
+                        val index = currentTrackIndex
+                        viewModelScope.launch {
+                            delay(1_500)
+                            loadTrackAndPlay(index, offsetMs)
+                        }
+                    }
                     override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_READY) playbackRetries = 0
                         if (playbackState == Player.STATE_ENDED) {
                             val sess = currentSession ?: return
                             if (currentTrackIndex + 1 < sess.tracks.size) {
@@ -621,6 +625,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun startPlaybackSession(sess: PlaybackSessionData) {
+        if (mediaController == null) {
+            pendingSession = sess
+            return
+        }
         currentSession = sess
         loadBookmarks(sess.itemId)
         totalDurationSec = sess.duration
@@ -913,6 +921,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     lastUpdate = now
                 )
             } else b
+        }
+    }
+
+    init {
+        downloadManager.setWifiOnly(store.getWifiOnlyDownload())
+        downloadManager.observe(downloadObserver)
+        viewModelScope.launch {
+            downloadManager.retryAll { server, user ->
+                store.getSavedServers().firstOrNull {
+                    it.url.trimEnd('/').equals(server.trimEnd('/'), true) && it.username.equals(user, true)
+                }?.token?.takeIf { it.isNotBlank() }
+            }
+        }
+        restoreCachedLibrary()
+        if (isConnected && isStale(FRESH_WINDOW_MS)) {
+            refreshAll()
+        } else if (isConnected) {
+            viewModelScope.launch { refreshProgress(force = true) }
         }
     }
 

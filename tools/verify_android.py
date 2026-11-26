@@ -158,6 +158,13 @@ if strings.is_file():
 update_checker = ANDROID / "app/src/main/java/com/ninelives/audio/data/UpdateChecker.kt"
 if update_checker.is_file() and "isJsonNull" not in update_checker.read_text(encoding="utf-8"):
     problems.append("Release JSON must be read defensively (null body fields crash Gson)")
+vm_early = ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt"
+if vm_early.is_file():
+    text = vm_early.read_text(encoding="utf-8")
+    if "by lazy { BookmarkStore(" not in text:
+        problems.append("BookmarkStore must be lazy: init runs before late fields are assigned")
+    if text.rfind("init {") < text.rfind("private val bookmarkStore"):
+        problems.append("ViewModel init must come after all property declarations")
 playback_service = ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt"
 if playback_service.is_file():
     text = playback_service.read_text(encoding="utf-8")
