@@ -26,6 +26,14 @@ data class PlaybackSessionData(
     val chapters: List<ChapterInfo>
 )
 
+data class Bookmark(
+    val id: String,
+    val itemId: String,
+    val title: String,
+    val time: Double,
+    val createdAt: Long = 0L
+)
+
 data class SavedServer(
     val name: String = "",
     val url: String = "",

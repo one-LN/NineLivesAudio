@@ -23,6 +23,7 @@ import com.ninelives.audio.data.DownloadManager
 import com.ninelives.audio.data.DownloadStore
 import com.ninelives.audio.data.DownloadedBook
 import com.ninelives.audio.data.DownloadTask
+import com.ninelives.audio.data.Bookmark
 import com.ninelives.audio.data.BookItem
 import com.ninelives.audio.data.LibraryCache
 import com.ninelives.audio.data.LibraryInfo
@@ -459,10 +460,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var sleepEndOfChapter by mutableStateOf(false)
         private set
-    var themeMode by mutableStateOf("system")
-    var autoSyncEnabled by mutableStateOf(true)
+    var themeMode by mutableStateOf(store.getThemeMode())
+        private set
+    var autoSyncEnabled by mutableStateOf(store.getAutoSync())
+        private set
+
+    fun setThemeMode(mode: String) {
+        themeMode = mode
+        store.setThemeMode(mode)
+    }
+
+    fun setAutoSyncEnabled(enabled: Boolean) {
+        autoSyncEnabled = enabled
+        store.setAutoSync(enabled)
+    }
     var wifiOnlyDownload by mutableStateOf(store.getWifiOnlyDownload())
         private set
+
+    // --- Bookmarks ---
+    var bookmarks by mutableStateOf<List<Bookmark>>(emptyList())
+        private set
+    var bookmarkStatus by mutableStateOf("")
+        private set
+    private var bookmarksItemId: String = ""
 
     fun updateWifiOnlyDownload(enabled: Boolean) {
         wifiOnlyDownload = enabled
@@ -578,6 +598,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun startPlaybackSession(sess: PlaybackSessionData) {
         currentSession = sess
+        loadBookmarks(sess.itemId)
         totalDurationSec = sess.duration
         currentPositionSec = sess.currentTime
         currentIntroSec = store.getBookIntroSec(sess.itemId)
@@ -643,6 +664,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun skipBy(deltaSec: Double) {
         seekToSec(currentPositionSec + deltaSec)
+    }
+
+    fun currentAbsolutePosition(): Double {
+        val sess = currentSession ?: return currentPositionSec
+        val c = mediaController ?: return currentPositionSec
+        val trackOffset = sess.tracks.getOrNull(currentTrackIndex)?.startOffset ?: 0.0
+        return trackOffset + (c.currentPosition.coerceAtLeast(0L) / 1000.0)
+    }
+
+    fun loadBookmarks(itemId: String = currentSession?.itemId ?: "") {
+        if (itemId.isBlank() || activeUrl.isBlank() || activeToken.isBlank()) return
+        bookmarksItemId = itemId
+        viewModelScope.launch {
+            api.getBookmarks(activeUrl, activeToken, itemId)
+                .onSuccess { list -> if (bookmarksItemId == itemId) bookmarks = list }
+                .onFailure { bookmarkStatus = "书签加载失败：${it.message}" }
+        }
+    }
+
+    fun addBookmarkAtCurrent(title: String = "") {
+        val sess = currentSession
+        if (sess == null) {
+            bookmarkStatus = "请先打开一本书"
+            return
+        }
+        if (activeUrl.isBlank() || activeToken.isBlank()) {
+            bookmarkStatus = "离线状态暂不支持书签"
+            return
+        }
+        val pos = currentAbsolutePosition()
+        val label = title.trim().ifBlank { "书签 " + formatClock(pos) }
+        viewModelScope.launch {
+            api.createBookmark(activeUrl, activeToken, sess.itemId, label, pos)
+                .onSuccess {
+                    bookmarkStatus = "已添加：$label"
+                    loadBookmarks(sess.itemId)
+                }
+                .onFailure { bookmarkStatus = "添加失败：${it.message}" }
+        }
+    }
+
+    fun deleteBookmark(bookmark: Bookmark) {
+        if (activeUrl.isBlank() || activeToken.isBlank()) {
+            bookmarks = bookmarks.filterNot { it.id == bookmark.id }
+            return
+        }
+        viewModelScope.launch {
+            api.deleteBookmark(activeUrl, activeToken, bookmark.itemId, bookmark.time)
+                .onSuccess {
+                    bookmarks = bookmarks.filterNot { it.id == bookmark.id && it.time == bookmark.time }
+                    bookmarkStatus = "已删除"
+                }
+                .onFailure { bookmarkStatus = "删除失败：${it.message}" }
+        }
+    }
+
+    fun jumpToBookmark(bookmark: Bookmark) {
+        seekToSec(bookmark.time)
+    }
+
+    private fun formatClock(sec: Double): String {
+        val total = sec.toInt().coerceAtLeast(0)
+        return "%d:%02d".format(total / 60, total % 60)
     }
 
     fun cycleSpeed() {
@@ -727,7 +811,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val now = System.currentTimeMillis()
         offlineStore.updateProgress(activeUrl, itemId, posSec, now)
         downloadedBooks = offlineStore.allBooks()
-        if (sid.isNotBlank()) {
+        if (sid.isNotBlank() && autoSyncEnabled) {
             api.syncProgress(activeUrl, activeToken, sid, itemId, posSec, durSec, 10.0)
         }
         val prog = if (durSec > 0) (posSec / durSec).coerceIn(0.0, 1.0) else 0.0

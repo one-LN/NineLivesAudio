@@ -22,13 +22,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ContentCut
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -359,6 +363,7 @@ fun PlayerScreen(vm: MainViewModel) {
 
         var showChaptersDialog by remember { mutableStateOf(false) }
         var showSkipDialog by remember { mutableStateOf(false) }
+        var showBookmarksDialog by remember { mutableStateOf(false) }
 
         Spacer(modifier = Modifier.height(14.dp))
         var showSpeedMenu by remember { mutableStateOf(false) }
@@ -440,6 +445,16 @@ fun PlayerScreen(vm: MainViewModel) {
                     tint = if (skipActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            IconButton(onClick = {
+                vm.loadBookmarks()
+                showBookmarksDialog = true
+            }) {
+                Icon(
+                    Icons.Outlined.BookmarkBorder,
+                    contentDescription = "书签",
+                    tint = if (vm.bookmarks.isNotEmpty()) Color(0xFF4FC3F7) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (sess.chapters.isNotEmpty()) {
                 IconButton(onClick = { showChaptersDialog = true }) {
                     Icon(
@@ -449,6 +464,83 @@ fun PlayerScreen(vm: MainViewModel) {
                     )
                 }
             }
+        }
+
+        if (showBookmarksDialog) {
+            AlertDialog(
+                onDismissRequest = { showBookmarksDialog = false },
+                title = { Text("书签") },
+                text = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        if (vm.bookmarkStatus.isNotBlank()) {
+                            Text(
+                                vm.bookmarkStatus,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                        Text(
+                            "当前位置 ${formatTime(vm.currentAbsolutePosition())}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        if (vm.bookmarks.isEmpty()) {
+                            Text(
+                                "还没有书签。点下方按钮记录当前进度，之后可从列表一键跳回。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            HorizontalDivider()
+                            LazyColumn(modifier = Modifier.height(300.dp)) {
+                                itemsIndexed(vm.bookmarks) { _, bm ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                vm.jumpToBookmark(bm)
+                                                showBookmarksDialog = false
+                                            }
+                                            .padding(vertical = 8.dp)
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                bm.title,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                            Text(
+                                                formatTime(bm.time),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = Color(0xFF4FC3F7)
+                                            )
+                                        }
+                                        IconButton(onClick = { vm.deleteBookmark(bm) }) {
+                                            Icon(
+                                                Icons.Outlined.Delete,
+                                                contentDescription = "删除书签",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { vm.addBookmarkAtCurrent() }) {
+                        Text("添加当前进度")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBookmarksDialog = false }) { Text("关闭") }
+                }
+            )
         }
 
         if (showChaptersDialog) {

@@ -42,6 +42,14 @@ class SettingsStore(context: Context) {
             .apply()
     }
 
+    fun getThemeMode(): String = prefs.getString("theme_mode", "system") ?: "system"
+
+    fun setThemeMode(mode: String) = prefs.edit().putString("theme_mode", mode).apply()
+
+    fun getAutoSync(): Boolean = prefs.getBoolean("auto_sync", true)
+
+    fun setAutoSync(enabled: Boolean) = prefs.edit().putBoolean("auto_sync", enabled).apply()
+
     fun getWifiOnlyDownload(): Boolean = prefs.getBoolean("wifi_only_download", true)
 
     fun setWifiOnlyDownload(enabled: Boolean) = prefs.edit().putBoolean("wifi_only_download", enabled).apply()

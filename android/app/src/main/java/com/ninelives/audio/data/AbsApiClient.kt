@@ -363,6 +363,180 @@ class AbsApiClient {
             }
         }
 
+    suspend fun getBookmarks(serverUrl: String, token: String, itemId: String): Result<List<Bookmark>> =
+        withContext(Dispatchers.IO) {
+            try {
+                val base = cleanUrl(serverUrl)
+                val req = Request.Builder()
+                    .url("$base/api/me")
+                    .header("Authorization", "Bearer $token")
+                    .build()
+                client.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@withContext Result.failure(Exception("HTTP ${resp.code}"))
+                    val root = JsonParser.parseString(resp.body?.string().orEmpty()).asJsonObject
+                    val arr = root.getAsJsonArray("bookmarks")
+                    val list = mutableListOf<Bookmark>()
+                    if (arr != null) {
+                        for (el in arr) {
+                            val obj = el.asJsonObject
+                            val owner = obj.get("libraryItemId")?.takeIf { !it.isJsonNull }?.asString ?: continue
+                            if (owner != itemId) continue
+                            list.add(
+                                Bookmark(
+                                    id = obj.get("id")?.asString ?: "",
+                                    itemId = owner,
+                                    title = obj.get("title")?.asString ?: "书签",
+                                    time = obj.get("time")?.asDouble ?: 0.0,
+                                    createdAt = obj.get("createdAt")?.asLong ?: 0L
+                                )
+                            )
+                        }
+                    }
+                    Result.success(list.sortedBy { it.time })
+                }
+            } catch (error: Exception) {
+                Result.failure(error)
+            }
+        }
+
+    suspend fun createBookmark(
+        serverUrl: String,
+        token: String,
+        itemId: String,
+        title: String,
+        time: Double
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val base = cleanUrl(serverUrl)
+            val body = JSONObject().put("title", title).put("time", time).toString()
+            val req = Request.Builder()
+                .url("$base/api/me/item/${segment(itemId)}/bookmark")
+                .header("Authorization", "Bearer $token")
+                .post(body.toRequestBody("application/json".toMediaType()))
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) Result.failure(Exception("HTTP ${resp.code}"))
+                else Result.success(Unit)
+            }
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    suspend fun deleteBookmark(
+        serverUrl: String,
+        token: String,
+        itemId: String,
+        time: Double
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val base = cleanUrl(serverUrl)
+            val stamp = if (kotlin.math.abs(time - kotlin.math.floor(time)) < 0.0005) {
+                kotlin.math.floor(time).toLong().toString()
+            } else {
+                String.format(java.util.Locale.US, "%.3f", time)
+            }
+            val req = Request.Builder()
+                .url("$base/api/me/item/${segment(itemId)}/bookmark/$stamp")
+                .header("Authorization", "Bearer $token")
+                .delete()
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) Result.failure(Exception("HTTP ${resp.code}"))
+                else Result.success(Unit)
+            }
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    suspend fun getBookmarks(serverUrl: String, token: String, itemId: String): Result<List<Bookmark>> =
+        withContext(Dispatchers.IO) {
+            try {
+                val base = cleanUrl(serverUrl)
+                val req = Request.Builder()
+                    .url("$base/api/me")
+                    .header("Authorization", "Bearer $token")
+                    .build()
+                client.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@withContext Result.failure(Exception("HTTP ${resp.code}"))
+                    val root = JsonParser.parseString(resp.body?.string().orEmpty()).asJsonObject
+                    val arr = root.getAsJsonArray("bookmarks")
+                    val list = mutableListOf<Bookmark>()
+                    if (arr != null) {
+                        for (el in arr) {
+                            val obj = el.asJsonObject
+                            val owner = obj.get("libraryItemId")?.takeIf { !it.isJsonNull }?.asString ?: continue
+                            if (owner != itemId) continue
+                            list.add(
+                                Bookmark(
+                                    id = obj.get("id")?.asString ?: "",
+                                    itemId = owner,
+                                    title = obj.get("title")?.asString ?: "书签",
+                                    time = obj.get("time")?.asDouble ?: 0.0,
+                                    createdAt = obj.get("createdAt")?.asLong ?: 0L
+                                )
+                            )
+                        }
+                    }
+                    Result.success(list.sortedBy { it.time })
+                }
+            } catch (error: Exception) {
+                Result.failure(error)
+            }
+        }
+
+    suspend fun createBookmark(
+        serverUrl: String,
+        token: String,
+        itemId: String,
+        title: String,
+        time: Double
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val base = cleanUrl(serverUrl)
+            val body = JSONObject().put("title", title).put("time", time).toString()
+            val req = Request.Builder()
+                .url("$base/api/me/item/${segment(itemId)}/bookmark")
+                .header("Authorization", "Bearer $token")
+                .post(body.toRequestBody("application/json".toMediaType()))
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) Result.failure(Exception("HTTP ${resp.code}"))
+                else Result.success(Unit)
+            }
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    suspend fun deleteBookmark(
+        serverUrl: String,
+        token: String,
+        itemId: String,
+        time: Double
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val base = cleanUrl(serverUrl)
+            val stamp = if (kotlin.math.abs(time - kotlin.math.floor(time)) < 0.0005) {
+                kotlin.math.floor(time).toLong().toString()
+            } else {
+                String.format(java.util.Locale.US, "%.3f", time)
+            }
+            val req = Request.Builder()
+                .url("$base/api/me/item/${segment(itemId)}/bookmark/$stamp")
+                .header("Authorization", "Bearer $token")
+                .delete()
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) Result.failure(Exception("HTTP ${resp.code}"))
+                else Result.success(Unit)
+            }
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
     suspend fun startPlaybackSession(
         serverUrl: String,
         token: String,

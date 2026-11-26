@@ -102,6 +102,28 @@ if download_screen.is_file():
 if "ACCESS_NETWORK_STATE" not in (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8"):
     problems.append("Wi-Fi-only downloads need the ACCESS_NETWORK_STATE permission")
 
+if api_client.is_file():
+    api_text = api_client.read_text(encoding="utf-8")
+    for snippet, message in (
+        ("/bookmark", "Bookmarks must use the ABS bookmark endpoints"),
+        ("fun deleteBookmark(", "Bookmarks must be deletable"),
+    ):
+        if snippet not in api_text:
+            problems.append(message)
+player_screen = ANDROID / "app/src/main/java/com/ninelives/audio/ui/PlayerScreen.kt"
+if player_screen.is_file():
+    text = player_screen.read_text(encoding="utf-8")
+    for snippet, message in (
+        ("vm.addBookmarkAtCurrent", "Player must let the listener bookmark the current position"),
+        ("vm.jumpToBookmark", "Bookmarks must be jumpable"),
+        ("vm.deleteBookmark", "Bookmarks must be deletable from the player"),
+    ):
+        if snippet not in text:
+            problems.append(message)
+settings_store = ANDROID / "app/src/main/java/com/ninelives/audio/data/SettingsStore.kt"
+if settings_store.is_file() and "theme_mode" not in settings_store.read_text(encoding="utf-8"):
+    problems.append("Theme choice must survive app restarts")
+
 android_workflow_path = ROOT / ".github/workflows/android.yml"
 android_workflow = android_workflow_path.read_text(encoding="utf-8") if android_workflow_path.is_file() else ""
 if not android_workflow:
