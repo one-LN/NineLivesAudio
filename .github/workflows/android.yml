@@ -12,6 +12,8 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,11 +42,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           BODY=$(tail -n 60 "$RUNNER_TEMP/android-build.log" || true)
-          if [ -n "$BODY" ]; then
-            gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments -f body="\`\`\`\n$BODY\n\`\`\`" || echo "::warning::Could not post Android build diagnostics"
-          else
-            echo "::warning::Android build log file was not found in either workflow root or android/"
+          if [ -z "$BODY" ]; then
+            echo "::error title=Android build::Gradle log file was not created"
+            exit 0
           fi
+          # Public fallback: failure annotations are readable without signing in.
+          printf '%s\n' "$BODY" | while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error title=Gradle::${line//$'%'/%25}"
+          done
+          gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments \
+            -f body="\`\`\`\n$BODY\n\`\`\`" || echo "::warning::Could not post Android build diagnostics"
 
       - name: Rename APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk NineLivesAudio-android.apk
