@@ -18,6 +18,7 @@ REQUIRED = [
     "app/src/main/java/com/ninelives/audio/data/DownloadStore.kt",
     "app/src/main/java/com/ninelives/audio/data/DownloadManager.kt",
     "app/src/main/java/com/ninelives/audio/data/LibraryCache.kt",
+    "app/src/main/java/com/ninelives/audio/data/UpdateChecker.kt",
     "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt",
     "app/src/main/java/com/ninelives/audio/ui/HomeScreen.kt",
     "app/src/main/java/com/ninelives/audio/ui/LibraryScreen.kt",

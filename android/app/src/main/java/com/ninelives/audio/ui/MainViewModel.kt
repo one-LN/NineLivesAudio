@@ -29,6 +29,8 @@ import com.ninelives.audio.data.LibraryInfo
 import com.ninelives.audio.data.PlaybackSessionData
 import com.ninelives.audio.data.SavedServer
 import com.ninelives.audio.data.SettingsStore
+import com.ninelives.audio.data.AppUpdate
+import com.ninelives.audio.data.UpdateChecker
 import com.ninelives.audio.player.PlaybackService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -38,6 +40,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val api = AbsApiClient()
     private val offlineStore = DownloadStore(application)
     private val libraryCache = LibraryCache(application)
+    private val updater = UpdateChecker(application)
     private val booksByLibrary = mutableMapOf<String, List<BookItem>>()
     private var lastSyncAt = 0L
     private var lastProgressAt = 0L
@@ -310,6 +313,79 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.url.trimEnd('/').equals(savedServer.trimEnd('/'), true) && it.username.equals(savedUser, true)
             }?.token
         }
+    }
+
+    // --- In-app update ---
+    var currentVersion by mutableStateOf(updater.currentVersionName())
+        private set
+    var pendingUpdate by mutableStateOf<AppUpdate?>(null)
+        private set
+    var updateStatus by mutableStateOf("")
+        private set
+    var updateProgress by mutableIntStateOf(0)
+        private set
+    var isCheckingUpdate by mutableStateOf(false)
+        private set
+    var isDownloadingUpdate by mutableStateOf(false)
+        private set
+    private var downloadedUpdate: java.io.File? = null
+
+    fun checkForUpdate() {
+        if (isCheckingUpdate || isDownloadingUpdate) return
+        viewModelScope.launch {
+            isCheckingUpdate = true
+            updateStatus = "正在检查更新…"
+            val result = updater.check()
+            result.onSuccess { update ->
+                pendingUpdate = update
+                updateStatus = when {
+                    update == null -> "已是最新版本（$currentVersion）"
+                    else -> "发现新版本 ${update.versionName}"
+                }
+            }.onFailure {
+                updateStatus = "检查失败：${it.message ?: "网络错误"}"
+            }
+            isCheckingUpdate = false
+        }
+    }
+
+    fun downloadUpdate() {
+        val update = pendingUpdate ?: return
+        if (isDownloadingUpdate) return
+        viewModelScope.launch {
+            isDownloadingUpdate = true
+            updateProgress = 0
+            updateStatus = "正在下载 ${update.versionName}…"
+            val result = updater.download(update) { percent -> updateProgress = percent }
+            result.onSuccess { file ->
+                downloadedUpdate = file
+                updateStatus = "下载完成，正在打开系统安装…"
+                installUpdate()
+            }.onFailure {
+                updateStatus = "下载失败：${it.message ?: "网络错误"}"
+            }
+            isDownloadingUpdate = false
+        }
+    }
+
+    fun installUpdate() {
+        val file = downloadedUpdate
+        if (file == null) {
+            downloadUpdate()
+            return
+        }
+        if (!updater.canInstall()) {
+            updateStatus = "请允许“安装未知应用”，返回后再点安装"
+            updater.openInstallPermission()
+            return
+        }
+        runCatching { updater.install(file) }
+            .onSuccess { updateStatus = "已打开系统安装界面，确认即可覆盖升级" }
+            .onFailure { updateStatus = "无法启动安装：${it.message}" }
+    }
+
+    fun refreshVersionLabel() {
+        currentVersion = updater.currentVersionName()
     }
 
     fun refreshAll() {

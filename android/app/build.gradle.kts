@@ -13,12 +13,27 @@ android {
         minSdk = 26
         targetSdk = 35
         // Keep this above the published v0.22.0 APK (versionCode 1) so Android can upgrade it.
-        versionCode = 27
-        versionName = "0.24.1"
+        versionCode = 28
+        versionName = "0.24.2"
+    }
+
+    signingConfigs {
+        create("shared") {
+            storeFile = file("keystore/ninelives.p12")
+            storeType = "PKCS12"
+            storePassword = "ninelives"
+            keyAlias = "ninelives"
+            keyPassword = "ninelives"
+        }
     }
 
     buildTypes {
+        debug {
+            // A repository-wide key so every CI build can upgrade an existing install in place.
+            signingConfig = signingConfigs.getByName("shared")
+        }
         release {
+            signingConfig = signingConfigs.getByName("shared")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -47,6 +62,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.4")
 

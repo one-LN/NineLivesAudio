@@ -15,6 +15,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -202,6 +203,53 @@ fun SettingsScreen(vm: MainViewModel) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("立即同步服务器数据")
+                }
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("关于与更新", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "当前版本 ${vm.currentVersion}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (vm.updateStatus.isNotBlank()) {
+                    Text(
+                        vm.updateStatus,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (vm.isDownloadingUpdate) {
+                    LinearProgressIndicator(
+                        progress = { vm.updateProgress / 100f },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { vm.checkForUpdate() },
+                        enabled = !vm.isCheckingUpdate && !vm.isDownloadingUpdate
+                    ) { Text(if (vm.isCheckingUpdate) "检查中…" else "检查更新") }
+
+                    val pending = vm.pendingUpdate
+                    if (pending != null) {
+                        Button(
+                            onClick = { vm.installUpdate() },
+                            enabled = !vm.isDownloadingUpdate
+                        ) {
+                            Text(
+                                when {
+                                    vm.isDownloadingUpdate -> "${vm.updateProgress}%"
+                                    else -> "一键升级到 ${pending.versionName}"
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
