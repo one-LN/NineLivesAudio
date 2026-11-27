@@ -95,6 +95,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var libraries by mutableStateOf<List<LibraryInfo>>(emptyList())
+    var favorites by mutableStateOf<List<BookItem>>(emptyList())
+        private set
+    var favoriteIds by mutableStateOf<Set<String>>(emptySet())
+        private set
+    var favoriteStatus by mutableStateOf("")
+        private set
+    var homeTab by mutableStateOf(0)
         private set
     var selectedLibrary by mutableStateOf<LibraryInfo?>(null)
         private set
@@ -188,6 +195,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private companion object {
+        const val FAVORITES_NAME = "收藏"
         const val FRESH_WINDOW_MS = 10 * 60_000L
         const val PROGRESS_WINDOW_MS = 60_000L
         const val STATS_WINDOW_MS = 10 * 60_000L
@@ -460,6 +468,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val progressMap = api.getProgressMap(activeUrl, activeToken)
         booksRes.onSuccess { list ->
             addLog("书籍: ${list.size} 本, 进度: ${progressMap.size} 条")
+            loadFavorites()
             books = list.map { b ->
                 val p = progressMap[b.id]
                 b.copy(
@@ -893,6 +902,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private var favoritesCollection: CollectionInfo? = null
+
+    fun isFavorite(itemId: String): Boolean = itemId in favoriteIds
+
+    fun updateHomeTab(tab: Int) {
+        homeTab = tab
+    }
+
+    /** Pulls the server-side "收藏" collection so every device sees the same list. */
+    fun loadFavorites() {
+        if (!isConnected) return
+        viewModelScope.launch {
+            val res = api.getCollections(activeUrl, activeToken)
+            res.onSuccess { list ->
+                val collection = list.firstOrNull { it.name == FAVORITES_NAME }
+                favoritesCollection = collection
+                val ids = collection?.bookIds?.toSet() ?: emptySet()
+                favoriteIds = ids
+                favorites = books.filter { it.id in ids }
+            }
+        }
+    }
+
+    fun toggleFavorite(book: BookItem) {
+        if (!isConnected) {
+            favoriteStatus = t("离线时无法修改收藏", "Favorites need a connection")
+            return
+        }
+        viewModelScope.launch {
+            val current = favoritesCollection
+            if (book.id in favoriteIds) {
+                if (current == null) return@launch
+                val ok = api.removeBookFromCollection(activeUrl, activeToken, current.id, book.id)
+                if (ok) {
+                    favoriteIds = favoriteIds - book.id
+                    favorites = favorites.filterNot { it.id == book.id }
+                    favoritesCollection = current.copy(bookIds = current.bookIds - book.id)
+                    favoriteStatus = t("已取消收藏", "Removed from favorites")
+                } else {
+                    favoriteStatus = t("取消收藏失败", "Could not remove favorite")
+                }
+                return@launch
+            }
+            val existing = current ?: api.getCollections(activeUrl, activeToken).getOrNull()
+                ?.firstOrNull { it.name == FAVORITES_NAME }
+            if (existing != null) {
+                favoritesCollection = existing
+                val ok = api.addBookToCollection(activeUrl, activeToken, existing.id, book.id)
+                if (ok) {
+                    favoriteIds = favoriteIds + book.id
+                    favorites = (favorites + book).distinctBy { it.id }
+                    favoritesCollection = existing.copy(bookIds = existing.bookIds + book.id)
+                    favoriteStatus = t("已收藏", "Added to favorites")
+                } else {
+                    favoriteStatus = t("收藏失败", "Could not add favorite")
+                }
+            } else {
+                val res = api.createCollection(
+                    activeUrl, activeToken, book.libraryId, FAVORITES_NAME, book.id
+                )
+                res.onSuccess { created ->
+                    favoritesCollection = created
+                    favoriteIds = favoriteIds + book.id
+                    favorites = (favorites + book).distinctBy { it.id }
+                    favoriteStatus = t("已收藏", "Added to favorites")
+                }.onFailure {
+                    favoriteStatus = t("创建收藏夹失败：${it.message}", "Could not create favorites: ${it.message}")
+                }
+            }
+        }
+    }
+
     fun jumpToBookmark(bookmark: Bookmark) {
         seekToSec(bookmark.time)
     }
@@ -1025,4 +1106,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         mediaController = null
         super.onCleared()
     }
+
 }

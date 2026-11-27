@@ -82,6 +82,12 @@ if main_activity.is_file():
         problems.append("MainActivity pager should expose six matching navigation tabs")
 
 # Offline download pipeline: metadata endpoint, byte endpoint and UI wiring must stay connected.
+api_client2 = ANDROID / "app/src/main/java/com/ninelives/audio/data/AbsApiClient.kt"
+if api_client2.is_file():
+    text = api_client2.read_text(encoding="utf-8")
+    for ep in ("/api/collections", "/book"):
+        if ep not in text:
+            problems.append("Favorites must use server collections (" + ep + ")")
 api_client = ANDROID / "app/src/main/java/com/ninelives/audio/data/AbsApiClient.kt"
 if api_client.is_file():
     api_text = api_client.read_text(encoding="utf-8")

@@ -536,6 +536,100 @@ class AbsApiClient {
     }
 
     /** Finalises the listening session so the server records it in the listening stats. */
+    suspend fun getCollections(serverUrl: String, token: String): Result<List<CollectionInfo>> =
+        withContext(Dispatchers.IO) {
+            try {
+                val base = cleanUrl(serverUrl)
+                val req = Request.Builder()
+                    .url("$base/api/collections")
+                    .header("Authorization", "Bearer $token")
+                    .build()
+                client.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) return@withContext Result.failure(Exception("HTTP ${resp.code}"))
+                    val root = JsonParser.parseString(text).asJsonObject
+                    val arr = root.getAsJsonArray("collections") ?: return@withContext Result.success(emptyList())
+                    val list = arr.mapNotNull { el ->
+                        val obj = el.asJsonObject
+                        val id = obj.get("id")?.asString ?: return@mapNotNull null
+                        val name = obj.get("name")?.asString.orEmpty()
+                        val libraryId = obj.get("libraryId")?.asString.orEmpty()
+                        val bookIds = obj.getAsJsonArray("books")?.mapNotNull { b ->
+                            runCatching { b.asJsonObject.get("id")?.asString }.getOrNull()
+                        } ?: emptyList()
+                        CollectionInfo(id, name, libraryId, bookIds)
+                    }
+                    Result.success(list)
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    suspend fun createCollection(
+        serverUrl: String,
+        token: String,
+        libraryId: String,
+        name: String,
+        firstBookId: String
+    ): Result<CollectionInfo> = withContext(Dispatchers.IO) {
+        try {
+            val base = cleanUrl(serverUrl)
+            val body = JSONObject()
+                .put("name", name)
+                .put("libraryId", libraryId)
+                .put("books", org.json.JSONArray().put(firstBookId))
+                .toString()
+            val req = Request.Builder()
+                .url("$base/api/collections")
+                .header("Authorization", "Bearer $token")
+                .post(body.toRequestBody("application/json".toMediaType()))
+                .build()
+            client.newCall(req).execute().use { resp ->
+                val text = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) return@withContext Result.failure(Exception("HTTP ${resp.code}"))
+                val obj = JsonParser.parseString(text).asJsonObject
+                val id = obj.get("id")?.asString ?: return@withContext Result.failure(Exception("no id"))
+                val bookIds = obj.getAsJsonArray("books")?.mapNotNull { b ->
+                    runCatching { b.asJsonObject.get("id")?.asString }.getOrNull()
+                } ?: listOf(firstBookId)
+                Result.success(CollectionInfo(id, name, libraryId, bookIds))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun addBookToCollection(serverUrl: String, token: String, collectionId: String, itemId: String): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val base = cleanUrl(serverUrl)
+                val req = Request.Builder()
+                    .url("$base/api/collections/$collectionId/book")
+                    .header("Authorization", "Bearer $token")
+                    .post(JSONObject().put("id", itemId).toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+                client.newCall(req).execute().use { it.isSuccessful }
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+    suspend fun removeBookFromCollection(serverUrl: String, token: String, collectionId: String, itemId: String): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val base = cleanUrl(serverUrl)
+                val req = Request.Builder()
+                    .url("$base/api/collections/$collectionId/book/$itemId")
+                    .header("Authorization", "Bearer $token")
+                    .delete()
+                    .build()
+                client.newCall(req).execute().use { it.isSuccessful }
+            } catch (_: Exception) {
+                false
+            }
+        }
+
     suspend fun closeSession(serverUrl: String, token: String, sessionId: String) = withContext(Dispatchers.IO) {
         if (sessionId.isBlank()) return@withContext
         try {

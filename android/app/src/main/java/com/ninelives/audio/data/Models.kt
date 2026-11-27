@@ -49,6 +49,13 @@ data class SavedServer(
         }
 }
 
+data class CollectionInfo(
+    val id: String,
+    val name: String,
+    val libraryId: String,
+    val bookIds: List<String>
+)
+
 data class LibraryInfo(
     val id: String,
     val name: String

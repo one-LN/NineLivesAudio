@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ninelives.audio.R
 import com.ninelives.audio.data.BookItem
+import androidx.compose.material3.FilterChip
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,18 +81,45 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                FilterChip(
+                    selected = vm.homeTab == 0,
+                    onClick = { vm.updateHomeTab(0) },
+                    label = { Text(t("在听", "In progress")) }
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                FilterChip(
+                    selected = vm.homeTab == 1,
+                    onClick = {
+                        vm.updateHomeTab(1)
+                        if (vm.favorites.isEmpty()) vm.loadFavorites()
+                    },
+                    label = { Text(t("收藏", "Favorites")) }
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
 
             if (!vm.isConnected) {
                 Text(t("请先在「设置」中连接 Audiobookshelf 服务器", "Connect your Audiobookshelf server in Settings first"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else if (lives.isEmpty()) {
+            } else if (vm.homeTab == 1 && vm.favorites.isEmpty()) {
+                Text(
+                    t("还没有收藏，点开一本书后点心形图标", "No favorites yet — open a book and tap the heart"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else if (vm.homeTab == 0 && lives.isEmpty()) {
                 Text(t("暂无在听书籍", "Nothing in progress"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
+                val shown = if (vm.homeTab == 1) vm.favorites else lives
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                itemsIndexed(lives, key = { _, b -> b.id }) { index, book ->
+                itemsIndexed(shown, key = { _, b -> b.id }) { index, book ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()

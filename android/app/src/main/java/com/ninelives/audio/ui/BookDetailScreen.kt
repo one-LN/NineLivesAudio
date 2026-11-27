@@ -38,6 +38,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ninelives.audio.data.BookItem
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 
 /** Full-screen book page, mirroring the desktop BookDetailPage instead of a dialog. */
 @Composable
@@ -73,6 +75,22 @@ fun BookDetailScreen(
                 t("详情", "Details"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            IconButton(onClick = { vm.toggleFavorite(book) }) {
+                Icon(
+                    if (vm.isFavorite(book.id)) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    contentDescription = t("收藏", "Favorite"),
+                    tint = if (vm.isFavorite(book.id)) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (vm.favoriteStatus.isNotBlank()) {
+            Text(
+                vm.favoriteStatus,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
