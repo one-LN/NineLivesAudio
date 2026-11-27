@@ -192,6 +192,30 @@ if "PlaybackReporter" not in svc_text2:
     problems.append("Progress reporting must run inside the service so it survives the activity")
 if "player = exoPlayer" not in svc_text2:
     problems.append("The service must keep the ExoPlayer reference or the reporting loop ticks nothing")
+
+# Generalized guard for the whole class of "silent dead feature" bugs: a nullable
+# field that is declared but never assigned anywhere stays null forever, and code
+# such as `val p = field ?: continue` then skips the work without any error.
+FIELD_RE = re.compile(r"^\s*(?:private\s+|internal\s+)?(?:var|val)\s+(\w+)\s*:\s*[\w.<>?,\s]+\?\s*=\s*null\s*$", re.M)
+for kt in sorted((ANDROID / "app/src/main/java").rglob("*.kt")):
+    body = kt.read_text(encoding="utf-8")
+    # Constructor properties of data classes are filled by callers/deserialisers,
+    # so a default of null there is not a dead field.
+    ctor_params = set()
+    for block in re.findall(r"data\s+class\s+\w+\s*\((.*?)\)", body, re.S):
+        ctor_params.update(re.findall(r"\b(\w+)\s*:", block))
+    for m in FIELD_RE.finditer(body):
+        name = m.group(1)
+        if name in ctor_params:
+            continue
+        # Any real assignment (not the declaration itself, not == / != comparisons).
+        assigns = re.findall(r"(?<![=!<>])\b" + re.escape(name) + r"\s*=\s*(?!=)(?!\s*null\b)", body)
+        if len(assigns) == 0:
+            problems.append(
+                f"{kt.name}: nullable field '{name}' is never assigned - "
+                "a '?: continue' on it would silently disable a feature"
+            )
+
 svc_text = (ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt").read_text(encoding="utf-8")
 if "setSessionActivity" not in svc_text:
     problems.append("Tapping the media card must open the app (setSessionActivity)")
@@ -205,6 +229,8 @@ if player_screen.is_file():
     text = player_screen.read_text(encoding="utf-8")
     if "rememberLazyListState" not in text or "scrollToItem(currentChapterIdx)" not in text:
         problems.append("The chapter list must open at the chapter that is playing")
+if "startWatchdog" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data/PlaybackReporter.kt").read_text(encoding="utf-8"):
+    problems.append("Reporter must self-report when ticking stops")
 if "positionSec <= 0.5" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data/PlaybackReporter.kt").read_text(encoding="utf-8"):
     problems.append("Reporter must never publish a zero position")
 if playback_service2.is_file():

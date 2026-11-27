@@ -22,7 +22,7 @@ object PlaybackReporter {
 
     private var listenLog: ListenLog? = null
     private var appContext: Context? = null
-    private var pushCount = 0
+    @Volatile private var pushCount = 0
 
     @Volatile private var serverUrl = ""
     @Volatile private var token = ""
@@ -42,11 +42,41 @@ object PlaybackReporter {
         private set
     @Volatile var lastSentSec = 0.0
         private set
+    @Volatile var tickCount = 0L
+        private set
+    val pushes: Int get() = pushCount
 
     fun init(context: Context) {
         android.util.Log.d("NLREPORT", "init")
         appContext = context.applicationContext
         if (listenLog == null) listenLog = ListenLog(context.applicationContext)
+        startWatchdog()
+    }
+
+    @Volatile private var lastTickAt = 0L
+    @Volatile private var configuredAt = 0L
+    private var watchdogStarted = false
+
+    /**
+     * If a session is configured but the service stops calling [tick], reporting is
+     * dead even though nothing crashed. Say so in the diagnostics log instead of
+     * failing silently.
+     */
+    private fun startWatchdog() {
+        if (watchdogStarted) return
+        watchdogStarted = true
+        scope.launch {
+            var lastWarnAt = 0L
+            while (true) {
+                kotlinx.coroutines.delay(15_000)
+                val now = System.currentTimeMillis()
+                val since = maxOf(lastTickAt, configuredAt)
+                if (itemId.isNotBlank() && since > 0L && now - since > 20_000 && now - lastWarnAt > 60_000) {
+                    lastWarnAt = now
+                    log("WATCHDOG 回传已停止 ${(now - since) / 1000}s（播放服务未在 tick）")
+                }
+            }
+        }
     }
 
     private fun log(line: String) {
@@ -76,6 +106,7 @@ object PlaybackReporter {
         trackOffset = offset
         positionSec = initialPosition
         listened = 0.0
+        configuredAt = System.currentTimeMillis()
         lastSyncAt = 0L
         wasPlaying = false
         dirty = false
@@ -86,8 +117,29 @@ object PlaybackReporter {
         trackOffset = offset
     }
 
+    /**
+     * The session that is actually loaded in the media service.
+     *
+     * The activity (and its ViewModel) can be recreated while playback continues;
+     * without this the player screen would come back empty even though audio is
+     * still running.
+     */
+    @Volatile
+    var activeSession: PlaybackSessionData? = null
+        private set
+
+    fun rememberSession(session: PlaybackSessionData) {
+        activeSession = session
+    }
+
+    fun forgetSession() {
+        activeSession = null
+    }
+
     /** Called once per second by the playback service. */
     fun tick(trackPositionMs: Long, playing: Boolean) {
+        lastTickAt = System.currentTimeMillis()
+        tickCount++
         positionSec = trackOffset + trackPositionMs.coerceAtLeast(0L) / 1000.0
         if (!playing) {
             if (wasPlaying) {

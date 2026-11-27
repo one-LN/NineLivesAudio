@@ -602,6 +602,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     pendingSession = null
                     startPlaybackSession(queued)
                 }
+                // The activity may have been recreated while the service kept playing:
+                // adopt the live session so the player screen is not empty.
+                if (currentSession == null) {
+                    PlaybackReporter.activeSession?.let { live ->
+                        currentSession = live
+                        currentTrackIndex = controller.currentMediaItemIndex
+                            .coerceIn(0, (live.tracks.size - 1).coerceAtLeast(0))
+                        totalDurationSec = live.duration
+                        isPlaying = controller.isPlaying
+                        addLog("恢复播放会话: ${live.title.take(20)}")
+                    }
+                }
                 controller.addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         val wasPlaying = isPlaying
@@ -657,7 +669,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         tick++
                         if (tick % 5 == 0) {
                             lastSyncInfo = if (PlaybackReporter.lastSuccessAt > 0L) {
-                                "${PlaybackReporter.lastResult} · ${PlaybackReporter.lastSentSec.toInt()}s"
+                                "${PlaybackReporter.lastResult} · +${PlaybackReporter.lastSentSec.toInt()}s · ${PlaybackReporter.pushes} 次"
                             } else ""
                         }
                         if (tick % 30 == 0) refreshListenWeek()
@@ -735,6 +747,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val targetIdx = sess.tracks.indexOfLast { sess.currentTime >= it.startOffset }.coerceAtLeast(0)
         val trackStart = sess.tracks.getOrNull(targetIdx)?.startOffset ?: 0.0
         val offsetMs = ((sess.currentTime - trackStart).coerceAtLeast(0.0) * 1000).toLong()
+        PlaybackReporter.rememberSession(sess)
         PlaybackReporter.configure(
             activeUrl,
             activeToken,
