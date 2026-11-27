@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
@@ -256,29 +257,41 @@ fun SettingsScreen(vm: MainViewModel) {
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     OutlinedButton(
                         onClick = { vm.checkForUpdate() },
                         enabled = !vm.isCheckingUpdate && !vm.isDownloadingUpdate
                     ) { Text(if (vm.isCheckingUpdate) t("检查中…", "Checking...") else t("检查更新", "Check for updates")) }
 
                     TextButton(onClick = { vm.openReleasesPage() }) {
-                        Text(t("打不开？在浏览器中下载", "Open releases page"), style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            t("浏览器下载", "Releases page"),
+                            style = MaterialTheme.typography.labelSmall
+                        )
                     }
+                }
 
-                    val pending = vm.pendingUpdate
-                    if (pending != null) {
-                        Button(
-                            onClick = { vm.installUpdate() },
-                            enabled = !vm.isDownloadingUpdate
-                        ) {
-                            Text(
-                                when {
-                                    vm.isDownloadingUpdate -> "${vm.updateProgress}%"
-                                    else -> t("一键升级到 ${pending.versionName}", "Update to ${pending.versionName}")
-                                }
-                            )
-                        }
+                // Kept out of the Row on purpose: inside a Row the label wraps one
+                // character per line and the button collapses into a thin bar.
+                val pending = vm.pendingUpdate
+                if (pending != null) {
+                    Button(
+                        onClick = { vm.installUpdate() },
+                        enabled = !vm.isDownloadingUpdate,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            when {
+                                vm.isDownloadingUpdate -> t("下载中 ${vm.updateProgress}%", "Downloading ${vm.updateProgress}%")
+                                else -> t("一键升级到 ${pending.versionName}", "Update to ${pending.versionName}")
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
