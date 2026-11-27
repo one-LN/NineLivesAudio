@@ -869,7 +869,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val duplicate = server.any { kotlin.math.abs(it.time - local.time) <= 1.5 }
             if (!duplicate) merged.add(local)
         }
-        return merged.distinctBy { it.time.toInt() }.sortedBy { it.time }
+        return merged
+            .distinctBy { it.time.toInt() }
+            .map { normalizeBookmarkTitle(it) }
+            .sortedBy { it.time }
+    }
+
+    /** Bookmarks created by older builds were named with raw minutes ("书签 6922:34"). */
+    private fun normalizeBookmarkTitle(bookmark: Bookmark): Bookmark {
+        val auto = Regex("^(书签|Bookmark)\s+\d+:\d+$")
+        return if (auto.matches(bookmark.title)) {
+            bookmark.copy(title = t("书签 ", "Bookmark ") + formatClock(bookmark.time))
+        } else {
+            bookmark
+        }
     }
 
     /**
@@ -929,6 +942,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             api.createBookmark(activeUrl, activeToken, sess.itemId, label, pos)
                 .onSuccess {
                     bookmarkStatus = t("已添加：$label", "Added: $label")
+                    bookmarkStore.dropPendingAdd(sess.itemId, pos)
                     bookmarks = bookmarks.filterNot { it.id == local.id }
                     bookmarkStore.saveCache(sess.itemId, bookmarks)
                     loadBookmarks(sess.itemId)
@@ -956,6 +970,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val ok = deleteBookmarkOnServer(bookmark.itemId, bookmark.time)
             if (ok) {
                 bookmarkStatus = t("已删除", "Deleted")
+                loadBookmarks(bookmark.itemId)
             } else {
                 bookmarkStore.addPending(PendingBookmarkOp("delete", bookmark.itemId, "", bookmark.time))
                 bookmarkStatus = t("已本地删除，稍后自动重试", "Deleted locally, will retry automatically")

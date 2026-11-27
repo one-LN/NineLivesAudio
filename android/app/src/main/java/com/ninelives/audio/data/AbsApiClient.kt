@@ -432,10 +432,13 @@ class AbsApiClient {
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val base = cleanUrl(serverUrl)
-            val stamp = if (kotlin.math.abs(time - kotlin.math.floor(time)) < 0.0005) {
+            // The server matches bookmarks by exact numeric time (`bm.time == time`).
+            // Rounding here (%.3f) produced 415648.970 vs the stored 415648.9698859996,
+            // so DELETE always answered 404 and the bookmark came back on refresh.
+            val stamp = if (time == kotlin.math.floor(time) && kotlin.math.abs(time) < 1e15) {
                 kotlin.math.floor(time).toLong().toString()
             } else {
-                String.format(java.util.Locale.US, "%.3f", time)
+                java.math.BigDecimal.valueOf(time).toPlainString()
             }
             val req = Request.Builder()
                 .url("$base/api/me/item/${segment(itemId)}/bookmark/$stamp")

@@ -236,6 +236,8 @@ if "User-Agent" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data/Up
 _vm_book = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt").read_text(encoding="utf-8")
 if "Math.round(currentAbsolutePosition())" not in _vm_book:
     problems.append("Bookmark times must be whole seconds: the server matches them exactly")
+if "toPlainString" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data/AbsApiClient.kt").read_text(encoding="utf-8"):
+    problems.append("Bookmark delete must send the exact time: the server compares numbers exactly")
 if "deleteBookmarkOnServer" not in _vm_book:
     problems.append("Bookmark deletion must retry with the stored server time")
 if "mergeBookmarks(" not in _vm_book:
