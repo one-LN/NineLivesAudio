@@ -317,6 +317,11 @@ else:
     if stable_guard not in windows_workflow:
         problems.append("stable Windows releases must publish only from master/main")
 
+# painterResource cannot decode adaptive-icon XML; the icon picker must use PNG previews
+_settings = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/SettingsScreen.kt").read_text(encoding="utf-8")
+if "R.mipmap.ic_launcher_" in _settings:
+    problems.append("SettingsScreen must use drawable PNG previews, not R.mipmap launcher XML")
+
 # Custom launcher icons: four aliases, exactly one enabled by default
 _man = (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 for _alias in ["LauncherDefault", "LauncherGold", "LauncherSea", "LauncherPlum"]:

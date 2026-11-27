@@ -212,10 +212,10 @@ fun SettingsScreen(vm: MainViewModel) {
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     val icons = listOf(
-                        Triple("default", t("深空", "Void"), R.mipmap.ic_launcher_default),
-                        Triple("gold", t("曜金", "Gold"), R.mipmap.ic_launcher_gold),
-                        Triple("sea", t("深海", "Sea"), R.mipmap.ic_launcher_sea),
-                        Triple("plum", t("玄紫", "Plum"), R.mipmap.ic_launcher_plum)
+                        Triple("default", t("深空", "Void"), R.drawable.icon_preview_default),
+                        Triple("gold", t("曜金", "Gold"), R.drawable.icon_preview_gold),
+                        Triple("sea", t("深海", "Sea"), R.drawable.icon_preview_sea),
+                        Triple("plum", t("玄紫", "Plum"), R.drawable.icon_preview_plum)
                     )
                     for ((id, label, res) in icons) {
                         val selected = vm.appIcon == id
