@@ -16,18 +16,25 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Lets the user turn any picture into a launcher icon.
+ * Turns a picture the user picked into the icon that opens the app.
  *
- * Android only allows an app to change its own icon at build time, so the
- * supported route is a pinned launcher shortcut that carries the picture and
- * opens the app. The picture is cropped square, rounded and written to
- * filesDir so the shortcut keeps working after a reboot.
+ * Android does not let an app swap its own launcher icon for an arbitrary
+ * bitmap at runtime (the icon is compiled into the APK). The supported route
+ * is a pinned launcher entry that carries the picture and launches
+ * MainActivity. It reuses one shortcut id, so picking another picture updates
+ * the same entry instead of adding a second icon.
  */
 object CustomIcon {
     const val SHORTCUT_ID = "custom-icon"
     private const val SIZE = 432
 
-    fun file(context: Context): File = File(context.filesDir, "custom_icon.png")
+    /** All generated icons; only the newest one is kept. */
+    private fun candidates(context: Context): List<File> =
+        context.filesDir.listFiles { f -> f.name.startsWith("custom_icon_") }?.toList() ?: emptyList()
+
+    /** Newest stored picture, or null when the user never picked one. */
+    fun current(context: Context): File? =
+        candidates(context).maxByOrNull { it.lastModified() }
 
     /** Decodes [uri], centre-crops it square and stores a rounded PNG. */
     fun save(context: Context, uri: Uri): File? = runCatching {
@@ -43,9 +50,9 @@ object CustomIcon {
         } ?: return null
 
         val side = minOf(decoded.width, decoded.height)
-        val left = (decoded.width - side) / 2
-        val top = (decoded.height - side) / 2
-        val square = Bitmap.createBitmap(decoded, left, top, side, side)
+        val square = Bitmap.createBitmap(
+            decoded, (decoded.width - side) / 2, (decoded.height - side) / 2, side, side
+        )
         val scaled = Bitmap.createScaledBitmap(square, SIZE, SIZE, true)
 
         val out = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
@@ -63,7 +70,9 @@ object CustomIcon {
         canvas.drawBitmap(scaled, 0f, 0f, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
         canvas.restore()
 
-        val target = file(context)
+        // A fresh name keeps image caches honest; older files are removed.
+        candidates(context).forEach { it.delete() }
+        val target = File(context.filesDir, "custom_icon_${System.currentTimeMillis()}.png")
         FileOutputStream(target).use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
         target
     }.getOrNull()
@@ -80,17 +89,32 @@ object CustomIcon {
             .build()
     }
 
-    /** True when the launcher supports adding shortcuts without a long-press. */
-    fun canPin(context: Context): Boolean =
-        ShortcutManagerCompat.isRequestPinShortcutSupported(context)
-
-    /** Asks the launcher to place the custom icon on the home screen. */
-    fun requestPin(context: Context): Boolean = runCatching {
-        val icon = BitmapFactory.decodeFile(file(context).absolutePath) ?: return false
-        ShortcutManagerCompat.requestPinShortcut(context, shortcut(context, icon), null)
+    private fun isPinned(context: Context): Boolean = runCatching {
+        ShortcutManagerCompat.getShortcuts(context, ShortcutManagerCompat.FLAG_MATCH_PINNED)
+            .any { it.id == SHORTCUT_ID }
     }.getOrDefault(false)
 
-    fun remove(context: Context): Boolean = runCatching {
-        file(context).delete()
+    /**
+     * Puts the picture on the home screen. When the entry already exists it is
+     * updated in place, so the user never ends up with two icons.
+     */
+    fun apply(context: Context): Boolean = runCatching {
+        val icon = BitmapFactory.decodeFile(current(context)?.absolutePath ?: return false)
+            ?: return false
+        val info = shortcut(context, icon)
+        if (isPinned(context)) {
+            ShortcutManagerCompat.updateShortcuts(context, listOf(info))
+            true
+        } else {
+            ShortcutManagerCompat.requestPinShortcut(context, info, null)
+        }
+    }.getOrDefault(false)
+
+    /** Removes the generated pictures and the launcher entry that points at them. */
+    fun clear(context: Context): Boolean = runCatching {
+        candidates(context).forEach { it.delete() }
+        ShortcutManagerCompat.removeLongLivedShortcuts(context, listOf(SHORTCUT_ID))
+        ShortcutManagerCompat.disableShortcuts(context, listOf(SHORTCUT_ID))
+        true
     }.getOrDefault(false)
 }

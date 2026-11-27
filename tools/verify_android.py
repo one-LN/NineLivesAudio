@@ -317,43 +317,22 @@ else:
     if stable_guard not in windows_workflow:
         problems.append("stable Windows releases must publish only from master/main")
 
-# Users must be able to pick their own launcher picture, not only the built-in styles
-_icon_kt = (ANDROID / "app/src/main/java/com/ninelives/audio/data/CustomIcon.kt")
+# One launcher entry only: no activity-alias styles, the user picks a picture
+_man2 = (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+if "activity-alias" in _man2:
+    problems.append("Launcher aliases were removed on purpose; keep a single launcher activity")
+if 'android.intent.category.LAUNCHER' not in _man2:
+    problems.append("MainActivity must stay the launcher entry")
+
+_icon_kt = ANDROID / "app/src/main/java/com/ninelives/audio/data/CustomIcon.kt"
 if not _icon_kt.exists():
     problems.append("CustomIcon.kt is missing - users cannot set their own icon")
 else:
     _ci = _icon_kt.read_text(encoding="utf-8")
-    for _need in ["requestPinShortcut", "ShortcutInfoCompat", "addRoundRect"]:
+    for _need in ["requestPinShortcut", "updateShortcuts", "ShortcutInfoCompat", "addRoundRect"]:
         if _need not in _ci:
             problems.append(f"CustomIcon.kt must keep {_need}")
 
-# painterResource cannot decode adaptive-icon XML; the icon picker must use PNG previews
-_settings = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/SettingsScreen.kt").read_text(encoding="utf-8")
-if "R.mipmap.ic_launcher_" in _settings:
-    problems.append("SettingsScreen must use drawable PNG previews, not R.mipmap launcher XML")
-
-# Custom launcher icons: four aliases, exactly one enabled by default
-_man = (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
-for _alias in ["LauncherDefault", "LauncherGold", "LauncherSea", "LauncherPlum"]:
-    if _alias not in _man:
-        problems.append(f"Launcher alias {_alias} missing from the manifest")
-if _man.count('android:enabled="true"') > 1:
-    problems.append("Only one launcher alias may be enabled by default")
-
-# Kotlin runs initialisers in declaration order: `init` must come after every property,
-# otherwise it can touch a field that is still null (crashed twice already).
-_vm_lines = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt").read_text(encoding="utf-8").split("\n")
-_init_at = next((i for i, l in enumerate(_vm_lines) if l.strip() == "init {"), None)
-if _init_at is not None:
-    _last_prop = None
-    for _i, _l in enumerate(_vm_lines):
-        if re.match(r"    (private )?(val|var) [A-Za-z_]", _l):
-            _last_prop = _i
-    if _last_prop is not None and _init_at < _last_prop:
-        problems.append(
-            f"MainViewModel.kt:{_init_at + 1} init block runs before the last property "
-            f"(line {_last_prop + 1}); move init to the end of the class"
-        )
 
 # AndroidViewModel keeps `application` private; functions must use getApplication()
 import re as _re

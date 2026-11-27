@@ -887,50 +887,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    var appIcon by mutableStateOf(store.getAppIcon())
+    /** Absolute path of the picture the user chose, or null for the built-in icon. */
+    var customIconPath by mutableStateOf(CustomIcon.current(getApplication())?.absolutePath)
         private set
 
-    /** Launcher aliases declared in the manifest, keyed by the id saved in settings. */
-    private val iconAliases = mapOf(
-        "default" to "LauncherDefault",
-        "gold" to "LauncherGold",
-        "sea" to "LauncherSea",
-        "plum" to "LauncherPlum"
-    )
-
-    fun updateAppIcon(id: String) {
-        if (!iconAliases.containsKey(id)) return
-        val pkg = getApplication<Application>().packageName
-        for ((key, alias) in iconAliases) {
-            val component = android.content.ComponentName(pkg, "$pkg.$alias")
-            val state = if (key == id) {
-                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-            } else {
-                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-            }
-            runCatching {
-                getApplication<Application>().packageManager.setComponentEnabledSetting(
-                    component,
-                    state,
-                    android.content.pm.PackageManager.DONT_KILL_APP
-                )
-            }
-        }
-        store.setAppIcon(id)
-        appIcon = id
-        statusMessage = t(
-            "图标已切换，桌面可能需要几秒钟刷新",
-            "Icon changed — the launcher may take a few seconds to refresh"
-        )
-    }
-
-    /** True once the user picked a picture for the launcher shortcut. */
-    var customIconPath by mutableStateOf(
-        CustomIcon.file(getApplication()).takeIf { it.exists() }?.absolutePath
-    )
-        private set
-
-    /** Copies [uri] into app storage and asks the launcher to pin it. */
+    /**
+     * Stores [uri] as the app icon. Android cannot rewrite the compiled
+     * launcher icon, so the picture is carried by the single pinned entry that
+     * opens the app; picking again updates that entry instead of adding one.
+     */
     fun setCustomIcon(uri: android.net.Uri) {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
@@ -941,49 +906,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
             customIconPath = saved.absolutePath
-            val pinned = CustomIcon.requestPin(ctx)
-            statusMessage = if (pinned) {
+            val applied = withContext(Dispatchers.IO) { CustomIcon.apply(ctx) }
+            statusMessage = if (applied) {
                 t(
-                    "已请求添加到桌面：请在系统弹窗里确认",
-                    "Asked the launcher to add it - confirm the system prompt"
+                    "图标已更新。若桌面还显示旧图标，把旧的拖掉即可",
+                    "Icon updated. If the old one is still there, remove it from the home screen"
                 )
             } else {
                 t(
-                    "已保存图片，但桌面不支持自动添加；长按桌面手动添加九命快捷方式",
-                    "Image saved, but this launcher cannot pin shortcuts automatically"
+                    "图片已保存，但当前桌面不允许自动放置图标",
+                    "Saved, but this launcher will not place the icon automatically"
                 )
             }
         }
     }
 
+    /** Drops the picture and the launcher entry that shows it. */
     fun clearCustomIcon() {
-        val ctx = getApplication<Application>()
-        CustomIcon.remove(ctx)
-        customIconPath = null
-        statusMessage = t("已移除自定义图标", "Custom icon removed")
-    }
-
-
-    /** Re-applies the saved icon, in case the launcher state drifted. */
-    fun syncAppIcon() {
-        val id = store.getAppIcon()
-        val pkg = getApplication<Application>().packageName
-        for ((key, alias) in iconAliases) {
-            val component = android.content.ComponentName(pkg, "$pkg.$alias")
-            val state = if (key == id) {
-                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-            } else {
-                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-            }
-            runCatching {
-                getApplication<Application>().packageManager.setComponentEnabledSetting(
-                    component,
-                    state,
-                    android.content.pm.PackageManager.DONT_KILL_APP
-                )
-            }
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            withContext(Dispatchers.IO) { CustomIcon.clear(ctx) }
+            customIconPath = null
+            statusMessage = t("已恢复默认图标", "Back to the default icon")
         }
-        appIcon = id
     }
 
     var allBookmarks by mutableStateOf<List<Bookmark>>(emptyList())
