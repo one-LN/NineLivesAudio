@@ -44,6 +44,7 @@ object PlaybackReporter {
         private set
 
     fun init(context: Context) {
+        android.util.Log.d("NLREPORT", "init")
         appContext = context.applicationContext
         if (listenLog == null) listenLog = ListenLog(context.applicationContext)
     }
@@ -69,6 +70,7 @@ object PlaybackReporter {
         lastSyncAt = 0L
         wasPlaying = false
         dirty = false
+        android.util.Log.d("NLREPORT", "configure sid=$sid item=$item dur=$dur token=${authToken.isNotBlank()} url=${url.take(24)}")
     }
 
     fun setTrackOffset(offset: Double) {
@@ -101,6 +103,7 @@ object PlaybackReporter {
     fun close() = push(closing = true)
 
     private fun push(closing: Boolean) {
+        android.util.Log.d("NLREPORT", "push closing=$closing dirty=$dirty url=${serverUrl.take(24)} item=$itemId")
         val url = serverUrl
         val auth = token
         val item = itemId
@@ -117,6 +120,7 @@ object PlaybackReporter {
                 api.syncProgress(url, auth, sid, item, pos, dur, delta)
             }.getOrDefault(false)
             pushCount++
+            android.util.Log.d("NLREPORT", "result=$ok delta=$delta pos=${pos.toInt()}")
             if (ok) {
                 lastSuccessAt = System.currentTimeMillis()
                 lastSentSec = delta
