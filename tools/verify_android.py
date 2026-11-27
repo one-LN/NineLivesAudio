@@ -180,6 +180,9 @@ if vm_early.is_file():
     if text.rfind("init {") < text.rfind("private val bookmarkStore"):
         problems.append("ViewModel init must come after all property declarations")
 playback_service2 = ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt"
+svc_text2 = (ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt").read_text(encoding="utf-8")
+if "PlaybackReporter" not in svc_text2:
+    problems.append("Progress reporting must run inside the service so it survives the activity")
 svc_text = (ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt").read_text(encoding="utf-8")
 if "setSessionActivity" not in svc_text:
     problems.append("Tapping the media card must open the app (setSessionActivity)")

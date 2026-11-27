@@ -45,6 +45,7 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import com.ninelives.audio.data.PlaybackReporter
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SettingsStore(application)
@@ -120,6 +121,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         } catch (_: Exception) {
         }
+    }
+
+    fun flushProgressNow() {
+        PlaybackReporter.flush()
+        addLog(t("已触发一次进度回传", "Progress sync triggered"))
     }
 
     fun clearLogs() {
@@ -550,8 +556,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var lastChapterIdx = -1
     var playerError by mutableStateOf<String?>(null)
         private set
-    private var listenedSinceSync = 0.0
-    private val reportScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+    var lastSyncInfo by mutableStateOf("")
+        private set
 
     init {
         Lang.code = store.getLanguage()
@@ -578,12 +584,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (wasPlaying && !playing) {
                             // Flush immediately: the last partial window would otherwise be lost.
                             listenLog.flush()
-                            val sess = currentSession
-                            if (sess != null) {
-                                viewModelScope.launch {
-                                    syncProgressAndUpdateLocal(sess.itemId, currentPositionSec, totalDurationSec)
-                                }
-                            }
+                            PlaybackReporter.flush()
                         }
                     }
                     override fun onPlayerError(error: PlaybackException) {
@@ -626,13 +627,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val posSec = trackOffset + (c.currentPosition.coerceAtLeast(0L) / 1000.0)
                     currentPositionSec = posSec
                     if (isPlaying) {
-                        listenLog.addSecond()
-                        listenedSinceSync += 1.0
                         tick++
-                        if (tick % 30 == 0) refreshListenWeek()
-                        if (tick % 10 == 0 && activeUrl.isNotBlank() && activeToken.isNotBlank()) {
-                            syncProgressAndUpdateLocal(sess.itemId, posSec, totalDurationSec)
+                        if (tick % 5 == 0) {
+                            lastSyncInfo = if (PlaybackReporter.lastSuccessAt > 0L) {
+                                "${PlaybackReporter.lastResult} · ${PlaybackReporter.lastSentSec.toInt()}s"
+                            } else ""
                         }
+                        if (tick % 30 == 0) refreshListenWeek()
                         val chIdx = sess.chapters.indexOfLast { posSec >= it.start }
                         if (sleepEndOfChapter && sleepTargetChapterIdx >= 0 && chIdx > sleepTargetChapterIdx) {
                             c.pause()
@@ -695,10 +696,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val previous = currentSession
         if (previous != null && previous.sessionId.isNotBlank() && previous.sessionId != sess.sessionId) {
-            val url = activeUrl
-            val token = activeToken
-            val sid = previous.sessionId
-            reportScope.launch { api.closeSession(url, token, sid) }
+            PlaybackReporter.close()
         }
         currentSession = sess
         loadBookmarks(sess.itemId)
@@ -710,6 +708,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val targetIdx = sess.tracks.indexOfLast { sess.currentTime >= it.startOffset }.coerceAtLeast(0)
         val trackStart = sess.tracks.getOrNull(targetIdx)?.startOffset ?: 0.0
         val offsetMs = ((sess.currentTime - trackStart).coerceAtLeast(0.0) * 1000).toLong()
+        PlaybackReporter.configure(activeUrl, activeToken, sess.itemId, sess.sessionId, sess.duration, trackStart)
         loadTrackAndPlay(targetIdx, offsetMs)
     }
 
@@ -718,6 +717,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val sess = currentSession ?: return
         val track = sess.tracks.getOrNull(trackIndex) ?: return
         currentTrackIndex = trackIndex
+        PlaybackReporter.setTrackOffset(track.startOffset)
         val meta = MediaMetadata.Builder()
             .setTitle(sess.title)
             .setArtist(sess.author)
@@ -975,16 +975,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun syncProgressAndUpdateLocal(itemId: String, posSec: Double, durSec: Double) {
-        val sid = currentSession?.sessionId ?: ""
         val now = System.currentTimeMillis()
-        val listened = listenedSinceSync.coerceAtLeast(0.0)
-        listenedSinceSync = 0.0
         offlineStore.updateProgress(activeUrl, itemId, posSec, now)
         downloadedBooks = offlineStore.allBooks()
-        if (sid.isNotBlank() && autoSyncEnabled && activeUrl.isNotBlank() && activeToken.isNotBlank()) {
-            val ok = api.syncProgress(activeUrl, activeToken, sid, itemId, posSec, durSec, listened)
-            if (!ok) addLog(t("进度回传失败，稍后重试", "Progress sync failed, will retry"))
-        }
         val prog = if (durSec > 0) (posSec / durSec).coerceIn(0.0, 1.0) else 0.0
         books = books.map { b ->
             if (b.id == itemId) {
@@ -1018,20 +1011,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         listenLog.flush()
-        val sess = currentSession
-        if (sess != null && sess.sessionId.isNotBlank()) {
-            val url = activeUrl
-            val token = activeToken
-            val pos = currentPositionSec
-            val dur = totalDurationSec
-            val listened = listenedSinceSync
-            val sid = sess.sessionId
-            val itemId = sess.itemId
-            reportScope.launch {
-                api.syncProgress(url, token, sid, itemId, pos, dur, listened)
-                api.closeSession(url, token, sid)
-            }
-        }
+        PlaybackReporter.close()
         mediaController?.release()
         mediaController = null
         super.onCleared()

@@ -211,11 +211,24 @@ fun SettingsScreen(vm: MainViewModel) {
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(t("数据", "Data"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                if (vm.lastSyncInfo.isNotBlank()) {
+                    Text(
+                        t("最近回传：${vm.lastSyncInfo}", "Last sync: ${vm.lastSyncInfo}"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 OutlinedButton(
                     onClick = { vm.refreshAll() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(t("立即同步服务器数据", "Sync now"))
+                }
+                OutlinedButton(
+                    onClick = { vm.flushProgressNow() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(t("立即回传当前进度", "Upload progress now"))
                 }
             }
         }

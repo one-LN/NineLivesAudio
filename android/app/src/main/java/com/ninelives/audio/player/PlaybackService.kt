@@ -9,9 +9,18 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.ninelives.audio.MainActivity
+import com.ninelives.audio.data.PlaybackReporter
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var player: ExoPlayer? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -32,7 +41,7 @@ class PlaybackService : MediaSessionService() {
             )
             .build()
 
-        val player = ExoPlayer.Builder(this)
+        val exoPlayer = ExoPlayer.Builder(this)
             // true = let ExoPlayer handle audio focus (pause on calls, duck/resume)
             .setAudioAttributes(audioAttributes, true)
             // Keep playing when headphones are unplugged / Bluetooth drops.
@@ -57,16 +66,28 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(openApp)
             .build()
+
+        // Reporting lives here, not in the ViewModel: the service survives the activity.
+        PlaybackReporter.init(this)
+        serviceScope.launch {
+            while (isActive) {
+                delay(1000)
+                val p = player ?: continue
+                PlaybackReporter.tick(p.currentPosition, p.isPlaying)
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
         mediaSession
 
     override fun onDestroy() {
+        PlaybackReporter.close()
         mediaSession?.run {
             player.release()
             release()
         }
+        player = null
         mediaSession = null
         super.onDestroy()
     }
