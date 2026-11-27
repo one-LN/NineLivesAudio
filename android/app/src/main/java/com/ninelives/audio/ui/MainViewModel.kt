@@ -48,6 +48,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import com.ninelives.audio.data.PlaybackReporter
 import com.ninelives.audio.data.FavoriteStore
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import com.ninelives.audio.data.CustomIcon
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SettingsStore(application)
@@ -706,6 +709,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+        refreshCustomIconPath()
     }
 
     fun playBook(book: BookItem) {
@@ -1041,6 +1045,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "图标已切换，桌面可能需要几秒钟刷新",
             "Icon changed — the launcher may take a few seconds to refresh"
         )
+    }
+
+    /** True once the user picked a picture for the launcher shortcut. */
+    var customIconPath by mutableStateOf<String?>(null)
+        private set
+
+    /** Copies [uri] into app storage and asks the launcher to pin it. */
+    fun setCustomIcon(uri: android.net.Uri) {
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            statusMessage = t("正在处理图片…", "Preparing the image…")
+            val saved = withContext(Dispatchers.IO) { CustomIcon.save(ctx, uri) }
+            if (saved == null) {
+                statusMessage = t("这张图片读不出来，换一张试试", "That image could not be read, try another one")
+                return@launch
+            }
+            customIconPath = saved.absolutePath
+            val pinned = CustomIcon.requestPin(ctx)
+            statusMessage = if (pinned) {
+                t(
+                    "已请求添加到桌面：请在系统弹窗里确认",
+                    "Asked the launcher to add it - confirm the system prompt"
+                )
+            } else {
+                t(
+                    "已保存图片，但桌面不支持自动添加；长按桌面手动添加九命快捷方式",
+                    "Image saved, but this launcher cannot pin shortcuts automatically"
+                )
+            }
+        }
+    }
+
+    fun clearCustomIcon() {
+        val ctx = getApplication<Application>()
+        CustomIcon.remove(ctx)
+        customIconPath = null
+        statusMessage = t("已移除自定义图标", "Custom icon removed")
+    }
+
+    private fun refreshCustomIconPath() {
+        val f = CustomIcon.file(getApplication<Application>())
+        customIconPath = if (f.exists()) f.absolutePath else null
     }
 
     /** Re-applies the saved icon, in case the launcher state drifted. */

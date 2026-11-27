@@ -317,6 +317,16 @@ else:
     if stable_guard not in windows_workflow:
         problems.append("stable Windows releases must publish only from master/main")
 
+# Users must be able to pick their own launcher picture, not only the built-in styles
+_icon_kt = (ANDROID / "app/src/main/java/com/ninelives/audio/data/CustomIcon.kt")
+if not _icon_kt.exists():
+    problems.append("CustomIcon.kt is missing - users cannot set their own icon")
+else:
+    _ci = _icon_kt.read_text(encoding="utf-8")
+    for _need in ["requestPinShortcut", "ShortcutInfoCompat", "addRoundRect"]:
+        if _need not in _ci:
+            problems.append(f"CustomIcon.kt must keep {_need}")
+
 # painterResource cannot decode adaptive-icon XML; the icon picker must use PNG previews
 _settings = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/SettingsScreen.kt").read_text(encoding="utf-8")
 if "R.mipmap.ic_launcher_" in _settings:

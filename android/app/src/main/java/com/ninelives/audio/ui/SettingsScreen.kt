@@ -42,6 +42,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.compose.rememberLauncherForActivityResult
 
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
@@ -206,6 +210,10 @@ fun SettingsScreen(vm: MainViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                val pickImage = rememberLauncherForActivityResult(
+                    ActivityResultContracts.PickVisualMedia()
+                ) { uri -> if (uri != null) vm.setCustomIcon(uri) }
+
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -242,6 +250,51 @@ fun SettingsScreen(vm: MainViewModel) {
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                .clickable { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (vm.customIconPath != null) {
+                                coil.compose.AsyncImage(
+                                    model = java.io.File(vm.customIconPath!!),
+                                    contentDescription = t("自定义", "Custom"),
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Text("+", style = MaterialTheme.typography.headlineMedium)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            t("自定义", "Custom"),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    t(
+                        "自定义图标：选一张图片，确认后系统会把它加到桌面（原图标保留，可长按删除）",
+                        "Custom icon: pick a picture, then confirm the prompt; it is added to your home screen"
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (vm.customIconPath != null) {
+                    TextButton(onClick = { vm.clearCustomIcon() }) {
+                        Text(t("移除自定义图标", "Remove custom icon"))
                     }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
