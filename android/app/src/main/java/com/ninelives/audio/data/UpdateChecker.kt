@@ -49,6 +49,12 @@ class UpdateChecker(private val context: Context) {
      * release list so normal use never runs into a 403.
      */
     suspend fun check(force: Boolean = false): Result<AppUpdate?> = withContext(Dispatchers.IO) {
+        // The REST API allows only 60 anonymous calls per hour per IP, which a phone
+        // shares with every other device behind the same router. The releases Atom
+        // feed is not rate limited, so use it first and keep the API as a fallback.
+        val atom = runCatching { fetchAtom() }.getOrNull()
+        if (atom != null) return@withContext atom
+
         val cachedAt = prefs.getLong("at", 0L)
         val cachedBody = prefs.getString("body", null)
         val fresh = System.currentTimeMillis() - cachedAt < CACHE_TTL_MS
@@ -116,6 +122,46 @@ class UpdateChecker(private val context: Context) {
                     }
                 }
         return best
+    }
+
+    /** Reads the releases Atom feed: no quota, one small request. */
+    private fun fetchAtom(): Result<AppUpdate?> {
+        val cachedAt = prefs.getLong("atom_at", 0L)
+        val cached = prefs.getString("atom_body", null)
+        val fresh = System.currentTimeMillis() - cachedAt < CACHE_TTL_MS
+        val body = if (fresh && !cached.isNullOrBlank()) cached else {
+            val request = Request.Builder()
+                .url("https://github.com/one-LN/NineLivesAudio/releases.atom")
+                .header("User-Agent", "NineLivesAudio-Android/" + currentVersionName())
+                .build()
+            val fetched = client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return Result.failure(Exception("HTTP ${response.code}"))
+                response.body?.string().orEmpty()
+            }
+            prefs.edit().putString("atom_body", fetched).putLong("atom_at", System.currentTimeMillis()).apply()
+            fetched
+        }
+
+        val current = currentVersionName()
+        var bestVersion = current
+        var bestTag: String? = null
+        for (m in Regex("""/releases/tag/(android-v[0-9][^"<\s]*)""").findAll(body)) {
+            val tag = m.groupValues[1]
+            val version = tag.removePrefix("android-v")
+            if (compareVersions(version, bestVersion) > 0) {
+                bestVersion = version
+                bestTag = tag
+            }
+        }
+        val tag = bestTag ?: return Result.success(null)
+        val version = tag.removePrefix("android-v")
+        return Result.success(
+            AppUpdate(
+                versionName = version,
+                downloadUrl = "https://github.com/one-LN/NineLivesAudio/releases/download/$tag/NineLivesAudio-android.apk",
+                notes = ""
+            )
+        )
     }
 
     suspend fun download(update: AppUpdate, onProgress: (Int) -> Unit): Result<File> =
