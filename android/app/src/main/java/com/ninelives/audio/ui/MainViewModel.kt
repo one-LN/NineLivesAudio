@@ -471,13 +471,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         booksRes.onSuccess { list ->
             addLog("书籍: ${list.size} 本, 进度: ${progressMap.size} 条")
             loadFavorites()
+            val previous = books.associateBy { it.id }
             books = list.map { b ->
                 val p = progressMap[b.id]
+                val serverTime = p?.second ?: 0.0
+                val localTime = previous[b.id]?.currentTime ?: 0.0
+                // The server can legitimately report 0 for a book we are in the middle of
+                // (a stale write, a fresh account, an offline session that has not synced).
+                // Never let that erase real local progress: keep the larger of the two.
+                val useLocal = serverTime <= 0.5 && localTime > 5.0
+                val time = if (useLocal) localTime else serverTime
+                val prog = if (useLocal) {
+                    previous[b.id]?.progress ?: 0.0
+                } else {
+                    p?.first ?: 0.0
+                }
                 b.copy(
-                    progress = p?.first ?: 0.0,
-                    currentTime = p?.second ?: 0.0,
-                    isFinished = (p?.first ?: 0.0) >= 0.995,
-                    lastUpdate = p?.third ?: 0L,
+                    progress = prog,
+                    currentTime = time,
+                    isFinished = prog >= 0.995,
+                    lastUpdate = if (useLocal) (previous[b.id]?.lastUpdate ?: 0L) else (p?.third ?: 0L),
                     isDownloaded = downloadedBooks.any { it.serverUrl == activeUrl && it.itemId == b.id }
                 )
             }

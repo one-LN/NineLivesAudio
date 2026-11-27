@@ -190,6 +190,8 @@ playback_service2 = ANDROID / "app/src/main/java/com/ninelives/audio/player/Play
 svc_text2 = (ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt").read_text(encoding="utf-8")
 if "PlaybackReporter" not in svc_text2:
     problems.append("Progress reporting must run inside the service so it survives the activity")
+if "player = exoPlayer" not in svc_text2:
+    problems.append("The service must keep the ExoPlayer reference or the reporting loop ticks nothing")
 svc_text = (ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt").read_text(encoding="utf-8")
 if "setSessionActivity" not in svc_text:
     problems.append("Tapping the media card must open the app (setSessionActivity)")

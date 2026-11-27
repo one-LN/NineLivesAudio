@@ -86,6 +86,9 @@ class PlaybackService : MediaSessionService() {
                 .build()
         )
 
+        // Keep a reference: the reporting loop below ticks off this player.
+        player = exoPlayer
+
         mediaSession = MediaSession.Builder(this, exoPlayer)
             .setSessionActivity(openApp)
             .setCustomLayout(layout)
