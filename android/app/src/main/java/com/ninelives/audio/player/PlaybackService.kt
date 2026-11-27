@@ -63,7 +63,7 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        mediaSession = MediaSession.Builder(this, player)
+        mediaSession = MediaSession.Builder(this, exoPlayer)
             .setSessionActivity(openApp)
             .build()
 
@@ -83,12 +83,10 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         PlaybackReporter.close()
-        mediaSession?.run {
-            player.release()
-            release()
-        }
-        player = null
+        mediaSession?.release()
         mediaSession = null
+        player?.release()
+        player = null
         super.onDestroy()
     }
 }
