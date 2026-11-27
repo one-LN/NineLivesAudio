@@ -26,6 +26,7 @@ import com.ninelives.audio.data.DownloadedBook
 import com.ninelives.audio.data.DownloadTask
 import com.ninelives.audio.data.Bookmark
 import com.ninelives.audio.data.BookmarkStore
+import com.ninelives.audio.data.CollectionInfo
 import com.ninelives.audio.data.ListenLog
 import com.ninelives.audio.data.PendingBookmarkOp
 import com.ninelives.audio.data.BookItem
