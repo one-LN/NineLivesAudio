@@ -114,7 +114,6 @@ object CustomIcon {
     fun clear(context: Context): Boolean = runCatching {
         candidates(context).forEach { it.delete() }
         ShortcutManagerCompat.removeLongLivedShortcuts(context, listOf(SHORTCUT_ID))
-        ShortcutManagerCompat.disableShortcuts(context, listOf(SHORTCUT_ID))
         true
     }.getOrDefault(false)
 }
