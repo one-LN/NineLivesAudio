@@ -324,3 +324,11 @@ if problems:
     sys.exit(1)
 count = sum(1 for path in ANDROID.rglob("*") if path.is_file())
 print(f"Android structural check passed: {count} project files, manifest XML valid, and CI release boundaries present.")
+
+# Custom launcher icon: four activity-alias entries must exist and stay disabled by default
+man = (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+for alias in ["IconDefault", "IconGold", "IconSea", "IconPlum"]:
+    if alias not in man:
+        problems.append(f"Launcher alias {alias} missing from the manifest")
+if man.count('android:enabled="true"') > 1:
+    problems.append("Only one launcher alias may be enabled by default")

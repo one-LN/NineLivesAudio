@@ -75,4 +75,7 @@ class SettingsStore(context: Context) {
 
     fun setBookOutroSec(itemId: String, sec: Int) =
         prefs.edit().putInt("book_outro_$itemId", sec.coerceAtLeast(0)).apply()
+
+    fun getAppIcon(): String = prefs.getString("app_icon", "default") ?: "default"
+    fun setAppIcon(id: String) = prefs.edit().putString("app_icon", id).apply()
 }

@@ -1006,6 +1006,65 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    var appIcon by mutableStateOf(store.getAppIcon())
+        private set
+
+    /** Launcher aliases declared in the manifest, keyed by the id saved in settings. */
+    private val iconAliases = mapOf(
+        "default" to "LauncherDefault",
+        "gold" to "LauncherGold",
+        "sea" to "LauncherSea",
+        "plum" to "LauncherPlum"
+    )
+
+    fun updateAppIcon(id: String) {
+        if (!iconAliases.containsKey(id)) return
+        val pkg = application.packageName
+        for ((key, alias) in iconAliases) {
+            val component = android.content.ComponentName(pkg, "$pkg.$alias")
+            val state = if (key == id) {
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            } else {
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            }
+            runCatching {
+                application.packageManager.setComponentEnabledSetting(
+                    component,
+                    state,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+            }
+        }
+        store.setAppIcon(id)
+        appIcon = id
+        statusMessage = t(
+            "图标已切换，桌面可能需要几秒钟刷新",
+            "Icon changed — the launcher may take a few seconds to refresh"
+        )
+    }
+
+    /** Re-applies the saved icon, in case the launcher state drifted. */
+    fun syncAppIcon() {
+        val id = store.getAppIcon()
+        val pkg = application.packageName
+        for ((key, alias) in iconAliases) {
+            val component = android.content.ComponentName(pkg, "$pkg.$alias")
+            val state = if (key == id) {
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            } else {
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            }
+            runCatching {
+                application.packageManager.setComponentEnabledSetting(
+                    component,
+                    state,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+            }
+        }
+        appIcon = id
+    }
+
     var allBookmarks by mutableStateOf<List<Bookmark>>(emptyList())
         private set
 

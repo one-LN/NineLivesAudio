@@ -34,6 +34,14 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import com.ninelives.audio.R
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.Image
 
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
@@ -186,6 +194,58 @@ fun SettingsScreen(vm: MainViewModel) {
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    t("应用图标", "App icon"),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    t("选择桌面显示的样子，切换后桌面可能需要几秒刷新", "Pick the launcher look; the home screen may take a few seconds to refresh"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    val icons = listOf(
+                        Triple("default", t("深空", "Void"), R.mipmap.ic_launcher_default),
+                        Triple("gold", t("曜金", "Gold"), R.mipmap.ic_launcher_gold),
+                        Triple("sea", t("深海", "Sea"), R.mipmap.ic_launcher_sea),
+                        Triple("plum", t("玄紫", "Plum"), R.mipmap.ic_launcher_plum)
+                    )
+                    for ((id, label, res) in icons) {
+                        val selected = vm.appIcon == id
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Image(
+                                painter = painterResource(id = res),
+                                contentDescription = label,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .border(
+                                        width = if (selected) 2.dp else 1.dp,
+                                        color = if (selected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.outline,
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                    .clickable { vm.updateAppIcon(id) }
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (selected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+
                 Text(t("下载与同步", "Downloads & sync"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
