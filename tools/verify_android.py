@@ -180,6 +180,9 @@ if vm_early.is_file():
     if text.rfind("init {") < text.rfind("private val bookmarkStore"):
         problems.append("ViewModel init must come after all property declarations")
 playback_service2 = ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt"
+manifest_text = (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+if "setWakeMode" in (ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt").read_text(encoding="utf-8") and "WAKE_LOCK" not in manifest_text:
+    problems.append("setWakeMode needs the WAKE_LOCK permission")
 if playback_service2.is_file():
     text = playback_service2.read_text(encoding="utf-8")
     if "setWakeMode" not in text:
