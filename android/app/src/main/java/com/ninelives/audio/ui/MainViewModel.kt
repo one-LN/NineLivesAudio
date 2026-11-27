@@ -845,6 +845,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (bookmarksItemId == itemId) {
                         bookmarks = mergeBookmarks(list, bookmarks.filter { it.id.startsWith("local-") })
                         bookmarkStore.saveCache(itemId, bookmarks)
+                        if (list.size > bookmarks.count { !it.id.startsWith("local-") }) {
+                            cleanDuplicateBookmarks(itemId)
+                        }
                     }
                 }
                 .onFailure {
@@ -869,13 +872,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return merged.distinctBy { it.time.toInt() }.sortedBy { it.time }
     }
 
+    /**
+     * The server removes a bookmark by comparing the numeric time exactly, so a
+     * value written by an older build (with decimals) never matches. Try the exact
+     * time first, then the closest bookmark within two seconds.
+     */
+    private suspend fun deleteBookmarkOnServer(itemId: String, time: Double): Boolean {
+        if (api.deleteBookmark(activeUrl, activeToken, itemId, time).isSuccess) return true
+        val list = api.getBookmarks(activeUrl, activeToken, itemId).getOrNull() ?: return false
+        val match = list.minByOrNull { kotlin.math.abs(it.time - time) }
+            ?.takeIf { kotlin.math.abs(it.time - time) <= 2.0 } ?: return false
+        return api.deleteBookmark(activeUrl, activeToken, itemId, match.time).isSuccess
+    }
+
+    /** Removes duplicates the server accumulated before bookmarks were rounded. */
+    private suspend fun cleanDuplicateBookmarks(itemId: String) {
+        val list = api.getBookmarks(activeUrl, activeToken, itemId).getOrNull() ?: return
+        val sorted = list.sortedBy { it.time }
+        var previous = Double.NaN
+        for (bm in sorted) {
+            if (!previous.isNaN() && kotlin.math.abs(bm.time - previous) <= 1.5) {
+                api.deleteBookmark(activeUrl, activeToken, itemId, bm.time)
+            } else {
+                previous = bm.time
+            }
+        }
+    }
+
     fun addBookmarkAtCurrent(title: String = "") {
         val sess = currentSession
         if (sess == null) {
             bookmarkStatus = t("请先打开一本书", "Open a book first")
             return
         }
-        val pos = currentAbsolutePosition()
+        val pos = Math.round(currentAbsolutePosition()).toDouble()
         if (bookmarks.any { it.itemId == sess.itemId && kotlin.math.abs(it.time - pos) <= 2.0 }) {
             bookmarkStatus = t("这个位置已经有书签了", "A bookmark already exists at this position")
             return
@@ -923,12 +953,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         viewModelScope.launch {
-            api.deleteBookmark(activeUrl, activeToken, bookmark.itemId, bookmark.time)
-                .onSuccess { bookmarkStatus = t("已删除", "Deleted") }
-                .onFailure {
-                    bookmarkStore.addPending(PendingBookmarkOp("delete", bookmark.itemId, "", bookmark.time))
-                    bookmarkStatus = t("已本地删除，稍后自动重试", "Deleted locally, will retry automatically")
-                }
+            val ok = deleteBookmarkOnServer(bookmark.itemId, bookmark.time)
+            if (ok) {
+                bookmarkStatus = t("已删除", "Deleted")
+            } else {
+                bookmarkStore.addPending(PendingBookmarkOp("delete", bookmark.itemId, "", bookmark.time))
+                bookmarkStatus = t("已本地删除，稍后自动重试", "Deleted locally, will retry automatically")
+            }
         }
     }
 

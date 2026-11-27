@@ -234,6 +234,10 @@ if "releases.atom" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data
 if "User-Agent" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data/UpdateChecker.kt").read_text(encoding="utf-8"):
     problems.append("GitHub API requests need a User-Agent and a cache to avoid 403 rate limits")
 _vm_book = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt").read_text(encoding="utf-8")
+if "Math.round(currentAbsolutePosition())" not in _vm_book:
+    problems.append("Bookmark times must be whole seconds: the server matches them exactly")
+if "deleteBookmarkOnServer" not in _vm_book:
+    problems.append("Bookmark deletion must retry with the stored server time")
 if "mergeBookmarks(" not in _vm_book:
     problems.append("Bookmarks must be merged/deduped or the list shows the same row twice")
 if 'h > 0' not in _vm_book:
