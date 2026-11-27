@@ -535,6 +535,21 @@ class AbsApiClient {
         }
     }
 
+    /** Finalises the listening session so the server records it in the listening stats. */
+    suspend fun closeSession(serverUrl: String, token: String, sessionId: String) = withContext(Dispatchers.IO) {
+        if (sessionId.isBlank()) return@withContext
+        try {
+            val base = cleanUrl(serverUrl)
+            val req = Request.Builder()
+                .url("$base/api/session/$sessionId/close")
+                .header("Authorization", "Bearer $token")
+                .post("{}".toRequestBody("application/json".toMediaType()))
+                .build()
+            client.newCall(req).execute().close()
+        } catch (_: Exception) {
+        }
+    }
+
     suspend fun syncProgress(
         serverUrl: String,
         token: String,
@@ -574,7 +589,9 @@ class AbsApiClient {
                 .build()
 
             client.newCall(req).execute().close()
+            true
         } catch (_: Exception) {
+            false
         }
     }
 }

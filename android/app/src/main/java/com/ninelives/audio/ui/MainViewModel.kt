@@ -39,6 +39,12 @@ import com.ninelives.audio.data.UpdateChecker
 import com.ninelives.audio.player.PlaybackService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SettingsStore(application)
@@ -96,8 +102,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var logs by mutableStateOf<List<String>>(emptyList())
         private set
 
+    private val logFile = File(application.noBackupFilesDir, "app_log.txt")
+    private var logWrites = 0
+
+    private fun stamp(): String =
+        SimpleDateFormat("MM-dd HH:mm:ss", Locale.US).format(Date())
+
     private fun addLog(msg: String) {
-        logs = (listOf(msg) + logs).take(20)
+        val line = "[${stamp()}] $msg"
+        logs = (listOf(line) + logs).take(50)
+        try {
+            logFile.appendText(line + "\n")
+            logWrites++
+            if (logWrites % 40 == 0 && logFile.length() > 128_000) {
+                val tail = logFile.readLines().takeLast(300)
+                logFile.writeText(tail.joinToString("\n", postfix = "\n"))
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    fun clearLogs() {
+        logs = emptyList()
+        try {
+            logFile.writeText("")
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun loadRecentLogs() {
+        try {
+            if (logFile.isFile) {
+                logs = logFile.readLines().takeLast(20).reversed()
+            }
+        } catch (_: Exception) {
+        }
     }
 
     // Nine Lives: include any book with playback progress or lastUpdate > 0
@@ -511,9 +550,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var lastChapterIdx = -1
     var playerError by mutableStateOf<String?>(null)
         private set
+    private var listenedSinceSync = 0.0
+    private val reportScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
     init {
         Lang.code = store.getLanguage()
+        loadRecentLogs()
         refreshListenWeek()
         val sessionToken = SessionToken(
             application,
@@ -531,13 +573,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 controller.addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
+                        val wasPlaying = isPlaying
                         isPlaying = playing
+                        if (wasPlaying && !playing) {
+                            // Flush immediately: the last partial window would otherwise be lost.
+                            listenLog.flush()
+                            val sess = currentSession
+                            if (sess != null) {
+                                viewModelScope.launch {
+                                    syncProgressAndUpdateLocal(sess.itemId, currentPositionSec, totalDurationSec)
+                                }
+                            }
+                        }
                     }
                     override fun onPlayerError(error: PlaybackException) {
                         playerError = t(
                             "播放出错：${error.errorCodeName}",
                             "Playback error: ${error.errorCodeName}"
                         )
+                        addLog("player error ${error.errorCodeName} (${error.errorCode}) at ${currentPositionSec.toInt()}s")
                         if (playbackRetries >= 2) return
                         playbackRetries++
                         val offsetMs = mediaController?.currentPosition?.coerceAtLeast(0L) ?: 0L
@@ -573,6 +627,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     currentPositionSec = posSec
                     if (isPlaying) {
                         listenLog.addSecond()
+                        listenedSinceSync += 1.0
                         tick++
                         if (tick % 30 == 0) refreshListenWeek()
                         if (tick % 10 == 0 && activeUrl.isNotBlank() && activeToken.isNotBlank()) {
@@ -637,6 +692,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (mediaController == null) {
             pendingSession = sess
             return
+        }
+        val previous = currentSession
+        if (previous != null && previous.sessionId.isNotBlank() && previous.sessionId != sess.sessionId) {
+            val url = activeUrl
+            val token = activeToken
+            val sid = previous.sessionId
+            reportScope.launch { api.closeSession(url, token, sid) }
         }
         currentSession = sess
         loadBookmarks(sess.itemId)
@@ -915,10 +977,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun syncProgressAndUpdateLocal(itemId: String, posSec: Double, durSec: Double) {
         val sid = currentSession?.sessionId ?: ""
         val now = System.currentTimeMillis()
+        val listened = listenedSinceSync.coerceAtLeast(0.0)
+        listenedSinceSync = 0.0
         offlineStore.updateProgress(activeUrl, itemId, posSec, now)
         downloadedBooks = offlineStore.allBooks()
-        if (sid.isNotBlank() && autoSyncEnabled) {
-            api.syncProgress(activeUrl, activeToken, sid, itemId, posSec, durSec, 10.0)
+        if (sid.isNotBlank() && autoSyncEnabled && activeUrl.isNotBlank() && activeToken.isNotBlank()) {
+            val ok = api.syncProgress(activeUrl, activeToken, sid, itemId, posSec, durSec, listened)
+            if (!ok) addLog(t("进度回传失败，稍后重试", "Progress sync failed, will retry"))
         }
         val prog = if (durSec > 0) (posSec / durSec).coerceIn(0.0, 1.0) else 0.0
         books = books.map { b ->
@@ -953,6 +1018,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         listenLog.flush()
+        val sess = currentSession
+        if (sess != null && sess.sessionId.isNotBlank()) {
+            val url = activeUrl
+            val token = activeToken
+            val pos = currentPositionSec
+            val dur = totalDurationSec
+            val listened = listenedSinceSync
+            val sid = sess.sessionId
+            val itemId = sess.itemId
+            reportScope.launch {
+                api.syncProgress(url, token, sid, itemId, pos, dur, listened)
+                api.closeSession(url, token, sid)
+            }
+        }
         mediaController?.release()
         mediaController = null
         super.onCleared()

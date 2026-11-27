@@ -179,6 +179,16 @@ if vm_early.is_file():
         problems.append("BookmarkStore must be lazy: init runs before late fields are assigned")
     if text.rfind("init {") < text.rfind("private val bookmarkStore"):
         problems.append("ViewModel init must come after all property declarations")
+playback_service2 = ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt"
+if playback_service2.is_file():
+    text = playback_service2.read_text(encoding="utf-8")
+    if "setWakeMode" not in text:
+        problems.append("Background playback needs setWakeMode so the CPU stays awake")
+api_client = ANDROID / "app/src/main/java/com/ninelives/audio/data/AbsApiClient.kt"
+if api_client.is_file():
+    text = api_client.read_text(encoding="utf-8")
+    if "/close" not in text:
+        problems.append("Listening sessions must be closed so the server counts them")
 playback_service = ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt"
 if playback_service.is_file():
     text = playback_service.read_text(encoding="utf-8")

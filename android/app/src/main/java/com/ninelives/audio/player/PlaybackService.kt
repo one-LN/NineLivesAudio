@@ -35,6 +35,9 @@ class PlaybackService : MediaSessionService() {
             // Keep playing when headphones are unplugged / Bluetooth drops.
             .setHandleAudioBecomingNoisy(false)
             .setLoadControl(loadControl)
+            // Keep the CPU and Wi-Fi awake while the screen is off, otherwise
+            // background listening stalls after a few minutes.
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
 
         mediaSession = MediaSession.Builder(this, player).build()
