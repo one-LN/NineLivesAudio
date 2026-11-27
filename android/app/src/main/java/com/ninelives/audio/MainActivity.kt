@@ -68,9 +68,17 @@ import com.ninelives.audio.ui.StatsScreen
 import com.ninelives.audio.ui.theme.NineLivesTheme
 import com.ninelives.audio.ui.NavGlyph
 import com.ninelives.audio.ui.t
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
+        }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {

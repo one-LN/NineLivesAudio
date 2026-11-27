@@ -180,6 +180,11 @@ if vm_early.is_file():
     if text.rfind("init {") < text.rfind("private val bookmarkStore"):
         problems.append("ViewModel init must come after all property declarations")
 playback_service2 = ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt"
+svc_text = (ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt").read_text(encoding="utf-8")
+if "setSessionActivity" not in svc_text:
+    problems.append("Tapping the media card must open the app (setSessionActivity)")
+if "POST_NOTIFICATIONS" not in (ANDROID / "app/src/main/java/com/ninelives/audio/MainActivity.kt").read_text(encoding="utf-8"):
+    problems.append("Android 13+ needs a runtime notification permission request")
 manifest_text = (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 if "setWakeMode" in (ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt").read_text(encoding="utf-8") and "WAKE_LOCK" not in manifest_text:
     problems.append("setWakeMode needs the WAKE_LOCK permission")
