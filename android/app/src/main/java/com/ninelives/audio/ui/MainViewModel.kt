@@ -47,6 +47,7 @@ import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import com.ninelives.audio.data.PlaybackReporter
+import com.ninelives.audio.data.FavoriteStore
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SettingsStore(application)
@@ -546,6 +547,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
     private var bookmarksItemId: String = ""
     private val bookmarkStore by lazy { BookmarkStore(application) }
+    private val favoriteStore by lazy { FavoriteStore(application) }
 
     // --- Local listening log for the stats chart ---
     private val listenLog by lazy { ListenLog(application) }
@@ -919,7 +921,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             res.onSuccess { list ->
                 val collection = list.firstOrNull { it.name == FAVORITES_NAME }
                 favoritesCollection = collection
-                val ids = collection?.bookIds?.toSet() ?: emptySet()
+                val ids = collection?.bookIds?.toSet()
+                    ?: favoriteStore.ids(activeUrl, activeUsername)
+                favoriteIds = ids
+                favorites = books.filter { it.id in ids }
+            }.onFailure {
+                val ids = favoriteStore.ids(activeUrl, activeUsername)
                 favoriteIds = ids
                 favorites = books.filter { it.id in ids }
             }
@@ -928,7 +935,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleFavorite(book: BookItem) {
         if (!isConnected) {
-            favoriteStatus = t("离线时无法修改收藏", "Favorites need a connection")
+            val ids = favoriteStore.setFavorite(activeUrl, activeUsername, book.id, book.id !in favoriteIds)
+            favoriteIds = ids
+            favorites = books.filter { it.id in ids }
+            favoriteStatus = t("已保存到本机", "Saved on this device")
             return
         }
         viewModelScope.launch {
@@ -942,7 +952,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     favoritesCollection = current.copy(bookIds = current.bookIds - book.id)
                     favoriteStatus = t("已取消收藏", "Removed from favorites")
                 } else {
-                    favoriteStatus = t("取消收藏失败", "Could not remove favorite")
+                    val ids = favoriteStore.setFavorite(activeUrl, activeUsername, book.id, false)
+                    favoriteIds = ids
+                    favorites = books.filter { it.id in ids }
+                    favoriteStatus = t("已从本机收藏移除", "Removed on this device")
                 }
                 return@launch
             }
@@ -957,7 +970,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     favoritesCollection = existing.copy(bookIds = existing.bookIds + book.id)
                     favoriteStatus = t("已收藏", "Added to favorites")
                 } else {
-                    favoriteStatus = t("收藏失败", "Could not add favorite")
+                    val ids = favoriteStore.setFavorite(activeUrl, activeUsername, book.id, true)
+                    favoriteIds = ids
+                    favorites = books.filter { it.id in ids }
+                    favoriteStatus = t("已收藏到本机（服务器拒绝）", "Saved on this device (server refused)")
                 }
             } else {
                 val res = api.createCollection(
@@ -968,8 +984,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     favoriteIds = favoriteIds + book.id
                     favorites = (favorites + book).distinctBy { it.id }
                     favoriteStatus = t("已收藏", "Added to favorites")
-                }.onFailure {
-                    favoriteStatus = t("创建收藏夹失败：${it.message}", "Could not create favorites: ${it.message}")
+                }.onFailure { e ->
+                    val ids = favoriteStore.setFavorite(activeUrl, activeUsername, book.id, true)
+                    favoriteIds = ids
+                    favorites = books.filter { it.id in ids }
+                    favoriteStatus = if (e.message?.contains("403") == true) {
+                        t(
+                            "已收藏到本机（服务器账号无修改收藏夹权限）",
+                            "Saved on this device (server account cannot modify collections)"
+                        )
+                    } else {
+                        t("已收藏到本机（服务器不可用）", "Saved on this device (server unavailable)")
+                    }
                 }
             }
         }

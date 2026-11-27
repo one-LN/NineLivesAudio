@@ -20,6 +20,7 @@ REQUIRED = [
     "app/src/main/java/com/ninelives/audio/data/LibraryCache.kt",
     "app/src/main/java/com/ninelives/audio/data/UpdateChecker.kt",
     "app/src/main/java/com/ninelives/audio/data/ListenLog.kt",
+    "app/src/main/java/com/ninelives/audio/data/FavoriteStore.kt",
     "app/src/main/java/com/ninelives/audio/data/BookmarkStore.kt",
     "app/src/main/java/com/ninelives/audio/ui/Strings.kt",
     "app/src/main/java/com/ninelives/audio/ui/BookDetailScreen.kt",
