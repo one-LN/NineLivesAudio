@@ -52,6 +52,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +72,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.launch
 
 @Composable
 fun PlayerScreen(vm: MainViewModel) {
@@ -365,6 +369,15 @@ fun PlayerScreen(vm: MainViewModel) {
         }
 
         var showChaptersDialog by remember { mutableStateOf(false) }
+        val chapterListState = rememberLazyListState()
+        val uiScope = rememberCoroutineScope()
+
+        // Opening the list should land on what is playing now, not at chapter one.
+        LaunchedEffect(showChaptersDialog, currentChapterIdx) {
+            if (showChaptersDialog && currentChapterIdx >= 0) {
+                chapterListState.scrollToItem(currentChapterIdx)
+            }
+        }
         var showSkipDialog by remember { mutableStateOf(false) }
         var showBookmarksDialog by remember { mutableStateOf(false) }
 
@@ -534,7 +547,10 @@ fun PlayerScreen(vm: MainViewModel) {
                 onDismissRequest = { showChaptersDialog = false },
                 title = { Text(t("章节列表", "Chapters")) },
                 text = {
-                    LazyColumn(modifier = Modifier.height(340.dp)) {
+                    LazyColumn(
+                        state = chapterListState,
+                        modifier = Modifier.height(340.dp)
+                    ) {
                         itemsIndexed(sess.chapters) { _, ch ->
                             val isCurrent = currentChapter?.id == ch.id
                             Row(
@@ -562,6 +578,20 @@ fun PlayerScreen(vm: MainViewModel) {
                                 )
                             }
                         }
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            if (currentChapterIdx >= 0) {
+                                uiScope.launch {
+                                    chapterListState.animateScrollToItem(currentChapterIdx)
+                                }
+                            }
+                        },
+                        enabled = currentChapterIdx >= 0
+                    ) {
+                        Text(t("定位当前章节", "Jump to current"))
                     }
                 },
                 confirmButton = {

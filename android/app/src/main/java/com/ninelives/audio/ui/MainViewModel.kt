@@ -722,7 +722,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val targetIdx = sess.tracks.indexOfLast { sess.currentTime >= it.startOffset }.coerceAtLeast(0)
         val trackStart = sess.tracks.getOrNull(targetIdx)?.startOffset ?: 0.0
         val offsetMs = ((sess.currentTime - trackStart).coerceAtLeast(0.0) * 1000).toLong()
-        PlaybackReporter.configure(activeUrl, activeToken, sess.itemId, sess.sessionId, sess.duration, trackStart)
+        PlaybackReporter.configure(
+            activeUrl,
+            activeToken,
+            sess.itemId,
+            sess.sessionId,
+            sess.duration,
+            trackStart,
+            sess.currentTime
+        )
         val items = sess.tracks.map { track ->
             MediaItem.Builder()
                 .setUri(track.streamUrl)
@@ -762,8 +770,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (sess != null && activeUrl.isNotBlank() && activeToken.isNotBlank()) {
                 val trackOffset = sess.tracks.getOrNull(currentTrackIndex)?.startOffset ?: 0.0
                 val pos = trackOffset + (c.currentPosition.coerceAtLeast(0L) / 1000.0)
-                viewModelScope.launch {
-                    syncProgressAndUpdateLocal(sess.itemId, pos, totalDurationSec)
+                if (pos > 0.5) {
+                    viewModelScope.launch {
+                        syncProgressAndUpdateLocal(sess.itemId, pos, totalDurationSec)
+                    }
                 }
             }
         } else {
@@ -1092,6 +1102,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun syncProgressAndUpdateLocal(itemId: String, posSec: Double, durSec: Double) {
+        // Guard against publishing 0 for a book that already has real progress:
+        // the controller reports 0 until the seek to the saved position completes.
+        val known = books.firstOrNull { it.id == itemId }?.currentTime ?: 0.0
+        if (posSec <= 0.5 && known > 5.0) return
         val now = System.currentTimeMillis()
         offlineStore.updateProgress(activeUrl, itemId, posSec, now)
         downloadedBooks = offlineStore.allBooks()

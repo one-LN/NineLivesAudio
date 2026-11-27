@@ -59,13 +59,22 @@ object PlaybackReporter {
         }
     }
 
-    fun configure(url: String, authToken: String, item: String, sid: String, dur: Double, offset: Double) {
+    fun configure(
+        url: String,
+        authToken: String,
+        item: String,
+        sid: String,
+        dur: Double,
+        offset: Double,
+        initialPosition: Double
+    ) {
         serverUrl = url
         token = authToken
         itemId = item
         sessionId = sid
         duration = dur
         trackOffset = offset
+        positionSec = initialPosition
         listened = 0.0
         lastSyncAt = 0L
         wasPlaying = false
@@ -100,7 +109,12 @@ object PlaybackReporter {
 
     fun flush() = push(closing = false)
 
-    fun close() = push(closing = true)
+    fun close() {
+        // Nothing was played and we have no trustworthy position: publishing here
+        // would reset the server-side progress to zero.
+        if (!wasPlaying && listened <= 0.0 && positionSec <= 0.5) return
+        push(closing = true)
+    }
 
     private fun push(closing: Boolean) {
         android.util.Log.d("NLREPORT", "push closing=$closing dirty=$dirty url=${serverUrl.take(24)} item=$itemId")
@@ -110,6 +124,9 @@ object PlaybackReporter {
         val sid = sessionId
         if (url.isBlank() || auth.isBlank() || item.isBlank()) return
         if (!closing && !dirty) return
+        // A zero position is never meaningful for an existing book; it only happens
+        // before the player has seeked to the saved spot.
+        if (positionSec <= 0.5 && listened <= 0.0) return
         val pos = positionSec
         val dur = duration
         val delta = listened

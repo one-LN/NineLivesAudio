@@ -198,6 +198,13 @@ if "POST_NOTIFICATIONS" not in (ANDROID / "app/src/main/java/com/ninelives/audio
 manifest_text = (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 if "setWakeMode" in (ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt").read_text(encoding="utf-8") and "WAKE_LOCK" not in manifest_text:
     problems.append("setWakeMode needs the WAKE_LOCK permission")
+player_screen = ANDROID / "app/src/main/java/com/ninelives/audio/ui/PlayerScreen.kt"
+if player_screen.is_file():
+    text = player_screen.read_text(encoding="utf-8")
+    if "rememberLazyListState" not in text or "scrollToItem(currentChapterIdx)" not in text:
+        problems.append("The chapter list must open at the chapter that is playing")
+if "positionSec <= 0.5" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data/PlaybackReporter.kt").read_text(encoding="utf-8"):
+    problems.append("Reporter must never publish a zero position")
 if playback_service2.is_file():
     text = playback_service2.read_text(encoding="utf-8")
     if "setWakeMode" not in text:
