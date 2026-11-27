@@ -376,12 +376,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openReleasesPage() = updater.openReleasesPage()
 
-    fun checkForUpdate() {
+    fun checkForUpdate(force: Boolean = true) {
         if (isCheckingUpdate || isDownloadingUpdate) return
         viewModelScope.launch {
             isCheckingUpdate = true
             updateStatus = t("正在检查更新…", "Checking for updates...")
-            val result = updater.check()
+            val result = updater.check(force)
             result.onSuccess { update ->
                 pendingUpdate = update
                 updateStatus = when {

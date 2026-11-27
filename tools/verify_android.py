@@ -229,6 +229,8 @@ if player_screen.is_file():
     text = player_screen.read_text(encoding="utf-8")
     if "rememberLazyListState" not in text or "scrollToItem(currentChapterIdx)" not in text:
         problems.append("The chapter list must open at the chapter that is playing")
+if "User-Agent" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data/UpdateChecker.kt").read_text(encoding="utf-8"):
+    problems.append("GitHub API requests need a User-Agent and a cache to avoid 403 rate limits")
 if "startWatchdog" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data/PlaybackReporter.kt").read_text(encoding="utf-8"):
     problems.append("Reporter must self-report when ticking stops")
 if "positionSec <= 0.5" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data/PlaybackReporter.kt").read_text(encoding="utf-8"):

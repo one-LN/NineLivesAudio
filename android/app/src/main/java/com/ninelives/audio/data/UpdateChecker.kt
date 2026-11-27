@@ -24,6 +24,10 @@ data class AppUpdate(
  * Android build without visiting a browser.
  */
 class UpdateChecker(private val context: Context) {
+    private companion object {
+        const val CACHE_TTL_MS = 10 * 60 * 1000L
+    }
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -35,18 +39,59 @@ class UpdateChecker(private val context: Context) {
         "0"
     }
 
-    suspend fun check(): Result<AppUpdate?> = withContext(Dispatchers.IO) {
+    private val prefs by lazy {
+        context.getSharedPreferences("update_cache", Context.MODE_PRIVATE)
+    }
+
+    /**
+     * GitHub serves at most 60 unauthenticated API calls per hour per IP, and a
+     * phone shares that IP with every other device on the network. Cache the
+     * release list so normal use never runs into a 403.
+     */
+    suspend fun check(force: Boolean = false): Result<AppUpdate?> = withContext(Dispatchers.IO) {
+        val cachedAt = prefs.getLong("at", 0L)
+        val cachedBody = prefs.getString("body", null)
+        val fresh = System.currentTimeMillis() - cachedAt < CACHE_TTL_MS
+        if (!force && fresh && !cachedBody.isNullOrBlank()) {
+            return@withContext runCatching { Result.success(pickLatest(cachedBody)) }
+                .getOrElse { Result.success(null) }
+        }
         try {
             val request = Request.Builder()
                 .url("https://api.github.com/repos/one-LN/NineLivesAudio/releases?per_page=30")
                 .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", "NineLivesAudio-Android/" + currentVersionName())
                 .build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    return@withContext Result.failure(Exception("HTTP ${response.code}"))
+                    // Rate limited: fall back to the last successful answer instead of
+                    // telling the user "HTTP 403" with no explanation.
+                    if ((response.code == 403 || response.code == 429) && !cachedBody.isNullOrBlank()) {
+                        return@withContext runCatching { Result.success(pickLatest(cachedBody)) }
+                            .getOrElse { Result.failure(Exception(t(
+                                "GitHub 接口限流，请稍后再试",
+                                "GitHub rate limit reached, try again later"
+                            ))) }
+                    }
+                    val hint = if (response.code == 403 || response.code == 429) {
+                        t("GitHub 接口限流（每小时 60 次），请稍后再试",
+                          "GitHub rate limit (60/hour), try again later")
+                    } else {
+                        "HTTP ${response.code}"
+                    }
+                    return@withContext Result.failure(Exception(hint))
                 }
                 val body = response.body?.string().orEmpty()
-                val releases = JsonParser.parseString(body).asJsonArray
+                prefs.edit().putString("body", body).putLong("at", System.currentTimeMillis()).apply()
+                Result.success(pickLatest(body))
+            }
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    private fun pickLatest(body: String): AppUpdate? {
+        val releases = JsonParser.parseString(body).asJsonArray
                 val current = currentVersionName()
                 var bestVersion = current
                 var best: AppUpdate? = null
@@ -70,11 +115,7 @@ class UpdateChecker(private val context: Context) {
                         )
                     }
                 }
-                Result.success(best)
-            }
-        } catch (error: Exception) {
-            Result.failure(error)
-        }
+        return best
     }
 
     suspend fun download(update: AppUpdate, onProgress: (Int) -> Unit): Result<File> =
