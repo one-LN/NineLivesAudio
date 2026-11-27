@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="seek_back">后退 10 秒</string>
+    <string name="seek_forward">前进 30 秒</string>
+    <string name="previous_track">上一轨</string>
+    <string name="next_track">下一轨</string>
+</resources>

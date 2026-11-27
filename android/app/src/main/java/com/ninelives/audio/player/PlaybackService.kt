@@ -4,8 +4,10 @@ import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.ninelives.audio.MainActivity
@@ -50,6 +52,8 @@ class PlaybackService : MediaSessionService() {
             // Keep the CPU and Wi-Fi awake while the screen is off, otherwise
             // background listening stalls after a few minutes.
             .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setSeekBackIncrementMs(10_000)
+            .setSeekForwardIncrementMs(30_000)
             .build()
 
         // Tapping the media notification / quick-settings card / dynamic island
@@ -63,8 +67,28 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val layout = listOf(
+            CommandButton.Builder(android.R.drawable.ic_media_rew)
+                .setPlayerCommand(Player.COMMAND_SEEK_BACK)
+                .setDisplayName(getString(com.ninelives.audio.R.string.seek_back))
+                .build(),
+            CommandButton.Builder(android.R.drawable.ic_media_previous)
+                .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                .setDisplayName(getString(com.ninelives.audio.R.string.previous_track))
+                .build(),
+            CommandButton.Builder(android.R.drawable.ic_media_next)
+                .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                .setDisplayName(getString(com.ninelives.audio.R.string.next_track))
+                .build(),
+            CommandButton.Builder(android.R.drawable.ic_media_ff)
+                .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
+                .setDisplayName(getString(com.ninelives.audio.R.string.seek_forward))
+                .build()
+        )
+
         mediaSession = MediaSession.Builder(this, exoPlayer)
             .setSessionActivity(openApp)
+            .setCustomLayout(layout)
             .build()
 
         // Reporting lives here, not in the ViewModel: the service survives the activity.

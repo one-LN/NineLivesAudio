@@ -604,12 +604,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         if (playbackState == Player.STATE_READY) playbackRetries = 0
-                        if (playbackState == Player.STATE_ENDED) {
-                            val sess = currentSession ?: return
-                            if (currentTrackIndex + 1 < sess.tracks.size) {
-                                loadTrackAndPlay(currentTrackIndex + 1, 0L)
-                            }
-                        }
+                    }
+
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        val idx = mediaController?.currentMediaItemIndex ?: return
+                        val sess = currentSession ?: return
+                        if (idx == currentTrackIndex) return
+                        currentTrackIndex = idx
+                        sess.tracks.getOrNull(idx)?.let { PlaybackReporter.setTrackOffset(it.startOffset) }
                     }
                 })
             } catch (_: Exception) {
@@ -709,7 +711,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val trackStart = sess.tracks.getOrNull(targetIdx)?.startOffset ?: 0.0
         val offsetMs = ((sess.currentTime - trackStart).coerceAtLeast(0.0) * 1000).toLong()
         PlaybackReporter.configure(activeUrl, activeToken, sess.itemId, sess.sessionId, sess.duration, trackStart)
-        loadTrackAndPlay(targetIdx, offsetMs)
+        val items = sess.tracks.map { track ->
+            MediaItem.Builder()
+                .setUri(track.streamUrl)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(sess.title)
+                        .setArtist(sess.author)
+                        .setArtworkUri(Uri.parse(sess.coverUrl))
+                        .build()
+                )
+                .build()
+        }
+        mediaController?.apply {
+            setMediaItems(items, targetIdx, offsetMs.coerceAtLeast(0L))
+            prepare()
+            play()
+        }
     }
 
     private fun loadTrackAndPlay(trackIndex: Int, offsetMs: Long) {
@@ -718,16 +736,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val track = sess.tracks.getOrNull(trackIndex) ?: return
         currentTrackIndex = trackIndex
         PlaybackReporter.setTrackOffset(track.startOffset)
-        val meta = MediaMetadata.Builder()
-            .setTitle(sess.title)
-            .setArtist(sess.author)
-            .setArtworkUri(Uri.parse(sess.coverUrl))
-            .build()
-        val item = MediaItem.Builder()
-            .setUri(track.streamUrl)
-            .setMediaMetadata(meta)
-            .build()
-        c.setMediaItem(item, offsetMs.coerceAtLeast(0L))
+        c.seekTo(trackIndex, offsetMs.coerceAtLeast(0L))
         c.prepare()
         c.setPlaybackSpeed(playbackSpeed)
         c.play()
