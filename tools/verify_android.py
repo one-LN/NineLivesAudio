@@ -233,6 +233,11 @@ if "releases.atom" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data
     problems.append("Update check must use the Atom feed: the REST API is rate limited per IP")
 if "User-Agent" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data/UpdateChecker.kt").read_text(encoding="utf-8"):
     problems.append("GitHub API requests need a User-Agent and a cache to avoid 403 rate limits")
+_vm_book = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt").read_text(encoding="utf-8")
+if "mergeBookmarks(" not in _vm_book:
+    problems.append("Bookmarks must be merged/deduped or the list shows the same row twice")
+if 'h > 0' not in _vm_book:
+    problems.append("Bookmark names must show hours, not raw minutes")
 if "startWatchdog" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data/PlaybackReporter.kt").read_text(encoding="utf-8"):
     problems.append("Reporter must self-report when ticking stops")
 if "positionSec <= 0.5" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data/PlaybackReporter.kt").read_text(encoding="utf-8"):

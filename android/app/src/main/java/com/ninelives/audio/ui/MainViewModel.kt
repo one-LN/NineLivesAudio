@@ -843,8 +843,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             api.getBookmarks(activeUrl, activeToken, itemId)
                 .onSuccess { list ->
                     if (bookmarksItemId == itemId) {
-                        val locals = bookmarks.filter { it.id.startsWith("local-") }
-                        bookmarks = (list + locals).sortedBy { it.time }
+                        bookmarks = mergeBookmarks(list, bookmarks.filter { it.id.startsWith("local-") })
                         bookmarkStore.saveCache(itemId, bookmarks)
                     }
                 }
@@ -857,6 +856,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Server entries win: a pending local bookmark that the server already knows
+     * about would otherwise show up twice (same position, two rows).
+     */
+    private fun mergeBookmarks(server: List<Bookmark>, locals: List<Bookmark>): List<Bookmark> {
+        val merged = ArrayList<Bookmark>(server)
+        for (local in locals) {
+            val duplicate = server.any { kotlin.math.abs(it.time - local.time) <= 1.5 }
+            if (!duplicate) merged.add(local)
+        }
+        return merged.distinctBy { it.time.toInt() }.sortedBy { it.time }
+    }
+
     fun addBookmarkAtCurrent(title: String = "") {
         val sess = currentSession
         if (sess == null) {
@@ -864,6 +876,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val pos = currentAbsolutePosition()
+        if (bookmarks.any { it.itemId == sess.itemId && kotlin.math.abs(it.time - pos) <= 2.0 }) {
+            bookmarkStatus = t("这个位置已经有书签了", "A bookmark already exists at this position")
+            return
+        }
         val label = title.trim().ifBlank { t("书签 ", "Bookmark ") + formatClock(pos) }
         val local = Bookmark(
             id = "local-" + System.currentTimeMillis(),
@@ -883,6 +899,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             api.createBookmark(activeUrl, activeToken, sess.itemId, label, pos)
                 .onSuccess {
                     bookmarkStatus = t("已添加：$label", "Added: $label")
+                    bookmarks = bookmarks.filterNot { it.id == local.id }
+                    bookmarkStore.saveCache(sess.itemId, bookmarks)
                     loadBookmarks(sess.itemId)
                 }
                 .onFailure {
@@ -1047,7 +1065,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun formatClock(sec: Double): String {
         val total = sec.toInt().coerceAtLeast(0)
-        return "%d:%02d".format(total / 60, total % 60)
+        val h = total / 3600
+        val m = (total % 3600) / 60
+        val s = total % 60
+        return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
     }
 
     fun cycleSpeed() {
