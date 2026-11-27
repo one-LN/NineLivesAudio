@@ -317,6 +317,26 @@ else:
     if stable_guard not in windows_workflow:
         problems.append("stable Windows releases must publish only from master/main")
 
+# Custom launcher icons: four aliases, exactly one enabled by default
+_man = (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+for _alias in ["LauncherDefault", "LauncherGold", "LauncherSea", "LauncherPlum"]:
+    if _alias not in _man:
+        problems.append(f"Launcher alias {_alias} missing from the manifest")
+if _man.count('android:enabled="true"') > 1:
+    problems.append("Only one launcher alias may be enabled by default")
+
+# AndroidViewModel keeps `application` private; functions must use getApplication()
+import re as _re
+_vm = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt").read_text(encoding="utf-8")
+for _m in _re.finditer(r"(?<![\w.])application\s*\.", _vm):
+    _no = _vm[:_m.start()].count("\n") + 1
+    _line = _vm.split("\n")[_no - 1]
+    if "AndroidViewModel(application)" in _line:
+        continue
+    if _re.match(r" {0,4}(private |internal )?(val|var)\s", _line):
+        continue
+    problems.append(f"MainViewModel.kt:{_no} uses the private `application` property; use getApplication<Application>()")
+
 if problems:
     print(f"Android structural check failed ({len(problems)} issue(s)):")
     for problem in problems:
@@ -324,11 +344,3 @@ if problems:
     sys.exit(1)
 count = sum(1 for path in ANDROID.rglob("*") if path.is_file())
 print(f"Android structural check passed: {count} project files, manifest XML valid, and CI release boundaries present.")
-
-# Custom launcher icon: four activity-alias entries must exist and stay disabled by default
-man = (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
-for alias in ["IconDefault", "IconGold", "IconSea", "IconPlum"]:
-    if alias not in man:
-        problems.append(f"Launcher alias {alias} missing from the manifest")
-if man.count('android:enabled="true"') > 1:
-    problems.append("Only one launcher alias may be enabled by default")

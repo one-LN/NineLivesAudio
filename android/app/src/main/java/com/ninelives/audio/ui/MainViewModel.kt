@@ -1019,7 +1019,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateAppIcon(id: String) {
         if (!iconAliases.containsKey(id)) return
-        val pkg = application.packageName
+        val pkg = getApplication<Application>().packageName
         for ((key, alias) in iconAliases) {
             val component = android.content.ComponentName(pkg, "$pkg.$alias")
             val state = if (key == id) {
@@ -1028,7 +1028,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
             }
             runCatching {
-                application.packageManager.setComponentEnabledSetting(
+                getApplication<Application>().packageManager.setComponentEnabledSetting(
                     component,
                     state,
                     android.content.pm.PackageManager.DONT_KILL_APP
@@ -1046,7 +1046,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Re-applies the saved icon, in case the launcher state drifted. */
     fun syncAppIcon() {
         val id = store.getAppIcon()
-        val pkg = application.packageName
+        val pkg = getApplication<Application>().packageName
         for ((key, alias) in iconAliases) {
             val component = android.content.ComponentName(pkg, "$pkg.$alias")
             val state = if (key == id) {
@@ -1055,7 +1055,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
             }
             runCatching {
-                application.packageManager.setComponentEnabledSetting(
+                getApplication<Application>().packageManager.setComponentEnabledSetting(
                     component,
                     state,
                     android.content.pm.PackageManager.DONT_KILL_APP
