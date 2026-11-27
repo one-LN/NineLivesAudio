@@ -340,6 +340,21 @@ for _alias in ["LauncherDefault", "LauncherGold", "LauncherSea", "LauncherPlum"]
 if _man.count('android:enabled="true"') > 1:
     problems.append("Only one launcher alias may be enabled by default")
 
+# Kotlin runs initialisers in declaration order: `init` must come after every property,
+# otherwise it can touch a field that is still null (crashed twice already).
+_vm_lines = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt").read_text(encoding="utf-8").split("\n")
+_init_at = next((i for i, l in enumerate(_vm_lines) if l.strip() == "init {"), None)
+if _init_at is not None:
+    _last_prop = None
+    for _i, _l in enumerate(_vm_lines):
+        if re.match(r"    (private )?(val|var) [A-Za-z_]", _l):
+            _last_prop = _i
+    if _last_prop is not None and _init_at < _last_prop:
+        problems.append(
+            f"MainViewModel.kt:{_init_at + 1} init block runs before the last property "
+            f"(line {_last_prop + 1}); move init to the end of the class"
+        )
+
 # AndroidViewModel keeps `application` private; functions must use getApplication()
 import re as _re
 _vm = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt").read_text(encoding="utf-8")

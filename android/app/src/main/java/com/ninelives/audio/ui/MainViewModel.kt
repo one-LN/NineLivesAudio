@@ -588,129 +588,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var lastSyncInfo by mutableStateOf("")
         private set
 
-    init {
-        Lang.code = store.getLanguage()
-        loadRecentLogs()
-        refreshListenWeek()
-        val sessionToken = SessionToken(
-            application,
-            ComponentName(application, PlaybackService::class.java)
-        )
-        val future = MediaController.Builder(application, sessionToken).buildAsync()
-        future.addListener({
-            try {
-                val controller = future.get()
-                mediaController = controller
-                controller.volume = volume
-                pendingSession?.let { queued ->
-                    pendingSession = null
-                    startPlaybackSession(queued)
-                }
-                // The activity may have been recreated while the service kept playing:
-                // adopt the live session so the player screen is not empty.
-                if (currentSession == null) {
-                    PlaybackReporter.activeSession?.let { live ->
-                        currentSession = live
-                        currentTrackIndex = controller.currentMediaItemIndex
-                            .coerceIn(0, (live.tracks.size - 1).coerceAtLeast(0))
-                        totalDurationSec = live.duration
-                        isPlaying = controller.isPlaying
-                        addLog("恢复播放会话: ${live.title.take(20)}")
-                    }
-                }
-                controller.addListener(object : Player.Listener {
-                    override fun onIsPlayingChanged(playing: Boolean) {
-                        val wasPlaying = isPlaying
-                        isPlaying = playing
-                        if (wasPlaying && !playing) {
-                            // Flush immediately: the last partial window would otherwise be lost.
-                            listenLog.flush()
-                            PlaybackReporter.flush()
-                        }
-                    }
-                    override fun onPlayerError(error: PlaybackException) {
-                        playerError = t(
-                            "播放出错：${error.errorCodeName}",
-                            "Playback error: ${error.errorCodeName}"
-                        )
-                        addLog("player error ${error.errorCodeName} (${error.errorCode}) at ${currentPositionSec.toInt()}s")
-                        if (playbackRetries >= 2) return
-                        playbackRetries++
-                        val offsetMs = mediaController?.currentPosition?.coerceAtLeast(0L) ?: 0L
-                        val index = currentTrackIndex
-                        viewModelScope.launch {
-                            delay(1_500)
-                            loadTrackAndPlay(index, offsetMs)
-                        }
-                    }
-                    override fun onPlaybackStateChanged(playbackState: Int) {
-                        if (playbackState == Player.STATE_READY) playbackRetries = 0
-                    }
-
-                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                        val idx = mediaController?.currentMediaItemIndex ?: return
-                        val sess = currentSession ?: return
-                        if (idx == currentTrackIndex) return
-                        currentTrackIndex = idx
-                        sess.tracks.getOrNull(idx)?.let { PlaybackReporter.setTrackOffset(it.startOffset) }
-                    }
-                })
-            } catch (_: Exception) {
-            }
-        }, ContextCompat.getMainExecutor(application))
-
-        viewModelScope.launch {
-            var tick = 0
-            while (true) {
-                delay(1000)
-                val c = mediaController
-                val sess = currentSession
-                if (c != null && sess != null) {
-                    val trackOffset = sess.tracks.getOrNull(currentTrackIndex)?.startOffset ?: 0.0
-                    val posSec = trackOffset + (c.currentPosition.coerceAtLeast(0L) / 1000.0)
-                    currentPositionSec = posSec
-                    if (isPlaying) {
-                        tick++
-                        if (tick % 5 == 0) {
-                            lastSyncInfo = if (PlaybackReporter.lastSuccessAt > 0L) {
-                                "${PlaybackReporter.lastResult} · +${PlaybackReporter.lastSentSec.toInt()}s · ${PlaybackReporter.pushes} 次"
-                            } else ""
-                        }
-                        if (tick % 30 == 0) refreshListenWeek()
-                        val chIdx = sess.chapters.indexOfLast { posSec >= it.start }
-                        if (sleepEndOfChapter && sleepTargetChapterIdx >= 0 && chIdx > sleepTargetChapterIdx) {
-                            c.pause()
-                            sleepEndOfChapter = false
-                            sleepTargetChapterIdx = -1
-                            syncProgressAndUpdateLocal(sess.itemId, posSec, totalDurationSec)
-                        } else if (chIdx >= 0 && chIdx != lastChapterIdx) {
-                            val ch = sess.chapters[chIdx]
-                            if (currentIntroSec > 0 && posSec - ch.start < currentIntroSec && ch.end - ch.start > currentIntroSec + 5) {
-                                seekToSec(ch.start + currentIntroSec)
-                            }
-                            lastChapterIdx = chIdx
-                        } else if (chIdx >= 0 && currentOutroSec > 0) {
-                            val ch = sess.chapters[chIdx]
-                            if (ch.end > ch.start && ch.end - posSec <= currentOutroSec && chIdx + 1 < sess.chapters.size) {
-                                val nextCh = sess.chapters[chIdx + 1]
-                                seekToSec(nextCh.start + currentIntroSec)
-                                lastChapterIdx = chIdx + 1
-                            }
-                        }
-                        if (sleepRemainingSec > 0) {
-                            sleepRemainingSec--
-                            if (sleepRemainingSec == 0) {
-                                c.pause()
-                                sleepTimerMinutes = 0
-                                syncProgressAndUpdateLocal(sess.itemId, posSec, totalDurationSec)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        refreshCustomIconPath()
-    }
 
     fun playBook(book: BookItem) {
         playerError = null
@@ -1048,7 +925,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** True once the user picked a picture for the launcher shortcut. */
-    var customIconPath by mutableStateOf<String?>(null)
+    var customIconPath by mutableStateOf(
+        CustomIcon.file(getApplication()).takeIf { it.exists() }?.absolutePath
+    )
         private set
 
     /** Copies [uri] into app storage and asks the launcher to pin it. */
@@ -1084,10 +963,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         statusMessage = t("已移除自定义图标", "Custom icon removed")
     }
 
-    private fun refreshCustomIconPath() {
-        val f = CustomIcon.file(getApplication<Application>())
-        customIconPath = if (f.exists()) f.absolutePath else null
-    }
 
     /** Re-applies the saved icon, in case the launcher state drifted. */
     fun syncAppIcon() {
@@ -1374,4 +1249,127 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
     }
 
+
+    init {
+        Lang.code = store.getLanguage()
+        loadRecentLogs()
+        refreshListenWeek()
+        val sessionToken = SessionToken(
+            application,
+            ComponentName(application, PlaybackService::class.java)
+        )
+        val future = MediaController.Builder(application, sessionToken).buildAsync()
+        future.addListener({
+            try {
+                val controller = future.get()
+                mediaController = controller
+                controller.volume = volume
+                pendingSession?.let { queued ->
+                    pendingSession = null
+                    startPlaybackSession(queued)
+                }
+                // The activity may have been recreated while the service kept playing:
+                // adopt the live session so the player screen is not empty.
+                if (currentSession == null) {
+                    PlaybackReporter.activeSession?.let { live ->
+                        currentSession = live
+                        currentTrackIndex = controller.currentMediaItemIndex
+                            .coerceIn(0, (live.tracks.size - 1).coerceAtLeast(0))
+                        totalDurationSec = live.duration
+                        isPlaying = controller.isPlaying
+                        addLog("恢复播放会话: ${live.title.take(20)}")
+                    }
+                }
+                controller.addListener(object : Player.Listener {
+                    override fun onIsPlayingChanged(playing: Boolean) {
+                        val wasPlaying = isPlaying
+                        isPlaying = playing
+                        if (wasPlaying && !playing) {
+                            // Flush immediately: the last partial window would otherwise be lost.
+                            listenLog.flush()
+                            PlaybackReporter.flush()
+                        }
+                    }
+                    override fun onPlayerError(error: PlaybackException) {
+                        playerError = t(
+                            "播放出错：${error.errorCodeName}",
+                            "Playback error: ${error.errorCodeName}"
+                        )
+                        addLog("player error ${error.errorCodeName} (${error.errorCode}) at ${currentPositionSec.toInt()}s")
+                        if (playbackRetries >= 2) return
+                        playbackRetries++
+                        val offsetMs = mediaController?.currentPosition?.coerceAtLeast(0L) ?: 0L
+                        val index = currentTrackIndex
+                        viewModelScope.launch {
+                            delay(1_500)
+                            loadTrackAndPlay(index, offsetMs)
+                        }
+                    }
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_READY) playbackRetries = 0
+                    }
+
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        val idx = mediaController?.currentMediaItemIndex ?: return
+                        val sess = currentSession ?: return
+                        if (idx == currentTrackIndex) return
+                        currentTrackIndex = idx
+                        sess.tracks.getOrNull(idx)?.let { PlaybackReporter.setTrackOffset(it.startOffset) }
+                    }
+                })
+            } catch (_: Exception) {
+            }
+        }, ContextCompat.getMainExecutor(application))
+
+        viewModelScope.launch {
+            var tick = 0
+            while (true) {
+                delay(1000)
+                val c = mediaController
+                val sess = currentSession
+                if (c != null && sess != null) {
+                    val trackOffset = sess.tracks.getOrNull(currentTrackIndex)?.startOffset ?: 0.0
+                    val posSec = trackOffset + (c.currentPosition.coerceAtLeast(0L) / 1000.0)
+                    currentPositionSec = posSec
+                    if (isPlaying) {
+                        tick++
+                        if (tick % 5 == 0) {
+                            lastSyncInfo = if (PlaybackReporter.lastSuccessAt > 0L) {
+                                "${PlaybackReporter.lastResult} · +${PlaybackReporter.lastSentSec.toInt()}s · ${PlaybackReporter.pushes} 次"
+                            } else ""
+                        }
+                        if (tick % 30 == 0) refreshListenWeek()
+                        val chIdx = sess.chapters.indexOfLast { posSec >= it.start }
+                        if (sleepEndOfChapter && sleepTargetChapterIdx >= 0 && chIdx > sleepTargetChapterIdx) {
+                            c.pause()
+                            sleepEndOfChapter = false
+                            sleepTargetChapterIdx = -1
+                            syncProgressAndUpdateLocal(sess.itemId, posSec, totalDurationSec)
+                        } else if (chIdx >= 0 && chIdx != lastChapterIdx) {
+                            val ch = sess.chapters[chIdx]
+                            if (currentIntroSec > 0 && posSec - ch.start < currentIntroSec && ch.end - ch.start > currentIntroSec + 5) {
+                                seekToSec(ch.start + currentIntroSec)
+                            }
+                            lastChapterIdx = chIdx
+                        } else if (chIdx >= 0 && currentOutroSec > 0) {
+                            val ch = sess.chapters[chIdx]
+                            if (ch.end > ch.start && ch.end - posSec <= currentOutroSec && chIdx + 1 < sess.chapters.size) {
+                                val nextCh = sess.chapters[chIdx + 1]
+                                seekToSec(nextCh.start + currentIntroSec)
+                                lastChapterIdx = chIdx + 1
+                            }
+                        }
+                        if (sleepRemainingSec > 0) {
+                            sleepRemainingSec--
+                            if (sleepRemainingSec == 0) {
+                                c.pause()
+                                sleepTimerMinutes = 0
+                                syncProgressAndUpdateLocal(sess.itemId, posSec, totalDurationSec)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
