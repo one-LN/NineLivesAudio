@@ -877,7 +877,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Bookmarks created by older builds were named with raw minutes ("书签 6922:34"). */
     private fun normalizeBookmarkTitle(bookmark: Bookmark): Bookmark {
-        val auto = Regex("^(书签|Bookmark)\s+\d+:\d+$")
+        val auto = Regex("^(书签|Bookmark)\\s+\\d+:\\d+$")
         return if (auto.matches(bookmark.title)) {
             bookmark.copy(title = t("书签 ", "Bookmark ") + formatClock(bookmark.time))
         } else {
