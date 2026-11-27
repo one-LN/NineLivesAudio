@@ -400,6 +400,42 @@ class AbsApiClient {
             }
         }
 
+    /** Every bookmark of the account, across all books. */
+    suspend fun getAllBookmarks(serverUrl: String, token: String): Result<List<Bookmark>> =
+        withContext(Dispatchers.IO) {
+            try {
+                val base = cleanUrl(serverUrl)
+                val req = Request.Builder()
+                    .url("$base/api/me")
+                    .header("Authorization", "Bearer $token")
+                    .build()
+                client.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@withContext Result.failure(Exception("HTTP ${resp.code}"))
+                    val root = JsonParser.parseString(resp.body?.string().orEmpty()).asJsonObject
+                    val arr = root.getAsJsonArray("bookmarks")
+                    val list = mutableListOf<Bookmark>()
+                    if (arr != null) {
+                        for (el in arr) {
+                            val obj = el.asJsonObject
+                            val owner = obj.get("libraryItemId")?.takeIf { !it.isJsonNull }?.asString ?: continue
+                            list.add(
+                                Bookmark(
+                                    id = obj.get("id")?.asString ?: "",
+                                    itemId = owner,
+                                    title = obj.get("title")?.asString ?: t("书签", "Bookmark"),
+                                    time = obj.get("time")?.asDouble ?: 0.0,
+                                    createdAt = obj.get("createdAt")?.asLong ?: 0L
+                                )
+                            )
+                        }
+                    }
+                    Result.success(list)
+                }
+            } catch (error: Exception) {
+                Result.failure(error)
+            }
+        }
+
     suspend fun createBookmark(
         serverUrl: String,
         token: String,

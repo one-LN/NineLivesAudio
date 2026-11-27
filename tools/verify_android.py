@@ -240,6 +240,8 @@ if "toPlainString" not in (ANDROID / "app/src/main/java/com/ninelives/audio/data
     problems.append("Bookmark delete must send the exact time: the server compares numbers exactly")
 if "deleteBookmarkOnServer" not in _vm_book:
     problems.append("Bookmark deletion must retry with the stored server time")
+if "getAllBookmarks" not in _vm_book:
+    problems.append("Home bookmark tab needs the all-bookmarks feed")
 if "mergeBookmarks(" not in _vm_book:
     problems.append("Bookmarks must be merged/deduped or the list shows the same row twice")
 if 'h > 0' not in _vm_book:

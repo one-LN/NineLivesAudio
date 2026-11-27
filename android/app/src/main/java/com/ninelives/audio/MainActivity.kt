@@ -219,10 +219,14 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                 .padding(innerPadding)
         ) { page ->
             when (page) {
-                0 -> HomeScreen(vm, onBookClick = { book ->
-                    vm.playBook(book)
-                    scope.launch { pagerState.animateScrollToPage(2) }
-                })
+                0 -> HomeScreen(
+                    vm,
+                    onBookClick = { book ->
+                        vm.playBook(book)
+                        scope.launch { pagerState.animateScrollToPage(2) }
+                    },
+                    onOpenPlayer = { scope.launch { pagerState.animateScrollToPage(2) } }
+                )
                 1 -> LibraryScreen(vm, onBookClick = { book ->
                     vm.playBook(book)
                     scope.launch { pagerState.animateScrollToPage(2) }

@@ -496,6 +496,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             booksByLibrary[libraryId] = books
             persistLibraryCache()
+            loadAllBookmarks()
         }.onFailure {
             addLog(t("拉取书籍失败: ${it.message}", "Failed to load books: ${it.message}"))
         }
@@ -1002,6 +1003,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 bookmarkStatus = t("书签已同步", "Bookmarks synced")
                 loadBookmarks()
             }
+        }
+    }
+
+    var allBookmarks by mutableStateOf<List<Bookmark>>(emptyList())
+        private set
+
+    fun loadAllBookmarks() {
+        if (activeUrl.isBlank() || activeToken.isBlank()) return
+        viewModelScope.launch {
+            api.getAllBookmarks(activeUrl, activeToken).onSuccess { list ->
+                allBookmarks = list.sortedByDescending { it.createdAt }
+            }
+        }
+    }
+
+    /** Opens a book and jumps straight to a saved position. */
+    fun playBookAt(itemId: String, timeSec: Double) {
+        val book = books.firstOrNull { it.id == itemId }
+        if (book == null) {
+            playerError = t("找不到这本书，请先同步书库", "Book not found — sync the library first")
+            return
+        }
+        playerError = null
+        viewModelScope.launch {
+            api.startPlaybackSession(activeUrl, activeToken, itemId)
+                .onSuccess { sess -> startPlaybackSession(sess.copy(currentTime = timeSec)) }
+                .onFailure { e -> playerError = e.message ?: t("播放失败", "Playback failed") }
         }
     }
 

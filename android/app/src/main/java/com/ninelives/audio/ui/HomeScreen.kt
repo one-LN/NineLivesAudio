@@ -42,7 +42,11 @@ import androidx.compose.material3.FilterChip
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
+fun HomeScreen(
+    vm: MainViewModel,
+    onBookClick: (BookItem) -> Unit,
+    onOpenPlayer: () -> Unit = {}
+) {
     val lives = vm.nineLives
     val totalListeningSec = if (vm.totalListeningSec > 0) vm.totalListeningSec.toLong() else vm.books.sumOf { it.currentTime }.toLong()
     val totalHours = totalListeningSec / 3600
@@ -101,6 +105,15 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                     },
                     label = { Text(t("收藏", "Favorites")) }
                 )
+                Spacer(modifier = Modifier.width(8.dp))
+                FilterChip(
+                    selected = vm.homeTab == 2,
+                    onClick = {
+                        vm.updateHomeTab(2)
+                        vm.loadAllBookmarks()
+                    },
+                    label = { Text(t("书签", "Bookmarks")) }
+                )
             }
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -111,6 +124,74 @@ fun HomeScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                     t("还没有收藏，点开一本书后点心形图标", "No favorites yet — open a book and tap the heart"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            } else if (vm.homeTab == 2 && vm.allBookmarks.isEmpty()) {
+                Text(
+                    t("还没有书签，播放时点「书签」记录位置", "No bookmarks yet — tap Bookmarks while playing"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else if (vm.homeTab == 2) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    itemsIndexed(
+                        vm.allBookmarks,
+                        key = { _, b -> b.id.ifBlank { b.itemId + b.time } }
+                    ) { _, bm ->
+                        val book = vm.books.firstOrNull { it.id == bm.itemId }
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    vm.playBookAt(bm.itemId, bm.time)
+                                    onOpenPlayer()
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (book != null) {
+                                    AsyncImage(
+                                        model = book.coverUrl,
+                                        contentDescription = book.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(52.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = bm.title,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = buildAnnotatedString {
+                                            withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) {
+                                                append(formatBookmarkClock(bm.time))
+                                            }
+                                            if (book != null) {
+                                                withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                                                    append("  ·  ${book.title}")
+                                                }
+                                            }
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             } else if (vm.homeTab == 0 && lives.isEmpty()) {
                 Text(t("暂无在听书籍", "Nothing in progress"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
@@ -226,4 +307,12 @@ private fun formatRelativeTime(lastUpdateMs: Long): String {
         diffSec < 604800 -> t("${diffSec / 86400} 天前", "${diffSec / 86400} d ago")
         else -> t("${diffSec / 604800} 周前", "${diffSec / 604800} w ago")
     }
+}
+
+private fun formatBookmarkClock(sec: Double): String {
+    val total = sec.toInt().coerceAtLeast(0)
+    val h = total / 3600
+    val m = (total % 3600) / 60
+    val s = total % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
