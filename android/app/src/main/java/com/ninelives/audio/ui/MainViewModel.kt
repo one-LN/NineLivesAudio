@@ -48,9 +48,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import com.ninelives.audio.data.PlaybackReporter
 import com.ninelives.audio.data.FavoriteStore
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
-import com.ninelives.audio.data.CustomIcon
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SettingsStore(application)
@@ -884,50 +881,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 bookmarkStatus = t("书签已同步", "Bookmarks synced")
                 loadBookmarks()
             }
-        }
-    }
-
-    /** Absolute path of the picture the user chose, or null for the built-in icon. */
-    var customIconPath by mutableStateOf(CustomIcon.current(getApplication())?.absolutePath)
-        private set
-
-    /**
-     * Stores [uri] as the app icon. Android cannot rewrite the compiled
-     * launcher icon, so the picture is carried by the single pinned entry that
-     * opens the app; picking again updates that entry instead of adding one.
-     */
-    fun setCustomIcon(uri: android.net.Uri) {
-        viewModelScope.launch {
-            val ctx = getApplication<Application>()
-            statusMessage = t("正在处理图片…", "Preparing the image…")
-            val saved = withContext(Dispatchers.IO) { CustomIcon.save(ctx, uri) }
-            if (saved == null) {
-                statusMessage = t("这张图片读不出来，换一张试试", "That image could not be read, try another one")
-                return@launch
-            }
-            customIconPath = saved.absolutePath
-            val applied = withContext(Dispatchers.IO) { CustomIcon.apply(ctx) }
-            statusMessage = if (applied) {
-                t(
-                    "图标已更新。若桌面还显示旧图标，把旧的拖掉即可",
-                    "Icon updated. If the old one is still there, remove it from the home screen"
-                )
-            } else {
-                t(
-                    "图片已保存，但当前桌面不允许自动放置图标",
-                    "Saved, but this launcher will not place the icon automatically"
-                )
-            }
-        }
-    }
-
-    /** Drops the picture and the launcher entry that shows it. */
-    fun clearCustomIcon() {
-        viewModelScope.launch {
-            val ctx = getApplication<Application>()
-            withContext(Dispatchers.IO) { CustomIcon.clear(ctx) }
-            customIconPath = null
-            statusMessage = t("已恢复默认图标", "Back to the default icon")
         }
     }
 

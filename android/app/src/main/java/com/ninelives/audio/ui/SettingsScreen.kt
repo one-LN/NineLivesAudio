@@ -34,19 +34,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
-import com.ninelives.audio.R
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.border
-import androidx.compose.foundation.Image
-import androidx.compose.ui.layout.ContentScale
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.compose.rememberLauncherForActivityResult
 
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
@@ -199,75 +186,6 @@ fun SettingsScreen(vm: MainViewModel) {
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    t("应用图标", "App icon"),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    t(
-                        "用自己的图片当图标。系统会把它放到桌面，旧的图标拖掉即可",
-                        "Use your own picture. Android places it on the home screen; drag the old one away"
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                val pickImage = rememberLauncherForActivityResult(
-                    ActivityResultContracts.PickVisualMedia()
-                ) { uri -> if (uri != null) vm.setCustomIcon(uri) }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .border(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.outline,
-                                shape = RoundedCornerShape(18.dp)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        val path = vm.customIconPath
-                        if (path != null) {
-                            coil.compose.AsyncImage(
-                                model = java.io.File(path),
-                                contentDescription = t("自定义图标", "Custom icon"),
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            Image(
-                                painter = painterResource(id = R.drawable.ic_logo),
-                                contentDescription = t("默认图标", "Default icon"),
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Button(onClick = {
-                            pickImage.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        }) {
-                            Text(
-                                if (vm.customIconPath == null) t("选择图片", "Choose a picture")
-                                else t("更换图片", "Change picture")
-                            )
-                        }
-                        if (vm.customIconPath != null) {
-                            TextButton(onClick = { vm.clearCustomIcon() }) {
-                                Text(t("恢复默认图标", "Restore default icon"))
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-
                 Text(t("下载与同步", "Downloads & sync"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Row(
                     modifier = Modifier.fillMaxWidth(),

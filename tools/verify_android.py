@@ -317,22 +317,12 @@ else:
     if stable_guard not in windows_workflow:
         problems.append("stable Windows releases must publish only from master/main")
 
-# One launcher entry only: no activity-alias styles, the user picks a picture
+# One launcher entry only: no activity-alias styles until preset icons are added
 _man2 = (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 if "activity-alias" in _man2:
     problems.append("Launcher aliases were removed on purpose; keep a single launcher activity")
 if 'android.intent.category.LAUNCHER' not in _man2:
     problems.append("MainActivity must stay the launcher entry")
-
-_icon_kt = ANDROID / "app/src/main/java/com/ninelives/audio/data/CustomIcon.kt"
-if not _icon_kt.exists():
-    problems.append("CustomIcon.kt is missing - users cannot set their own icon")
-else:
-    _ci = _icon_kt.read_text(encoding="utf-8")
-    for _need in ["requestPinShortcut", "updateShortcuts", "ShortcutInfoCompat", "addRoundRect"]:
-        if _need not in _ci:
-            problems.append(f"CustomIcon.kt must keep {_need}")
-
 
 # AndroidViewModel keeps `application` private; functions must use getApplication()
 import re as _re
