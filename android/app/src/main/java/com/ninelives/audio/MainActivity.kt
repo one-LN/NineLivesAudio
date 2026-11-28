@@ -57,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ninelives.audio.ui.DownloadsScreen
 import com.ninelives.audio.ui.HomeScreen
@@ -87,6 +88,12 @@ class MainActivity : ComponentActivity() {
                 "dark" -> true
                 "light" -> false
                 else -> isSystemInDarkTheme()
+            }
+            LaunchedEffect(isDark) {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !isDark
+                    isAppearanceLightNavigationBars = !isDark
+                }
             }
             NineLivesTheme(darkTheme = isDark) {
                 NineLivesApp(vm)

@@ -81,6 +81,8 @@ if main_activity.is_file():
             problems.append(f"MainActivity.kt is missing the {screen} import")
     if "pageCount = { 6 }" not in text:
         problems.append("MainActivity pager should expose six matching navigation tabs")
+    if "isAppearanceLightStatusBars" not in text or "WindowCompat" not in text:
+        problems.append("MainActivity must switch status-bar icon contrast with the app theme")
 
 # Offline download pipeline: metadata endpoint, byte endpoint and UI wiring must stay connected.
 api_client2 = ANDROID / "app/src/main/java/com/ninelives/audio/data/AbsApiClient.kt"
