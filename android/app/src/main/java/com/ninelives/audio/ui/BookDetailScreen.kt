@@ -69,6 +69,15 @@ fun BookDetailScreen(
     val seriesNames = (extra?.seriesNames?.takeIf { it.isNotEmpty() } ?: book.seriesNames)
     val chapters = extra?.chapters.orEmpty()
     val tracks = extra?.tracks.orEmpty()
+    // Most audiobooks have one audio file per chapter. Showing a second list of
+    // "Track 1, Track 2..." next to the real chapter titles is pure duplication.
+    val tracksAreRedundant = chapters.isNotEmpty() && (
+        tracks.size <= 1 ||
+            (tracks.size == chapters.size && chapters.indices.all {
+                kotlin.math.abs(chapters[it].start - tracks[it].startOffset) < 1.5
+            })
+        )
+    val showTrackTab = tracks.isNotEmpty() && !tracksAreRedundant
     var detailTab by remember { mutableIntStateOf(0) } // 0=章节, 1=音轨
     val percent = book.progressPercent.coerceIn(0.0, 100.0).toFloat()
     val description = remember(book.description) {
@@ -251,12 +260,12 @@ fun BookDetailScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (chapters.isNotEmpty()) {
                     FilterChip(
-                        selected = detailTab == 0 || tracks.isEmpty(),
+                        selected = detailTab == 0 || !showTrackTab,
                         onClick = { detailTab = 0 },
                         label = { Text(t("章节 (${chapters.size})", "Chapters (${chapters.size})")) }
                     )
                 }
-                if (tracks.isNotEmpty()) {
+                if (showTrackTab) {
                     FilterChip(
                         selected = detailTab == 1 || chapters.isEmpty(),
                         onClick = { detailTab = 1 },
@@ -265,11 +274,24 @@ fun BookDetailScreen(
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
-            val showChapters = (detailTab == 0 && chapters.isNotEmpty()) || tracks.isEmpty()
+            val showChapters = when {
+                chapters.isEmpty() -> false
+                !showTrackTab -> true
+                else -> detailTab == 0
+            }
             if (showChapters) {
                 val activeChapterIdx = chapters.indexOfLast { book.currentTime >= it.start }
                 chapters.forEachIndexed { idx, ch ->
                     val isCurrent = idx == activeChapterIdx && book.hasProgress
+                    // The chapter metadata can carry its own (sometimes stale) times;
+                    // the audio files are what the player actually seeks through.
+                    val indexedTrack = tracks.getOrNull(idx)
+                        ?.takeIf { kotlin.math.abs(it.startOffset - ch.start) < 2.0 }
+                    val audioTrack = indexedTrack
+                        ?: if (tracks.size > 1) tracks.lastOrNull { it.startOffset <= ch.start + 1.0 } else null
+                    val timeLabel = audioTrack?.let {
+                        "${formatClock(it.startOffset)}–${formatClock(it.startOffset + it.duration)}"
+                    } ?: formatClock(ch.start)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -292,7 +314,7 @@ fun BookDetailScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = formatClock(ch.start),
+                            text = timeLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

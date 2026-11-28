@@ -63,8 +63,9 @@ fun HomeScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            val logoRes = if (vm.appIcon == "forest") R.drawable.ic_logo_forest else R.drawable.ic_logo
             Image(
-                painter = painterResource(id = R.drawable.ic_logo),
+                painter = painterResource(id = logoRes),
                 contentDescription = "NineLivesAudio",
                 modifier = Modifier
                     .size(56.dp)

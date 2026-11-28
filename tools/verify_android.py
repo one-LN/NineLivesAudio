@@ -346,6 +346,15 @@ for _alias, _enabled in (("LauncherDefault", "true"), ("LauncherForest", "false"
 for _res in ("icon_preview_default", "icon_preview_forest"):
     if not (ANDROID / f"app/src/main/res/drawable-nodpi/{_res}.png").is_file():
         problems.append(f"missing settings icon preview {_res}.png")
+if not (ANDROID / "app/src/main/res/drawable-nodpi/ic_logo_forest.png").is_file():
+    problems.append("missing home-screen forest logo ic_logo_forest.png")
+_home = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/HomeScreen.kt").read_text(encoding="utf-8")
+if "R.drawable.ic_logo_forest" not in _home or "vm.appIcon" not in _home:
+    problems.append("HomeScreen logo must follow the selected app icon")
+_detail = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/BookDetailScreen.kt").read_text(encoding="utf-8")
+for _snippet in ("tracksAreRedundant", "showTrackTab", "timeLabel"):
+    if _snippet not in _detail:
+        problems.append(f"BookDetailScreen must de-duplicate chapters/tracks ({_snippet})")
 _settings = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/SettingsScreen.kt").read_text(encoding="utf-8")
 for _res in ("icon_preview_default", "icon_preview_forest"):
     if f"R.drawable.{_res}" not in _settings:

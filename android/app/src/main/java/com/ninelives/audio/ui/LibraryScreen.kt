@@ -132,9 +132,12 @@ fun LibraryScreen(
 
     val detailBook = selectedBook
     if (detailBook != null) {
+        // selectedBook is a snapshot taken when the card was tapped; follow the
+        // live list so progress and the current-chapter highlight stay in sync.
+        val liveBook = vm.books.firstOrNull { it.id == detailBook.id } ?: detailBook
         BookDetailScreen(
             vm = vm,
-            book = detailBook,
+            book = liveBook,
             onBack = { selectedBook = null },
             onPlay = { picked ->
                 selectedBook = null
