@@ -363,6 +363,16 @@ for _res in ("icon_preview_default", "icon_preview_forest"):
         problems.append(f"SettingsScreen must offer the {_res} icon choice")
 if "R.mipmap" in _settings:
     problems.append("SettingsScreen previews must use PNG drawables, not adaptive mipmap XML")
+if "autoSyncEnabled" in _settings or "updateAutoSync" in _settings or "Auto-sync progress" in _settings:
+    problems.append("SettingsScreen must not expose an automatic playback-sync toggle")
+if "Playback position and listening time sync continuously in the background while playing" not in _settings:
+    problems.append("SettingsScreen should explain that playback sync runs continuously")
+_android_vm = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt").read_text(encoding="utf-8")
+if "autoSyncEnabled" in _android_vm or "updateAutoSync" in _android_vm:
+    problems.append("MainViewModel must not retain an automatic playback-sync setting")
+_reporter = (ANDROID / "app/src/main/java/com/ninelives/audio/data/PlaybackReporter.kt").read_text(encoding="utf-8")
+if "now - lastSyncAt >= 10_000" not in _reporter or "PlaybackReporter.tick" not in (ANDROID / "app/src/main/java/com/ninelives/audio/player/PlaybackService.kt").read_text(encoding="utf-8"):
+    problems.append("Android playback position and listening time must sync continuously in the background")
 _vm_icon = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt").read_text(encoding="utf-8")
 for _fn in ("fun updateAppIcon(", "fun syncAppIcon()"):
     if _fn not in _vm_icon:

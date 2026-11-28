@@ -669,9 +669,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var themeMode by mutableStateOf(store.getThemeMode())
         private set
-    var autoSyncEnabled by mutableStateOf(store.getAutoSync())
-        private set
-
     fun updateLanguage(code: String) {
         Lang.code = code
         store.setLanguage(code)
@@ -682,10 +679,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         store.setThemeMode(mode)
     }
 
-    fun updateAutoSync(enabled: Boolean) {
-        autoSyncEnabled = enabled
-        store.setAutoSync(enabled)
-    }
     var wifiOnlyDownload by mutableStateOf(store.getWifiOnlyDownload())
         private set
 

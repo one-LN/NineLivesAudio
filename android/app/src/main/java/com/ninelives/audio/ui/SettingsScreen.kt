@@ -254,14 +254,11 @@ fun SettingsScreen(vm: MainViewModel) {
                     Text(t("仅在 Wi-Fi 下下载", "Download on Wi-Fi only"), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = vm.wifiOnlyDownload, onCheckedChange = { vm.updateWifiOnlyDownload(it) })
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(t("自动同步播放进度", "Auto-sync progress"), style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = vm.autoSyncEnabled, onCheckedChange = { vm.updateAutoSync(it) })
-                }
+                Text(
+                    t("播放期间后台持续回传播放位置和收听时长", "Playback position and listening time sync continuously in the background while playing"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 

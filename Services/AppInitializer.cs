@@ -104,15 +104,12 @@ public class AppInitializer : IAppInitializer
                 // Started even when validation timed out: SyncService skips work while
                 // unauthenticated, so a slow network can no longer disable syncing for
                 // the whole session (that used to leave the shelf empty until restart).
-                if (_settingsService.Settings.AutoSyncProgress)
+                _logger.Log("AppInitializer: starting background sync service");
+                _ = Task.Run(async () =>
                 {
-                    _logger.Log("AppInitializer: starting sync service (background)");
-                    _ = Task.Run(async () =>
-                    {
-                        try { await _syncService.StartAsync(); }
-                        catch (Exception ex) { _logger.LogDebug($"AppInitializer: background sync start failed: {ex.Message}"); }
-                    });
-                }
+                    try { await _syncService.StartAsync(); }
+                    catch (Exception ex) { _logger.LogDebug($"AppInitializer: background sync start failed: {ex.Message}"); }
+                });
             }
 
             SetState(InitState.Ready);

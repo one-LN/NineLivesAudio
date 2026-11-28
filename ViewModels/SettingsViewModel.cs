@@ -84,9 +84,6 @@ public partial class SettingsViewModel : ObservableObject
     private bool _playerChapterMode;
 
     [ObservableProperty]
-    private bool _autoSyncProgress;
-
-    [ObservableProperty]
     private int _syncIntervalMinutes;
 
     [ObservableProperty]
@@ -219,7 +216,6 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _skipIntroStatus = string.Empty;
     [ObservableProperty] private string _skipOutroStatus = string.Empty;
     [ObservableProperty] private string _chapterModeStatus = string.Empty;
-    [ObservableProperty] private string _autoSyncStatus = string.Empty;
     [ObservableProperty] private string _syncIntervalStatus = string.Empty;
     [ObservableProperty] private string _startMinimizedStatus = string.Empty;
     [ObservableProperty] private string _minimizeToTrayStatus = string.Empty;
@@ -312,7 +308,6 @@ public partial class SettingsViewModel : ObservableObject
         SkipIntroSeconds = settings.SkipIntroSeconds;
         SkipOutroSeconds = settings.SkipOutroSeconds;
         PlayerChapterMode = settings.PlayerChapterMode;
-        AutoSyncProgress = settings.AutoSyncProgress;
         SyncIntervalMinutes = settings.SyncIntervalMinutes;
         StartMinimized = settings.StartMinimized;
         MinimizeToTray = settings.MinimizeToTray;
@@ -575,7 +570,6 @@ public partial class SettingsViewModel : ObservableObject
         settings.SkipIntroSeconds = ToSeconds(SkipIntroSeconds);
         settings.SkipOutroSeconds = ToSeconds(SkipOutroSeconds);
         settings.PlayerChapterMode = PlayerChapterMode;
-        settings.AutoSyncProgress = AutoSyncProgress;
         settings.SyncIntervalMinutes = SyncIntervalMinutes;
         settings.StartMinimized = StartMinimized;
         settings.MinimizeToTray = MinimizeToTray;
@@ -914,12 +908,6 @@ public partial class SettingsViewModel : ObservableObject
         AutoSave(s => VolumeStatus = Detail(s, ((int)Math.Round(value * 100)).ToString() + "%"), 300);
     }
 
-    partial void OnAutoSyncProgressChanged(bool value)
-    {
-        _ = _syncService.ApplyScheduleAsync();
-        AutoSave(s => AutoSyncStatus = s);
-    }
-
     partial void OnSyncIntervalMinutesChanged(int value)
     {
         if (!_syncingIndexes)
@@ -1044,6 +1032,9 @@ public partial class SettingsViewModel : ObservableObject
             SuccessMessage = _localization.GetString("FirstSyncRunning");
             HasSuccess = true;
 
+            // The app may have launched without a server configured, so startup did not
+            // create the background timer. Start it now that credentials are available.
+            await _syncService.StartAsync();
             await _syncService.SyncNowAsync();
             LoadDoctorInfo();
 

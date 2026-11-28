@@ -111,7 +111,6 @@ public class SyncService : ISyncService, IDisposable
         _syncTimer = new Timer(
             _ =>
             {
-                if (!_settingsService.Settings.AutoSyncProgress) return;
                 // Timer callback is async-void by design; SyncNowAsync already
                 // guards re-entry via _syncLock and catches its own exceptions.
                 _ = SyncNowAsync();
@@ -124,10 +123,7 @@ public class SyncService : ISyncService, IDisposable
         _logger.Log($"[Sync] Started with {interval.TotalMinutes}min interval");
     }
 
-    /// <summary>
-    /// Restarts the periodic sync with the interval that is configured right now, or stops
-    /// it when automatic syncing was switched off. Called from the settings page.
-    /// </summary>
+    /// <summary>Restarts the background refresh with the interval configured in Settings.</summary>
     public Task ApplyScheduleAsync()
     {
         lock (_scheduleLock)
@@ -145,12 +141,6 @@ public class SyncService : ISyncService, IDisposable
 
             _syncTimer?.Dispose();
             _syncTimer = null;
-
-            if (!_settingsService.Settings.AutoSyncProgress)
-            {
-                _logger.Log("[Sync] Automatic sync disabled — schedule cleared");
-                return Task.CompletedTask;
-            }
 
             StartCore();
         }
@@ -583,7 +573,6 @@ public class SyncService : ISyncService, IDisposable
     /// </summary>
     public async Task ReportPlaybackPositionAsync(string itemId, double currentTime, double duration, bool isFinished = false)
     {
-        if (!_settingsService.Settings.AutoSyncProgress) return;
         if (!_apiService.IsAuthenticated) return;
         if (string.IsNullOrEmpty(itemId)) return;
 

@@ -282,16 +282,13 @@
                         BorderThickness="1">
                     <StackPanel Spacing="16">
 
-                        <!-- Auto Sync Progress -->
-                        <ToggleSwitch x:Name="AutoSyncSwitch" Header="Auto-sync playback progress"
-                                      IsOn="{x:Bind ViewModel.AutoSyncProgress, Mode=TwoWay}"/>
-                        <TextBlock Text="{x:Bind ViewModel.AutoSyncStatus, Mode=OneWay}" FontSize="11"
-                                   Foreground="{ThemeResource RitualSuccessBrush}"
-                                   Visibility="{x:Bind ViewModel.AutoSyncStatus, Mode=OneWay, Converter={StaticResource StringToVisibilityConverter}}"/>
+                        <TextBlock x:Name="SyncBackgroundHintText"
+                                   Text="Playback position and listening time sync automatically while you listen."
+                                   TextWrapping="Wrap"
+                                   Foreground="{ThemeResource MistBrush}"
+                                   FontSize="13"/>
 
-                        <!-- Sync Interval -->
-                        <ComboBox x:Name="SyncIntervalBox" Header="Sync Interval"
-                                  IsEnabled="{x:Bind ViewModel.AutoSyncProgress, Mode=OneWay}"
+                        <ComboBox x:Name="SyncIntervalBox" Header="Background refresh interval"
                                   SelectedIndex="{x:Bind ViewModel.SyncIntervalSelectedIndex, Mode=TwoWay}">
                             <ComboBoxItem Content="1 minute" Tag="1"/>
                             <ComboBoxItem Content="5 minutes" Tag="5"/>

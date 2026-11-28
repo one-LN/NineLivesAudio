@@ -11,8 +11,8 @@ public interface ISyncService
     Task StopAsync();
 
     /// <summary>
-    /// Re-reads <c>SyncIntervalMinutes</c> / <c>AutoSyncProgress</c> and restarts the
-    /// schedule, so changing either in Settings takes effect without a restart.
+    /// Re-reads the background library refresh interval and applies it without a restart.
+    /// Playback-session progress and listening-time reporting runs independently while audio plays.
     /// </summary>
     Task ApplyScheduleAsync();
     Task SyncNowAsync();

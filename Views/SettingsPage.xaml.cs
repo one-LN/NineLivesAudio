@@ -133,7 +133,7 @@ public sealed partial class SettingsPage : Page
         if (BrowseButton != null) BrowseButton.Content = _localization.GetString("Browse");
         if (AutoDownloadCoversSwitch != null) AutoDownloadCoversSwitch.Header = _localization.GetString("AutoDownloadCovers");
         if (SyncTitle != null) SyncTitle.Text = _localization.GetString("Sync");
-        if (AutoSyncSwitch != null) AutoSyncSwitch.Header = _localization.GetString("AutoSyncProgress");
+        if (SyncBackgroundHintText != null) SyncBackgroundHintText.Text = _localization.GetString("SyncBackgroundHint");
         if (SyncIntervalBox != null) SyncIntervalBox.Header = _localization.GetString("SyncInterval");
         if (AppearanceTitle != null) AppearanceTitle.Text = _localization.GetString("Appearance");
         if (ThemeBox != null) ThemeBox.Header = _localization.GetString("Theme");

@@ -10,7 +10,6 @@ public class AppSettings
     public string DownloadPath { get; set; } = string.Empty;
     public bool AutoDownloadCovers { get; set; } = true;
     public double PlaybackSpeed { get; set; } = 1.0;
-    public bool AutoSyncProgress { get; set; } = true;
 
     /// <summary>
     /// Player progress display: true = the slider/labels follow the current chapter,

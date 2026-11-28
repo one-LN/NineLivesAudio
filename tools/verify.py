@@ -407,7 +407,6 @@ _APIFILE = ROOT / "Services" / "AudioBookshelfApiService.cs"
 _SYNCFILE = ROOT / "Services" / "SyncService.cs"
 _VMFILE = ROOT / "ViewModels" / "LibraryViewModel.cs"
 
-
 def method_body(path: Path, signature: str) -> str:
     src = read(path)
     start = src.find(signature)
@@ -456,6 +455,39 @@ if _VMFILE.exists():
     if "ConnectivityChangedMessage" not in src:
         fail("[silent-fail] LibraryViewModel must reload when the server becomes reachable "
              "again (ConnectivityChangedMessage)")
+
+# Playback reporting is always enabled. The configurable timer only controls background refresh.
+for _rel in (
+    "Models/AppSettings.cs",
+    "ViewModels/SettingsViewModel.cs",
+    "Views/SettingsPage.xaml",
+    "Services/SyncService.cs",
+    "Services/AppInitializer.cs",
+):
+    _path = ROOT / _rel
+    if _path.is_file() and "AutoSyncProgress" in read(_path):
+        fail(f"[sync] {_rel} still contains the removed playback-sync toggle gate")
+_settings_xaml = ROOT / "Views/SettingsPage.xaml"
+if _settings_xaml.is_file():
+    _text = read(_settings_xaml)
+    if "SyncBackgroundHintText" not in _text or "SyncIntervalBox" not in _text:
+        fail("[sync] Settings must explain continuous playback sync and retain background refresh interval")
+    if "AutoSyncSwitch" in _text or "AutoSyncProgress" in _text:
+        fail("[sync] Settings must not expose an automatic playback-sync toggle")
+_sync = ROOT / "Services" / "SyncService.cs"
+if _sync.is_file():
+    _text = read(_sync)
+    if "_ = SyncNowAsync();" not in _text or "AutoSyncProgress" in _text:
+        fail("[sync] Windows background refresh must start and run without an opt-out setting")
+_init = ROOT / "Services" / "AppInitializer.cs"
+if _init.is_file() and "await _syncService.StartAsync();" not in read(_init):
+    fail("[sync] Windows background refresh must start on application launch")
+_settings_vm = ROOT / "ViewModels" / "SettingsViewModel.cs"
+if _settings_vm.is_file():
+    _text = read(_settings_vm)
+    _initial_sync = _text.split("private async Task RunInitialSyncAsync()", 1)[-1].split("private async Task DisconnectAsync()", 1)[0]
+    if "await _syncService.StartAsync();" not in _initial_sync:
+        fail("[sync] Windows background refresh must start after login or server switch")
 
 # ── report ────────────────────────────────────────────────────────────────
 print(f"scanned {len(cs_files())} C# files, {len(xaml_files())} XAML files, {len(en_keys)} localization keys")

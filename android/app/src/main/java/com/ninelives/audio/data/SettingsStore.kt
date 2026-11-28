@@ -8,6 +8,10 @@ class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("ninelives_settings", Context.MODE_PRIVATE)
     private val gson = Gson()
 
+    init {
+        if (prefs.contains("auto_sync")) prefs.edit().remove("auto_sync").apply()
+    }
+
     fun getSavedServers(): List<SavedServer> {
         val json = prefs.getString("saved_servers", null) ?: return emptyList()
         return try {
@@ -49,10 +53,6 @@ class SettingsStore(context: Context) {
     fun getThemeMode(): String = prefs.getString("theme_mode", "system") ?: "system"
 
     fun setThemeMode(mode: String) = prefs.edit().putString("theme_mode", mode).apply()
-
-    fun getAutoSync(): Boolean = prefs.getBoolean("auto_sync", true)
-
-    fun setAutoSync(enabled: Boolean) = prefs.edit().putBoolean("auto_sync", enabled).apply()
 
     fun getWifiOnlyDownload(): Boolean = prefs.getBoolean("wifi_only_download", true)
 
