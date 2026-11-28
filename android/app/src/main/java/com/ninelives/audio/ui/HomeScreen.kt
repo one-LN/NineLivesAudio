@@ -1,5 +1,13 @@
 package com.ninelives.audio.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,9 +32,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
@@ -52,10 +66,31 @@ fun HomeScreen(
     val totalHours = totalListeningSec / 3600
     val totalMins = (totalListeningSec % 3600) / 60
 
+    val refreshAnim = rememberInfiniteTransition(label = "refreshEye")
+    val eyeLook by refreshAnim.animateFloat(
+        initialValue = -1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "eyeLook"
+    )
+    val eyeScan by refreshAnim.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1400, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "eyeScan"
+    )
+
     PullToRefreshBox(
         isRefreshing = vm.isRefreshing,
         onRefresh = { vm.refreshProgressOnly() },
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier.fillMaxSize(),
+        indicator = {}
     ) {
         Column(
             modifier = Modifier
@@ -64,13 +99,47 @@ fun HomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             val logoRes = if (vm.appIcon == "forest") R.drawable.ic_logo_forest else R.drawable.ic_logo
-            Image(
-                painter = painterResource(id = logoRes),
-                contentDescription = "NineLivesAudio",
+            Box(
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(12.dp))
-            )
+                    .graphicsLayer {
+                        // While refreshing, the eye looks left and right instead of
+                        // showing a generic circular spinner over the artwork.
+                        translationX = if (vm.isRefreshing) eyeLook * 3.5.dp.toPx() else 0f
+                        rotationZ = if (vm.isRefreshing) eyeLook * 2.2f else 0f
+                    }
+            ) {
+                Image(
+                    painter = painterResource(id = logoRes),
+                    contentDescription = "NineLivesAudio",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(12.dp))
+                )
+                if (vm.isRefreshing) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(12.dp))
+                    ) {
+                        val lineWidth = 16.dp.toPx()
+                        val x = size.width * eyeScan
+                        drawRect(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color(0xFFFFD37A).copy(alpha = 0.55f),
+                                    Color.Transparent
+                                ),
+                                startX = x - lineWidth / 2f,
+                                endX = x + lineWidth / 2f
+                            ),
+                            topLeft = Offset(x - lineWidth / 2f, 0f),
+                            size = Size(lineWidth, size.height)
+                        )
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = "九命",
@@ -81,9 +150,11 @@ fun HomeScreen(
             if (vm.isConnected) {
                 val livesSec = lives.sumOf { it.currentTime }
                 Text(
-                    text = formatShortDuration(livesSec),
+                    text = if (vm.isRefreshing) t("正在同步…", "Syncing…")
+                    else formatShortDuration(livesSec),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (vm.isRefreshing) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))

@@ -351,6 +351,8 @@ if not (ANDROID / "app/src/main/res/drawable-nodpi/ic_logo_forest.png").is_file(
 _home = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/HomeScreen.kt").read_text(encoding="utf-8")
 if "R.drawable.ic_logo_forest" not in _home or "vm.appIcon" not in _home:
     problems.append("HomeScreen logo must follow the selected app icon")
+if "eyeLook" not in _home or "eyeScan" not in _home or "indicator = {}" not in _home:
+    problems.append("HomeScreen refresh should animate the eye instead of the default spinner")
 _detail = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/BookDetailScreen.kt").read_text(encoding="utf-8")
 for _snippet in ("tracksAreRedundant", "showTrackTab", "timeLabel"):
     if _snippet not in _detail:
