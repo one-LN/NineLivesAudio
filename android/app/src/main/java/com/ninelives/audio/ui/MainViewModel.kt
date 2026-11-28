@@ -30,10 +30,13 @@ import com.ninelives.audio.data.CollectionInfo
 import com.ninelives.audio.data.ListenLog
 import com.ninelives.audio.data.PendingBookmarkOp
 import com.ninelives.audio.data.BookItem
+import com.ninelives.audio.data.BookDetailExtra
 import com.ninelives.audio.data.LibraryCache
+import com.ninelives.audio.data.LibraryFilterData
 import com.ninelives.audio.data.LibraryInfo
 import com.ninelives.audio.data.PlaybackSessionData
 import com.ninelives.audio.data.SavedServer
+import com.ninelives.audio.data.ServerListeningStats
 import com.ninelives.audio.data.SettingsStore
 import com.ninelives.audio.data.AppUpdate
 import com.ninelives.audio.data.UpdateChecker
@@ -465,9 +468,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    var libraryFilterData by mutableStateOf(LibraryFilterData())
+        private set
+
+    var librarySortMode by mutableIntStateOf(store.getLibrarySortMode())
+        private set
+
+    fun updateLibrarySortMode(mode: Int) {
+        librarySortMode = mode
+        store.setLibrarySortMode(mode)
+    }
+
+    var detailCache by mutableStateOf<Map<String, BookDetailExtra>>(emptyMap())
+        private set
+
+    fun loadBookDetail(itemId: String) {
+        if (!isConnected || itemId.isBlank() || detailCache.containsKey(itemId)) return
+        viewModelScope.launch {
+            api.getBookDetailExtra(activeUrl, activeToken, itemId).onSuccess { extra ->
+                detailCache = detailCache + (itemId to extra)
+            }
+        }
+    }
+
+    fun playBookAtTrack(book: BookItem, startTimeSec: Double) {
+        playerError = null
+        val local = offlineStore.findBook(activeUrl, book.id)
+        if (local != null && local.tracks.isNotEmpty()) {
+            val session = PlaybackSessionData(
+                sessionId = "",
+                itemId = local.itemId,
+                title = local.title,
+                author = local.author,
+                coverUrl = local.localCoverUri.ifBlank { local.coverUri },
+                tracks = local.tracks.map {
+                    AudioTrackInfo(it.index, it.startOffset, it.duration, it.fileUri)
+                },
+                currentTime = startTimeSec.coerceAtLeast(0.0),
+                duration = local.duration,
+                chapters = local.chapters
+            )
+            startPlaybackSession(session)
+            return
+        }
+        if (!isConnected) {
+            playerError = t("当前离线，且这本书尚未下载到本机", "You are offline and this book is not downloaded")
+            return
+        }
+        viewModelScope.launch {
+            api.startPlaybackSession(activeUrl, activeToken, book.id)
+                .onSuccess { sess ->
+                    startPlaybackSession(sess.copy(currentTime = startTimeSec.coerceAtLeast(0.0)))
+                }
+                .onFailure { e ->
+                    playerError = e.message ?: t("播放失败", "Playback failed")
+                }
+        }
+    }
+
+    private var serverDays by mutableStateOf<Map<String, Double>>(emptyMap())
+
     private suspend fun loadBooksWithProgress(libraryId: String) {
         val booksRes = api.getLibraryBooks(activeUrl, activeToken, libraryId)
         val progressMap = api.getProgressMap(activeUrl, activeToken)
+        libraryFilterData = api.getLibraryFilterData(activeUrl, activeToken, libraryId)
+        val stats = api.getServerListeningStats(activeUrl, activeToken)
+        if (stats.totalTime > 0) totalListeningSec = stats.totalTime
+        if (stats.days.isNotEmpty()) {
+            serverDays = stats.days
+            refreshListenWeek()
+        }
         booksRes.onSuccess { list ->
             addLog("书籍: ${list.size} 本, 进度: ${progressMap.size} 条")
             loadFavorites()
@@ -1012,7 +1082,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshListenWeek() {
-        listenWeek = listenLog.lastDays(7)
+        val local = listenLog.lastDays(7)
+        if (serverDays.isEmpty()) {
+            listenWeek = local
+            return
+        }
+        listenWeek = local.map { (epochDay, localSec) ->
+            val key = java.time.LocalDate.ofEpochDay(epochDay).toString()
+            val serverSec = (serverDays[key] ?: 0.0).toLong()
+            epochDay to maxOf(localSec, serverSec)
+        }
     }
 
     private fun formatClock(sec: Double): String {
@@ -1075,8 +1154,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         isRefreshing = true
         try {
             if (now - lastStatsAt > STATS_WINDOW_MS) {
-                val statsTime = api.getListeningStats(activeUrl, activeToken)
-                if (statsTime > 0) totalListeningSec = statsTime
+                val stats = api.getServerListeningStats(activeUrl, activeToken)
+                if (stats.totalTime > 0) totalListeningSec = stats.totalTime
+                if (stats.days.isNotEmpty()) {
+                    serverDays = stats.days
+                    refreshListenWeek()
+                }
                 lastStatsAt = now
             }
             if (books.isEmpty()) return

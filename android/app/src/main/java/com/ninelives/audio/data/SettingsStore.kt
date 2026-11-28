@@ -76,4 +76,7 @@ class SettingsStore(context: Context) {
     fun setBookOutroSec(itemId: String, sec: Int) =
         prefs.edit().putInt("book_outro_$itemId", sec.coerceAtLeast(0)).apply()
 
+    fun getLibrarySortMode(): Int = prefs.getInt("library_sort_mode", 0)
+    fun setLibrarySortMode(mode: Int) = prefs.edit().putInt("library_sort_mode", mode).apply()
+
 }

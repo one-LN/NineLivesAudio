@@ -61,6 +61,26 @@ data class LibraryInfo(
     val name: String
 )
 
+data class BookDetailExtra(
+    val chapters: List<ChapterInfo> = emptyList(),
+    val tracks: List<AudioTrackInfo> = emptyList(),
+    val genres: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
+    val seriesNames: List<String> = emptyList()
+)
+
+data class LibraryFilterData(
+    val genres: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
+    val series: List<String> = emptyList()
+)
+
+data class ServerListeningStats(
+    val totalTime: Double = 0.0,
+    val today: Double = 0.0,
+    val days: Map<String, Double> = emptyMap()
+)
+
 data class BookItem(
     val id: String,
     val libraryId: String,
@@ -74,7 +94,11 @@ data class BookItem(
     val currentTime: Double = 0.0,
     val isFinished: Boolean = false,
     val lastUpdate: Long = 0L,
-    val isDownloaded: Boolean = false
+    val isDownloaded: Boolean = false,
+    val addedAt: Long = 0L,
+    val genres: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
+    val seriesNames: List<String> = emptyList()
 ) {
     val progressPercent: Double
         get() = if (progress <= 1.0) progress * 100.0 else progress

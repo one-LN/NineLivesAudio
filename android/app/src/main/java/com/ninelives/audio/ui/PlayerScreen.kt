@@ -238,7 +238,11 @@ fun PlayerScreen(vm: MainViewModel) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(formatTime(displayPos), style = MaterialTheme.typography.labelSmall)
-            Text("-${formatTime(remaining)}", style = MaterialTheme.typography.labelSmall)
+            Text(
+                t("剩 ${formatTime(remaining)}", "Left ${formatTime(remaining)}"),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         if (hasChapter) {

@@ -1,7 +1,10 @@
 package com.ninelives.audio.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,15 +23,22 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,9 +57,18 @@ fun BookDetailScreen(
     vm: MainViewModel,
     book: BookItem,
     onBack: () -> Unit,
-    onPlay: (BookItem) -> Unit
+    onPlay: (BookItem) -> Unit,
+    onFilterClick: ((String) -> Unit)? = null
 ) {
     BackHandler { onBack() }
+    LaunchedEffect(book.id) { vm.loadBookDetail(book.id) }
+    val extra = vm.detailCache[book.id]
+    val genres = (extra?.genres?.takeIf { it.isNotEmpty() } ?: book.genres)
+    val tags = (extra?.tags?.takeIf { it.isNotEmpty() } ?: book.tags)
+    val seriesNames = (extra?.seriesNames?.takeIf { it.isNotEmpty() } ?: book.seriesNames)
+    val chapters = extra?.chapters.orEmpty()
+    val tracks = extra?.tracks.orEmpty()
+    var detailTab by remember { mutableIntStateOf(0) } // 0=章节, 1=音轨
     val percent = book.progressPercent.coerceIn(0.0, 100.0).toFloat()
     val description = remember(book.description) {
         android.text.Html.fromHtml(book.description, android.text.Html.FROM_HTML_MODE_LEGACY)
@@ -193,6 +212,25 @@ fun BookDetailScreen(
 
         Spacer(modifier = Modifier.height(18.dp))
         HorizontalDivider()
+        if (seriesNames.isNotEmpty() || genres.isNotEmpty() || tags.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                seriesNames.forEach { name ->
+                    MetaPill(text = t("系列：$name", "Series: $name")) { onFilterClick?.invoke(name) }
+                }
+                genres.forEach { g ->
+                    MetaPill(text = g) { onFilterClick?.invoke(g) }
+                }
+                tags.forEach { tg ->
+                    MetaPill(text = "#$tg") { onFilterClick?.invoke(tg) }
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             t("简介", "Description"),
@@ -205,8 +243,119 @@ fun BookDetailScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (chapters.isNotEmpty() || tracks.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (chapters.isNotEmpty()) {
+                    FilterChip(
+                        selected = detailTab == 0 || tracks.isEmpty(),
+                        onClick = { detailTab = 0 },
+                        label = { Text(t("章节 (${chapters.size})", "Chapters (${chapters.size})")) }
+                    )
+                }
+                if (tracks.isNotEmpty()) {
+                    FilterChip(
+                        selected = detailTab == 1 || chapters.isEmpty(),
+                        onClick = { detailTab = 1 },
+                        label = { Text(t("音轨 (${tracks.size})", "Tracks (${tracks.size})")) }
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            val showChapters = (detailTab == 0 && chapters.isNotEmpty()) || tracks.isEmpty()
+            if (showChapters) {
+                val activeChapterIdx = chapters.indexOfLast { book.currentTime >= it.start }
+                chapters.forEachIndexed { idx, ch ->
+                    val isCurrent = idx == activeChapterIdx && book.hasProgress
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                vm.playBookAtTrack(book, ch.start)
+                                onPlay(book)
+                            }
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = ch.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = formatClock(ch.start),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                val activeTrackIdx = tracks.indexOfLast { book.currentTime >= it.startOffset }
+                tracks.forEachIndexed { idx, tr ->
+                    val isCurrent = idx == activeTrackIdx && book.hasProgress
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                vm.playBookAtTrack(book, tr.startOffset)
+                                onPlay(book)
+                            }
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = t("第 ${idx + 1} 轨", "Track ${idx + 1}"),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "${formatClock(tr.startOffset)} · ${formatClock(tr.duration)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(20.dp))
     }
+}
+
+@Composable
+private fun MetaPill(text: String, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.clickable { onClick() }
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+        )
+    }
+}
+
+private fun formatClock(sec: Double): String {
+    val total = sec.toInt().coerceAtLeast(0)
+    val h = total / 3600
+    val m = (total % 3600) / 60
+    val s = total % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
 private fun formatDuration(sec: Double): String {

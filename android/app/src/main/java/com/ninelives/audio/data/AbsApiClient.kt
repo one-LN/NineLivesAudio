@@ -127,6 +127,14 @@ class AbsApiClient {
                         val narrator = metadata?.get("narratorName")?.takeIf { !it.isJsonNull }?.asString ?: ""
                         val desc = metadata?.get("description")?.takeIf { !it.isJsonNull }?.asString ?: ""
                         val duration = media?.get("duration")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
+                        val addedAt = item.get("addedAt")?.takeIf { !it.isJsonNull }?.asLong ?: 0L
+                        val genres = metadata?.getAsJsonArray("genres")
+                            ?.mapNotNull { g -> g.takeIf { !it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() } }
+                            ?: emptyList()
+                        val tags = metadata?.getAsJsonArray("tags")
+                            ?.mapNotNull { t -> t.takeIf { !it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() } }
+                            ?: emptyList()
+                        val seriesNames = parseSeriesNames(metadata)
 
                         allBooks.add(
                             BookItem(
@@ -137,7 +145,11 @@ class AbsApiClient {
                                 narrator = narrator,
                                 duration = duration,
                                 description = desc,
-                                coverUrl = "$base/api/items/$id/cover?token=$token"
+                                coverUrl = "$base/api/items/$id/cover?token=$token",
+                                addedAt = addedAt,
+                                genres = genres,
+                                tags = tags,
+                                seriesNames = seriesNames
                             )
                         )
                     }
@@ -345,7 +357,127 @@ class AbsApiClient {
             }
         }
 
-    suspend fun getListeningStats(serverUrl: String, token: String): Double =
+    private fun parseSeriesNames(metadata: com.google.gson.JsonObject?): List<String> {
+        if (metadata == null) return emptyList()
+        val el = metadata.get("series") ?: return emptyList()
+        if (el.isJsonNull) return emptyList()
+        val names = mutableListOf<String>()
+        if (el.isJsonArray) {
+            for (entry in el.asJsonArray) {
+                if (entry.isJsonObject) {
+                    entry.asJsonObject.get("name")?.takeIf { !it.isJsonNull }?.asString?.trim()
+                        ?.takeIf { it.isNotEmpty() }?.let { names.add(it) }
+                }
+            }
+        } else if (el.isJsonObject) {
+            el.asJsonObject.get("name")?.takeIf { !it.isJsonNull }?.asString?.trim()
+                ?.takeIf { it.isNotEmpty() }?.let { names.add(it) }
+        }
+        return names.distinct()
+    }
+
+    suspend fun getLibraryFilterData(
+        serverUrl: String,
+        token: String,
+        libraryId: String
+    ): LibraryFilterData = withContext(Dispatchers.IO) {
+        try {
+            val base = cleanUrl(serverUrl)
+            val req = Request.Builder()
+                .url("$base/api/libraries/${segment(libraryId)}/filterdata")
+                .header("Authorization", "Bearer $token")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext LibraryFilterData()
+                val root = JsonParser.parseString(resp.body?.string().orEmpty()).asJsonObject
+                val genres = root.getAsJsonArray("genres")
+                    ?.mapNotNull { it.takeIf { e -> !e.isJsonNull }?.asString?.trim()?.takeIf { s -> s.isNotEmpty() } }
+                    ?.distinct()
+                    ?: emptyList()
+                val tags = root.getAsJsonArray("tags")
+                    ?.mapNotNull { it.takeIf { e -> !e.isJsonNull }?.asString?.trim()?.takeIf { s -> s.isNotEmpty() } }
+                    ?.distinct()
+                    ?: emptyList()
+                val series = root.getAsJsonArray("series")
+                    ?.mapNotNull { el ->
+                        when {
+                            el.isJsonObject -> el.asJsonObject.get("name")?.takeIf { !it.isJsonNull }?.asString?.trim()
+                            el.isJsonPrimitive -> el.asString.trim()
+                            else -> null
+                        }?.takeIf { it.isNotEmpty() }
+                    }
+                    ?.distinct()
+                    ?: emptyList()
+                LibraryFilterData(genres = genres, tags = tags, series = series)
+            }
+        } catch (_: Exception) {
+            LibraryFilterData()
+        }
+    }
+
+    suspend fun getBookDetailExtra(
+        serverUrl: String,
+        token: String,
+        itemId: String
+    ): Result<BookDetailExtra> = withContext(Dispatchers.IO) {
+        try {
+            val base = cleanUrl(serverUrl)
+            val req = Request.Builder()
+                .url("$base/api/items/${segment(itemId)}?expanded=1")
+                .header("Authorization", "Bearer $token")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext Result.failure(Exception("HTTP ${resp.code}"))
+                val root = JsonParser.parseString(resp.body?.string().orEmpty()).asJsonObject
+                val media = root.getAsJsonObject("media")
+                val metadata = media?.getAsJsonObject("metadata")
+                val genres = metadata?.getAsJsonArray("genres")
+                    ?.mapNotNull { it.takeIf { e -> !e.isJsonNull }?.asString?.trim()?.takeIf { s -> s.isNotEmpty() } }
+                    ?: emptyList()
+                val tags = metadata?.getAsJsonArray("tags")
+                    ?.mapNotNull { it.takeIf { e -> !e.isJsonNull }?.asString?.trim()?.takeIf { s -> s.isNotEmpty() } }
+                    ?: emptyList()
+                val seriesNames = parseSeriesNames(metadata)
+                val chapters = media?.getAsJsonArray("chapters")?.mapIndexedNotNull { idx, el ->
+                    val ch = el.asJsonObject
+                    val start = ch.get("start")?.takeIf { !it.isJsonNull }?.asDouble ?: return@mapIndexedNotNull null
+                    val end = ch.get("end")?.takeIf { !it.isJsonNull }?.asDouble ?: start
+                    val title = ch.get("title")?.takeIf { !it.isJsonNull }?.asString?.takeIf { it.isNotBlank() }
+                        ?: t("章节 ${idx + 1}", "Chapter ${idx + 1}")
+                    ChapterInfo(ch.get("id")?.takeIf { !it.isJsonNull }?.asInt ?: idx, title, start, end)
+                } ?: emptyList()
+
+                var offset = 0.0
+                val tracks = media?.getAsJsonArray("audioFiles")?.mapIndexedNotNull { idx, el ->
+                    val f = el.asJsonObject
+                    val dur = f.get("duration")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
+                    val ino = f.get("ino")?.takeIf { !it.isJsonNull }?.asString ?: ""
+                    val tr = AudioTrackInfo(
+                        index = f.get("index")?.takeIf { !it.isJsonNull }?.asInt ?: idx,
+                        startOffset = offset,
+                        duration = dur,
+                        streamUrl = if (ino.isNotBlank()) "$base/api/items/${segment(itemId)}/file/${segment(ino)}?token=$token" else ""
+                    )
+                    offset += dur
+                    tr
+                } ?: emptyList()
+
+                Result.success(
+                    BookDetailExtra(
+                        chapters = chapters,
+                        tracks = tracks,
+                        genres = genres,
+                        tags = tags,
+                        seriesNames = seriesNames
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getServerListeningStats(serverUrl: String, token: String): ServerListeningStats =
         withContext(Dispatchers.IO) {
             try {
                 val base = cleanUrl(serverUrl)
@@ -354,15 +486,26 @@ class AbsApiClient {
                     .header("Authorization", "Bearer $token")
                     .build()
                 client.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) return@withContext 0.0
+                    if (!resp.isSuccessful) return@withContext ServerListeningStats()
                     val text = resp.body?.string().orEmpty()
                     val root = JsonParser.parseString(text).asJsonObject
-                    root.get("totalTime")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
+                    val totalTime = root.get("totalTime")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
+                    val today = root.get("today")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
+                    val daysMap = mutableMapOf<String, Double>()
+                    root.getAsJsonObject("days")?.entrySet()?.forEach { (k, v) ->
+                        if (!v.isJsonNull && v.isJsonPrimitive) {
+                            daysMap[k] = runCatching { v.asDouble }.getOrDefault(0.0)
+                        }
+                    }
+                    ServerListeningStats(totalTime = totalTime, today = today, days = daysMap)
                 }
             } catch (_: Exception) {
-                0.0
+                ServerListeningStats()
             }
         }
+
+    suspend fun getListeningStats(serverUrl: String, token: String): Double =
+        getServerListeningStats(serverUrl, token).totalTime
 
     suspend fun getBookmarks(serverUrl: String, token: String, itemId: String): Result<List<Bookmark>> =
         withContext(Dispatchers.IO) {

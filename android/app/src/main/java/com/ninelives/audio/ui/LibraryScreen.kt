@@ -70,24 +70,56 @@ import com.ninelives.audio.data.BookItem
 fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
     var query by remember { mutableStateOf("") }
     var filterMode by remember { mutableStateOf(0) } // 0=全部, 1=在听, 2=未开始, 3=已完成
-    var sortMode by remember { mutableStateOf(0) }   // 0=书名, 1=最近收听, 2=时长, 3=作者
+    var selectedGroup by remember { mutableStateOf("") } // 动态抓取的系列/分类/标签
+    var groupMenuExpanded by remember { mutableStateOf(false) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
     var libMenuExpanded by remember { mutableStateOf(false) }
+    val sortMode = vm.librarySortMode
 
-    val filtered = remember(vm.books, query, filterMode, sortMode) {
+    // 从服务器 filterdata + 当前书库书籍合并出真实存在的分类/系列/标签，避免空项
+    val serverFacets = remember(vm.libraryFilterData, vm.books) {
+        val series = (vm.libraryFilterData.series + vm.books.flatMap { it.seriesNames }).distinct().sorted()
+        val genres = (vm.libraryFilterData.genres + vm.books.flatMap { it.genres }).distinct().sorted()
+        val tags = (vm.libraryFilterData.tags + vm.books.flatMap { it.tags }).distinct().sorted()
+        series.map { "S:$it" to t("系列 · $it", "Series · $it") } +
+            genres.map { "G:$it" to t("分类 · $it", "Genre · $it") } +
+            tags.map { "T:$it" to "#$it" }
+    }
+
+    val filtered = remember(vm.books, query, filterMode, sortMode, selectedGroup) {
         val searched = if (query.isBlank()) vm.books else vm.books.filter {
-            it.title.contains(query, ignoreCase = true) || it.author.contains(query, ignoreCase = true)
+            it.title.contains(query, ignoreCase = true) ||
+                it.author.contains(query, ignoreCase = true) ||
+                it.seriesNames.any { s -> s.contains(query, ignoreCase = true) } ||
+                it.genres.any { g -> g.contains(query, ignoreCase = true) } ||
+                it.tags.any { tg -> tg.contains(query, ignoreCase = true) }
+        }
+        val byFacet = when {
+            selectedGroup.startsWith("S:") -> {
+                val target = selectedGroup.removePrefix("S:")
+                searched.filter { target in it.seriesNames }
+            }
+            selectedGroup.startsWith("G:") -> {
+                val target = selectedGroup.removePrefix("G:")
+                searched.filter { target in it.genres }
+            }
+            selectedGroup.startsWith("T:") -> {
+                val target = selectedGroup.removePrefix("T:")
+                searched.filter { target in it.tags }
+            }
+            else -> searched
         }
         val byStatus = when (filterMode) {
-            1 -> searched.filter { it.hasProgress && !it.isFinished }
-            2 -> searched.filter { !it.hasProgress && !it.isFinished }
-            3 -> searched.filter { it.isFinished }
-            else -> searched
+            1 -> byFacet.filter { it.hasProgress && !it.isFinished }
+            2 -> byFacet.filter { !it.hasProgress && !it.isFinished }
+            3 -> byFacet.filter { it.isFinished }
+            else -> byFacet
         }
         when (sortMode) {
             1 -> byStatus.sortedByDescending { it.lastUpdate }
             2 -> byStatus.sortedByDescending { it.duration }
             3 -> byStatus.sortedBy { it.author }
+            4 -> byStatus.sortedByDescending { it.addedAt }
             else -> byStatus.sortedBy { it.title }
         }
     }
@@ -103,6 +135,10 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
             onPlay = { picked ->
                 selectedBook = null
                 onBookClick(picked)
+            },
+            onFilterClick = { keyword ->
+                selectedBook = null
+                query = keyword
             }
         )
         return
@@ -202,14 +238,49 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                     label = { Text(label, style = MaterialTheme.typography.labelMedium) }
                 )
             }
+            if (serverFacets.isNotEmpty()) {
+                Box {
+                    val activeLabel = serverFacets.firstOrNull { it.first == selectedGroup }?.second
+                        ?: t("分类/系列", "Category")
+                    FilterChip(
+                        selected = selectedGroup.isNotEmpty(),
+                        onClick = { groupMenuExpanded = true },
+                        label = { Text("$activeLabel  ▾", style = MaterialTheme.typography.labelMedium) }
+                    )
+                    DropdownMenu(
+                        expanded = groupMenuExpanded,
+                        onDismissRequest = { groupMenuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text((if (selectedGroup.isEmpty()) "✓  " else "    ") + t("全部分类", "All categories")) },
+                            onClick = {
+                                selectedGroup = ""
+                                groupMenuExpanded = false
+                            }
+                        )
+                        serverFacets.forEach { (key, label) ->
+                            DropdownMenuItem(
+                                text = { Text((if (selectedGroup == key) "✓  " else "    ") + label) },
+                                onClick = {
+                                    selectedGroup = key
+                                    groupMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
             Box {
                 TextButton(onClick = { sortMenuExpanded = true }) {
-                    val sortLabel = listOf(
-                        t("按书名", "Title"),
-                        t("最近收听", "Recently played"),
-                        t("按时长", "Duration"),
-                        t("按作者", "Author")
-                    )[sortMode]
+                    val sortOptions = listOf(
+                        0 to t("按书名", "Title"),
+                        1 to t("最近收听", "Recently played"),
+                        2 to t("按时长", "Duration"),
+                        3 to t("按作者", "Author"),
+                        4 to t("最近入库", "Recently added")
+                    )
+                    val sortLabel = sortOptions.firstOrNull { it.first == sortMode }?.second
+                        ?: t("按书名", "Title")
                     Text(sortLabel + "  ▾", style = MaterialTheme.typography.labelMedium)
                 }
                 DropdownMenu(
@@ -220,12 +291,13 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
                         0 to t("按书名", "Title"),
                         1 to t("最近收听", "Recently played"),
                         2 to t("按时长", "Duration"),
-                        3 to t("按作者", "Author")
+                        3 to t("按作者", "Author"),
+                        4 to t("最近入库", "Recently added")
                     ).forEach { (mode, label) ->
                         DropdownMenuItem(
                             text = { Text((if (sortMode == mode) "✓  " else "    ") + label) },
                             onClick = {
-                                sortMode = mode
+                                vm.updateLibrarySortMode(mode)
                                 sortMenuExpanded = false
                             }
                         )
