@@ -166,19 +166,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Paints the shelf from the last sync instead of blocking on the network. */
     private fun restoreCachedLibrary() {
-        val cached = libraryCache.load() ?: return
+        val cached = runCatching { libraryCache.load() }.getOrNull() ?: return
         if (!cached.serverUrl.trimEnd('/').equals(activeUrl.trimEnd('/'), true)) return
         val cachedBooks = cached.books.orEmpty()
         if (cachedBooks.isEmpty()) return
-        libraries = cached.libraries.orEmpty()
-        selectedLibrary = libraries.firstOrNull { it.id == cached.selectedLibraryId } ?: libraries.firstOrNull()
-        selectedLibrary?.let { booksByLibrary[it.id] = cachedBooks }
-        books = cachedBooks.map { b ->
-            b.copy(isDownloaded = downloadedBooks.any { it.serverUrl == activeUrl && it.itemId == b.id })
+        try {
+            libraries = cached.libraries.orEmpty()
+            selectedLibrary = libraries.firstOrNull { it.id == cached.selectedLibraryId } ?: libraries.firstOrNull()
+            selectedLibrary?.let { booksByLibrary[it.id] = cachedBooks }
+            books = cachedBooks.map { b ->
+                b.copy(isDownloaded = downloadedBooks.any { it.serverUrl == activeUrl && it.itemId == b.id })
+            }
+            if (cached.totalListeningSec > 0.0) totalListeningSec = cached.totalListeningSec
+            lastSyncAt = cached.savedAt
+            statusMessage = t("已显示本地缓存，正在后台同步", "Showing cached library, syncing in the background")
+        } catch (_: Exception) {
+            // A stale or hand-edited cache must never prevent the app from starting.
+            libraryCache.clear()
+            books = emptyList()
         }
-        if (cached.totalListeningSec > 0.0) totalListeningSec = cached.totalListeningSec
-        lastSyncAt = cached.savedAt
-        statusMessage = t("已显示本地缓存，正在后台同步", "Showing cached library, syncing in the background")
     }
 
     private fun isStale(maxAgeMs: Long): Boolean =
@@ -477,6 +483,65 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateLibrarySortMode(mode: Int) {
         librarySortMode = mode
         store.setLibrarySortMode(mode)
+    }
+
+    var appIcon by mutableStateOf(store.getAppIcon())
+        private set
+
+    /** Launcher aliases declared in the manifest, keyed by the id saved in settings. */
+    private val iconAliases = mapOf(
+        "default" to "LauncherDefault",
+        "forest" to "LauncherForest"
+    )
+
+    fun updateAppIcon(id: String) {
+        if (!iconAliases.containsKey(id)) return
+        val app = getApplication<Application>()
+        val pkg = app.packageName
+        // Enable the chosen alias first: there must never be a moment with no
+        // launcher entry while the old alias is being disabled.
+        app.packageManager.setComponentEnabledSetting(
+            android.content.ComponentName(pkg, "$pkg.${iconAliases.getValue(id)}"),
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            android.content.pm.PackageManager.DONT_KILL_APP
+        )
+        for ((key, alias) in iconAliases) {
+            if (key == id) continue
+            app.packageManager.setComponentEnabledSetting(
+                android.content.ComponentName(pkg, "$pkg.$alias"),
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                android.content.pm.PackageManager.DONT_KILL_APP
+            )
+        }
+        store.setAppIcon(id)
+        appIcon = id
+        statusMessage = t(
+            "图标已切换，桌面可能需要几秒钟刷新",
+            "Icon changed — the launcher may take a few seconds to refresh"
+        )
+    }
+
+    /** Re-applies the saved icon after an update or a launcher state drift. */
+    fun syncAppIcon() {
+        val id = store.getAppIcon().takeIf { iconAliases.containsKey(it) } ?: "default"
+        val app = getApplication<Application>()
+        val pkg = app.packageName
+        for ((key, alias) in iconAliases) {
+            val component = android.content.ComponentName(pkg, "$pkg.$alias")
+            val wanted = if (key == id) {
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            } else {
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            }
+            if (app.packageManager.getComponentEnabledSetting(component) != wanted) {
+                app.packageManager.setComponentEnabledSetting(
+                    component,
+                    wanted,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+            }
+        }
+        appIcon = id
     }
 
     var detailCache by mutableStateOf<Map<String, BookDetailExtra>>(emptyMap())
@@ -1233,6 +1298,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         Lang.code = store.getLanguage()
+        syncAppIcon()
         loadRecentLogs()
         refreshListenWeek()
         val sessionToken = SessionToken(

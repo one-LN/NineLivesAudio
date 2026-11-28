@@ -58,6 +58,7 @@ fun BookDetailScreen(
     book: BookItem,
     onBack: () -> Unit,
     onPlay: (BookItem) -> Unit,
+    onPlayAt: ((BookItem, Double) -> Unit)? = null,
     onFilterClick: ((String) -> Unit)? = null
 ) {
     BackHandler { onBack() }
@@ -274,8 +275,7 @@ fun BookDetailScreen(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .clickable {
-                                vm.playBookAtTrack(book, ch.start)
-                                onPlay(book)
+                                onPlayAt?.invoke(book, ch.start) ?: onPlay(book)
                             }
                             .padding(horizontal = 8.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -307,8 +307,7 @@ fun BookDetailScreen(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .clickable {
-                                vm.playBookAtTrack(book, tr.startOffset)
-                                onPlay(book)
+                                onPlayAt?.invoke(book, tr.startOffset) ?: onPlay(book)
                             }
                             .padding(horizontal = 8.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,

@@ -227,10 +227,14 @@ fun NineLivesApp(vm: MainViewModel = viewModel()) {
                     },
                     onOpenPlayer = { scope.launch { pagerState.animateScrollToPage(2) } }
                 )
-                1 -> LibraryScreen(vm, onBookClick = { book ->
-                    vm.playBook(book)
-                    scope.launch { pagerState.animateScrollToPage(2) }
-                })
+                1 -> LibraryScreen(
+                    vm,
+                    onBookClick = { book ->
+                        vm.playBook(book)
+                        scope.launch { pagerState.animateScrollToPage(2) }
+                    },
+                    onOpenPlayer = { scope.launch { pagerState.animateScrollToPage(2) } }
+                )
                 2 -> PlayerScreen(vm)
                 3 -> DownloadsScreen(vm, onBookClick = { vm.playDownloadedBook(it) })
                 4 -> StatsScreen(vm)

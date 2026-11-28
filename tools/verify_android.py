@@ -317,12 +317,47 @@ else:
     if stable_guard not in windows_workflow:
         problems.append("stable Windows releases must publish only from master/main")
 
-# One launcher entry only: no activity-alias styles until preset icons are added
+# Preset launcher icons use activity-aliases; MainActivity itself is not a launcher entry.
 _man2 = (ANDROID / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
-if "activity-alias" in _man2:
-    problems.append("Launcher aliases were removed on purpose; keep a single launcher activity")
 if 'android.intent.category.LAUNCHER' not in _man2:
-    problems.append("MainActivity must stay the launcher entry")
+    problems.append("The manifest must expose at least one launcher alias")
+if _man2.count("<activity-alias") != 2:
+    problems.append("Exactly two launcher aliases (default + forest) are expected")
+for _alias in ("LauncherDefault", "LauncherForest"):
+    if f'android:name=".{_alias}"' not in _man2:
+        problems.append(f"missing launcher alias {_alias}")
+_main_block = re.search(
+    r'<activity\s+[^>]*android:name="\.MainActivity".*?</activity>',
+    _man2,
+    re.S,
+)
+if _main_block and "android.intent.category.LAUNCHER" in _main_block.group(0):
+    problems.append("MainActivity must not be a launcher entry; use the aliases")
+for _alias, _enabled in (("LauncherDefault", "true"), ("LauncherForest", "false")):
+    _block = re.search(
+        rf'<activity-alias\s+[^>]*android:name="\.{_alias}".*?</activity-alias>',
+        _man2,
+        re.S,
+    )
+    if _block and f'android:enabled="{_enabled}"' not in _block.group(0):
+        problems.append(f"{_alias} must start with android:enabled={_enabled}")
+for _res in ("icon_preview_default", "icon_preview_forest"):
+    if not (ANDROID / f"app/src/main/res/drawable-nodpi/{_res}.png").is_file():
+        problems.append(f"missing settings icon preview {_res}.png")
+_settings = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/SettingsScreen.kt").read_text(encoding="utf-8")
+for _res in ("icon_preview_default", "icon_preview_forest"):
+    if f"R.drawable.{_res}" not in _settings:
+        problems.append(f"SettingsScreen must offer the {_res} icon choice")
+if "R.mipmap" in _settings:
+    problems.append("SettingsScreen previews must use PNG drawables, not adaptive mipmap XML")
+_vm_icon = (ANDROID / "app/src/main/java/com/ninelives/audio/ui/MainViewModel.kt").read_text(encoding="utf-8")
+for _fn in ("fun updateAppIcon(", "fun syncAppIcon()"):
+    if _fn not in _vm_icon:
+        problems.append(f"MainViewModel is missing {_fn}")
+_cache = (ANDROID / "app/src/main/java/com/ninelives/audio/data/LibraryCache.kt").read_text(encoding="utf-8")
+for _snippet in ("CACHE_VERSION", "sanitized()", "mapNotNull"):
+    if _snippet not in _cache:
+        problems.append(f"LibraryCache must sanitize older caches ({_snippet})")
 
 # AndroidViewModel keeps `application` private; functions must use getApplication()
 import re as _re

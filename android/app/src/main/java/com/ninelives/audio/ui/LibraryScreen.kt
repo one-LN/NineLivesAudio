@@ -67,7 +67,11 @@ import com.ninelives.audio.data.BookItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
+fun LibraryScreen(
+    vm: MainViewModel,
+    onBookClick: (BookItem) -> Unit,
+    onOpenPlayer: () -> Unit = {}
+) {
     var query by remember { mutableStateOf("") }
     var filterMode by remember { mutableStateOf(0) } // 0=全部, 1=在听, 2=未开始, 3=已完成
     var selectedGroup by remember { mutableStateOf("") } // 动态抓取的系列/分类/标签
@@ -135,6 +139,11 @@ fun LibraryScreen(vm: MainViewModel, onBookClick: (BookItem) -> Unit) {
             onPlay = { picked ->
                 selectedBook = null
                 onBookClick(picked)
+            },
+            onPlayAt = { picked, timeSec ->
+                selectedBook = null
+                vm.playBookAtTrack(picked, timeSec)
+                onOpenPlayer()
             },
             onFilterClick = { keyword ->
                 selectedBook = null

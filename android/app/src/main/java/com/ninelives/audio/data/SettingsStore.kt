@@ -79,4 +79,7 @@ class SettingsStore(context: Context) {
     fun getLibrarySortMode(): Int = prefs.getInt("library_sort_mode", 0)
     fun setLibrarySortMode(mode: Int) = prefs.edit().putInt("library_sort_mode", mode).apply()
 
+    fun getAppIcon(): String = prefs.getString("app_icon", "default") ?: "default"
+    fun setAppIcon(id: String) = prefs.edit().putString("app_icon", id).apply()
+
 }
