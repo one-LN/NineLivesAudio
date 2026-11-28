@@ -5,6 +5,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -19,6 +21,8 @@ import java.util.Locale
 object PlaybackReporter {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val api = AbsApiClient()
+    private val stateLock = Any()
+    private val pushMutex = Mutex()
 
     private var listenLog: ListenLog? = null
     private var appContext: Context? = null
@@ -35,6 +39,17 @@ object PlaybackReporter {
     @Volatile private var lastSyncAt = 0L
     @Volatile private var wasPlaying = false
     @Volatile private var dirty = false
+
+    private data class PushSnapshot(
+        val url: String,
+        val token: String,
+        val itemId: String,
+        val sessionId: String,
+        val positionSec: Double,
+        val durationSec: Double,
+        val listenedSec: Double,
+        val closing: Boolean
+    )
 
     @Volatile var lastSuccessAt = 0L
         private set
@@ -98,23 +113,25 @@ object PlaybackReporter {
         offset: Double,
         initialPosition: Double
     ) {
-        serverUrl = url
-        token = authToken
-        itemId = item
-        sessionId = sid
-        duration = dur
-        trackOffset = offset
-        positionSec = initialPosition
-        listened = 0.0
-        configuredAt = System.currentTimeMillis()
-        lastSyncAt = 0L
-        wasPlaying = false
-        dirty = false
+        synchronized(stateLock) {
+            serverUrl = url
+            token = authToken
+            itemId = item
+            sessionId = sid
+            duration = dur
+            trackOffset = offset
+            positionSec = initialPosition
+            listened = 0.0
+            configuredAt = System.currentTimeMillis()
+            lastSyncAt = 0L
+            wasPlaying = false
+            dirty = false
+        }
         android.util.Log.d("NLREPORT", "configure sid=$sid item=$item dur=$dur token=${authToken.isNotBlank()} url=${url.take(24)}")
     }
 
     fun setTrackOffset(offset: Double) {
-        trackOffset = offset
+        synchronized(stateLock) { trackOffset = offset }
     }
 
     /**
@@ -129,34 +146,38 @@ object PlaybackReporter {
         private set
 
     fun rememberSession(session: PlaybackSessionData) {
-        activeSession = session
+        synchronized(stateLock) { activeSession = session }
     }
 
     fun forgetSession() {
-        activeSession = null
+        synchronized(stateLock) { activeSession = null }
     }
 
     /** Called once per second by the playback service. */
     fun tick(trackPositionMs: Long, playing: Boolean) {
-        lastTickAt = System.currentTimeMillis()
-        tickCount++
-        positionSec = trackOffset + trackPositionMs.coerceAtLeast(0L) / 1000.0
-        if (!playing) {
-            if (wasPlaying) {
-                wasPlaying = false
-                push(closing = false)
+        var shouldPush = false
+        synchronized(stateLock) {
+            lastTickAt = System.currentTimeMillis()
+            tickCount++
+            positionSec = trackOffset + trackPositionMs.coerceAtLeast(0L) / 1000.0
+            if (!playing) {
+                if (wasPlaying) {
+                    wasPlaying = false
+                    shouldPush = true
+                }
+            } else {
+                wasPlaying = true
+                listened += 1.0
+                dirty = true
+                val now = System.currentTimeMillis()
+                if (now - lastSyncAt >= 10_000) {
+                    lastSyncAt = now
+                    shouldPush = true
+                }
             }
-            return
         }
-        wasPlaying = true
-        listened += 1.0
-        dirty = true
-        listenLog?.addSecond()
-        val now = System.currentTimeMillis()
-        if (now - lastSyncAt >= 10_000) {
-            lastSyncAt = now
-            push(closing = false)
-        }
+        if (playing) listenLog?.addSecond()
+        if (shouldPush) push(closing = false)
     }
 
     fun flush() = push(closing = false)
@@ -164,45 +185,106 @@ object PlaybackReporter {
     fun close() {
         // Nothing was played and we have no trustworthy position: publishing here
         // would reset the server-side progress to zero.
-        if (!wasPlaying && listened <= 0.0 && positionSec <= 0.5) return
-        push(closing = true)
+        val shouldClose = synchronized(stateLock) {
+            wasPlaying || listened > 0.0 || positionSec > 0.5
+        }
+        if (shouldClose) push(closing = true)
     }
 
     private fun push(closing: Boolean) {
-        android.util.Log.d("NLREPORT", "push closing=$closing dirty=$dirty url=${serverUrl.take(24)} item=$itemId")
-        val url = serverUrl
-        val auth = token
-        val item = itemId
-        val sid = sessionId
-        if (url.isBlank() || auth.isBlank() || item.isBlank()) return
-        if (!closing && !dirty) return
-        // A zero position is never meaningful for an existing book; it only happens
-        // before the player has seeked to the saved spot.
-        if (positionSec <= 0.5 && listened <= 0.0) return
-        val pos = positionSec
-        val dur = duration
-        val delta = listened
-        listened = 0.0
-        dirty = false
+        val snapshot = synchronized(stateLock) {
+            if (serverUrl.isBlank() || token.isBlank() || itemId.isBlank()) return
+            if (!closing && !dirty) return
+            if (positionSec <= 0.5 && listened <= 0.0) return
+
+            PushSnapshot(serverUrl, token, itemId, sessionId, positionSec, duration, listened, closing)
+                .also {
+                    listened = 0.0
+                    dirty = false
+                }
+        }
+        val url = snapshot.url
+        val auth = snapshot.token
+        val item = snapshot.itemId
+        val sid = snapshot.sessionId
+        val pos = snapshot.positionSec
+        val dur = snapshot.durationSec
+        val delta = snapshot.listenedSec
+        android.util.Log.d("NLREPORT", "push closing=${snapshot.closing} dirtySnapshot=true url=${url.take(24)} item=$item")
+
         scope.launch {
-            val ok = runCatching {
-                api.syncProgress(url, auth, sid, item, pos, dur, delta)
-            }.getOrDefault(false)
-            pushCount++
-            android.util.Log.d("NLREPORT", "result=$ok delta=$delta pos=${pos.toInt()}")
-            if (ok) {
-                lastSuccessAt = System.currentTimeMillis()
-                lastSentSec = delta
-                lastResult = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(lastSuccessAt))
-                if (pushCount % 6 == 0) log("sync ok pos=${pos.toInt()}s +${delta.toInt()}s")
-            } else {
-                lastResult = "FAIL " + SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-                log("sync FAILED pos=${pos.toInt()}s +${delta.toInt()}s")
+            pushMutex.withLock {
+                val outcome = runCatching {
+                    api.syncProgress(url, auth, sid, item, pos, dur, delta)
+                }.getOrElse { error ->
+                    ProgressSyncOutcome(
+                        sessionRequested = sid.isNotBlank(),
+                        sessionError = error.javaClass.simpleName,
+                        progressError = error.javaClass.simpleName
+                    )
+                }
+                val ok = outcome.succeeded
+                val now = System.currentTimeMillis()
+                synchronized(stateLock) {
+                    pushCount++
+                    if (ok) {
+                        lastSuccessAt = now
+                        lastSentSec = delta
+                        lastResult = if (!outcome.progressPatchSucceeded) {
+                            "${SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(now))} session OK, progress failed"
+                        } else {
+                            SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(now))
+                        }
+                    } else {
+                        // If session sync succeeded but the fallback progress PATCH failed,
+                        // ABS has already counted this delta. Retry only when the session POST
+                        // itself failed, otherwise the server would count the same seconds twice.
+                        val sameSession = sid.isNotBlank() && !outcome.sessionSucceeded &&
+                            sessionId == sid && itemId == item
+                        if (sameSession) {
+                            listened += delta
+                            dirty = true
+                        }
+                        lastResult = buildString {
+                            append("FAIL ").append(SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(now)))
+                            outcome.sessionStatusCode?.let { append(" session=").append(it) }
+                            outcome.progressStatusCode?.let { append(" progress=").append(it) }
+                            outcome.sessionError?.let { append(" session=").append(it) }
+                            outcome.progressError?.let { append(" progress=").append(it) }
+                        }
+                    }
+                }
+                val sessionLabel = if (sid.isBlank()) "n/a" else outcome.sessionStatusCode?.toString() ?: outcome.sessionError ?: "?"
+                val progressLabel = outcome.progressStatusCode?.toString() ?: outcome.progressError ?: "?"
+                android.util.Log.d(
+                    "NLREPORT",
+                    "result=$ok session=$sessionLabel progress=$progressLabel counted=${outcome.listeningCounted} delta=$delta pos=${pos.toInt()}"
+                )
+                if (ok && pushCount % 6 == 0) log("sync ok pos=${pos.toInt()}s +${delta.toInt()}s")
+                if (!ok) log("sync FAILED session=$sessionLabel progress=$progressLabel pos=${pos.toInt()}s +${delta.toInt()}s")
+                if (snapshot.closing && sid.isNotBlank()) {
+                    val closed = runCatching { api.closeSession(url, auth, sid) }.getOrDefault(false)
+                    if (closed) {
+                        synchronized(stateLock) {
+                            if (sessionId == sid && itemId == item) {
+                                serverUrl = ""
+                                token = ""
+                                itemId = ""
+                                sessionId = ""
+                                duration = 0.0
+                                trackOffset = 0.0
+                                positionSec = 0.0
+                                listened = 0.0
+                                dirty = false
+                                wasPlaying = false
+                            }
+                        }
+                    } else {
+                        log("session close FAILED sid=$sid")
+                    }
+                }
+                listenLog?.flush()
             }
-            if (closing && sid.isNotBlank()) {
-                runCatching { api.closeSession(url, auth, sid) }
-            }
-            listenLog?.flush()
         }
     }
 }

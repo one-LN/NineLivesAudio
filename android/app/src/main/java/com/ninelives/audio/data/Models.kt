@@ -81,6 +81,30 @@ data class ServerListeningStats(
     val days: Map<String, Double> = emptyMap()
 )
 
+data class ProgressSyncOutcome(
+    val sessionRequested: Boolean,
+    val sessionStatusCode: Int? = null,
+    val progressStatusCode: Int? = null,
+    val sessionError: String? = null,
+    val progressError: String? = null
+) {
+    val sessionSucceeded: Boolean
+        get() = !sessionRequested || (sessionError == null && sessionStatusCode?.let { it in 200..299 } == true)
+
+    val listeningCounted: Boolean
+        get() = sessionRequested && sessionSucceeded
+
+    val progressPatchSucceeded: Boolean
+        get() = progressError == null && progressStatusCode?.let { it in 200..299 } == true
+
+    val progressSaved: Boolean
+        get() = progressPatchSucceeded || (sessionRequested && sessionSucceeded)
+
+    /** All requests that were attempted received a 2xx response. */
+    val succeeded: Boolean
+        get() = if (sessionRequested) sessionSucceeded else progressPatchSucceeded
+}
+
 data class BookItem(
     val id: String,
     val libraryId: String,

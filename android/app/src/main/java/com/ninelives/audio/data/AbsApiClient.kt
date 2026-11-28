@@ -812,8 +812,8 @@ class AbsApiClient {
             }
         }
 
-    suspend fun closeSession(serverUrl: String, token: String, sessionId: String) = withContext(Dispatchers.IO) {
-        if (sessionId.isBlank()) return@withContext
+    suspend fun closeSession(serverUrl: String, token: String, sessionId: String): Boolean = withContext(Dispatchers.IO) {
+        if (sessionId.isBlank()) return@withContext true
         try {
             val base = cleanUrl(serverUrl)
             val req = Request.Builder()
@@ -821,8 +821,12 @@ class AbsApiClient {
                 .header("Authorization", "Bearer $token")
                 .post("{}".toRequestBody("application/json".toMediaType()))
                 .build()
-            client.newCall(req).execute().close()
+            client.newCall(req).execute().use { response ->
+                // 404 means the server already removed the session, so closure is idempotent.
+                response.isSuccessful || response.code == 404
+            }
         } catch (_: Exception) {
+            false
         }
     }
 
@@ -834,10 +838,23 @@ class AbsApiClient {
         currentTime: Double,
         duration: Double,
         timeListenedSec: Double = 10.0
-    ) = withContext(Dispatchers.IO) {
-        try {
-            val base = cleanUrl(serverUrl)
-            if (sessionId.isNotBlank()) {
+    ): ProgressSyncOutcome = withContext(Dispatchers.IO) {
+        val base = try {
+            cleanUrl(serverUrl)
+        } catch (e: Exception) {
+            val error = e.javaClass.simpleName
+            return@withContext ProgressSyncOutcome(
+                sessionRequested = sessionId.isNotBlank(),
+                sessionError = if (sessionId.isNotBlank()) error else null,
+                progressError = error
+            )
+        }
+
+        var sessionStatus: Int? = null
+        var sessionError: String? = null
+        val sessionRequested = sessionId.isNotBlank()
+        if (sessionRequested) {
+            try {
                 val sessJson = JSONObject()
                     .put("currentTime", currentTime)
                     .put("duration", duration)
@@ -848,8 +865,18 @@ class AbsApiClient {
                     .header("Authorization", "Bearer $token")
                     .post(sessJson.toRequestBody("application/json".toMediaType()))
                     .build()
-                client.newCall(sessReq).execute().close()
+                client.newCall(sessReq).execute().use { response ->
+                    sessionStatus = response.code
+                    if (!response.isSuccessful) sessionError = "HTTP ${response.code}"
+                }
+            } catch (e: Exception) {
+                sessionError = e.javaClass.simpleName
             }
+        }
+
+        var progressStatus: Int? = null
+        var progressError: String? = null
+        try {
             val progress = if (duration > 0) (currentTime / duration).coerceIn(0.0, 1.0) else 0.0
             val bodyJson = JSONObject()
                 .put("currentTime", currentTime)
@@ -857,17 +884,25 @@ class AbsApiClient {
                 .put("progress", progress)
                 .put("isFinished", progress >= 0.995)
                 .toString()
-
             val req = Request.Builder()
-                .url("$base/api/me/progress/$itemId")
+                .url("$base/api/me/progress/${segment(itemId)}")
                 .header("Authorization", "Bearer $token")
                 .patch(bodyJson.toRequestBody("application/json".toMediaType()))
                 .build()
-
-            client.newCall(req).execute().close()
-            true
-        } catch (_: Exception) {
-            false
+            client.newCall(req).execute().use { response ->
+                progressStatus = response.code
+                if (!response.isSuccessful) progressError = "HTTP ${response.code}"
+            }
+        } catch (e: Exception) {
+            progressError = e.javaClass.simpleName
         }
+
+        ProgressSyncOutcome(
+            sessionRequested = sessionRequested,
+            sessionStatusCode = sessionStatus,
+            progressStatusCode = progressStatus,
+            sessionError = sessionError,
+            progressError = progressError
+        )
     }
 }

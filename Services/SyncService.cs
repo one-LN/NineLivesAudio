@@ -623,7 +623,12 @@ public class SyncService : ISyncService, IDisposable
 
         try
         {
-            await _apiService.UpdateProgressAsync(itemId, currentTime, isFinished, duration);
+            var pushed = await _apiService.UpdateProgressAsync(itemId, currentTime, isFinished, duration);
+            if (!pushed)
+            {
+                _logger.LogWarning($"[Sync] Progress PATCH was not accepted for {itemId} @ {currentTime:F1}s; will retry on next tick");
+                return;
+            }
 
             _lastSyncedTime = currentTime;
             _lastSyncTimestamp = now;
@@ -670,8 +675,17 @@ public class SyncService : ISyncService, IDisposable
 
         try
         {
-            await _apiService.UpdateProgressAsync(itemId, currentTime, isFinished, duration);
-            _logger.Log($"[Sync] Final progress flush: {itemId} @ {currentTime:F1}s (finished={isFinished})");
+            var pushed = await _apiService.UpdateProgressAsync(itemId, currentTime, isFinished, duration);
+            if (pushed)
+            {
+                _logger.Log($"[Sync] Final progress flush accepted: {itemId} @ {currentTime:F1}s (finished={isFinished})");
+            }
+            else
+            {
+                _logger.LogWarning($"[Sync] Final progress flush rejected: {itemId} @ {currentTime:F1}s; queued for retry");
+                try { await _offlineQueue.EnqueueAsync(itemId, currentTime, isFinished); }
+                catch { /* best effort */ }
+            }
         }
         catch (Exception ex)
         {

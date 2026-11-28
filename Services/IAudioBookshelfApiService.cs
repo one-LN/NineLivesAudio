@@ -55,7 +55,7 @@ public interface IAudioBookshelfApiService
     /// </summary>
     Task<bool> UpdateProgressAsync(string itemId, double currentTime, bool isFinished = false, double duration = 0);
     Task<bool> SyncSessionProgressAsync(string sessionId, double currentTime, double duration, double timeListened = 0);
-    Task ClosePlaybackSessionAsync(string sessionId);
+    Task<bool> ClosePlaybackSessionAsync(string sessionId);
 
     // User
     Task<UserProgress?> GetUserProgressAsync(string itemId);

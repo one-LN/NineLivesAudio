@@ -3,7 +3,7 @@
 ; Compile: Run ISCC.exe installer.iss (or open in Inno Setup GUI)
 
 #define MyAppName "Nine Lives Audio"
-#define MyAppVersion "1.0.69"
+#define MyAppVersion "1.0.70"
 #define MyAppPublisher "Static Hum Studio"
 #define MyAppURL "https://github.com/one-LN/NineLivesAudio"
 #define MyAppExeName "NineLivesAudio.exe"

@@ -86,7 +86,13 @@ public class OfflineProgressQueue : IOfflineProgressQueue
                     }
                     catch { /* duration is optional */ }
 
-                    await _apiService.UpdateProgressAsync(entry.ItemId, entry.CurrentTime, entry.IsFinished, duration);
+                    var pushed = await _apiService.UpdateProgressAsync(entry.ItemId, entry.CurrentTime, entry.IsFinished, duration);
+                    if (!pushed)
+                    {
+                        _logger.LogWarning($"[OfflineQueue] Server rejected progress for {entry.ItemId}; leaving it queued");
+                        continue;
+                    }
+
                     synced++;
                     syncedItemIds.Add(entry.ItemId);
                 }

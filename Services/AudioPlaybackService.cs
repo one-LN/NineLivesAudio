@@ -51,6 +51,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     // Session sync timer (12-second interval for progress sync to server)
     private PeriodicTimer? _sessionSyncTimer;
     private CancellationTokenSource? _sessionSyncCts;
+    private readonly SemaphoreSlim _sessionSyncLock = new(1, 1);
+    private readonly object _listenStateLock = new();
     private DateTime _sessionStartTime;
     private double _accumulatedListenTime;   // total reported to the server this session
     private double _pendingListenSeconds;    // played but not sent yet (delta on next sync)
@@ -188,8 +190,12 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             _isLocalFile = false;
             _currentTrackIndex = 0;
             _accumulatedListenTime = 0;
-            _pendingListenSeconds = 0;
-            _lastListenTick = DateTime.UtcNow;
+            lock (_listenStateLock)
+            {
+                _pendingListenSeconds = 0;
+                _unsavedListeningSeconds = 0;
+                _lastListenTick = DateTime.UtcNow;
+            }
             _trackPaths.Clear();
             _streamTracks.Clear();
             _trackDurations.Clear();
@@ -747,6 +753,11 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             }
         }
 
+        // Flush/close the exact session before disposing the player. StopAsync is awaited
+        // by the next LoadAudioBookAsync, so a new book cannot overwrite this session first.
+        if (_currentSession is not null)
+            await CloseSessionAsync(_currentSession);
+
         // Unwire all events before disposing to prevent leaks
         UnwireMediaPlayerEvents();
         UnwireNAudioEvents();
@@ -795,9 +806,6 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 _smtcPlayer = null;
             }
         }
-
-        if (_currentSession != null)
-            _ = CloseSessionAsync();
 
         DeleteTempPlaybackFile();
         SetState(PlaybackState.Stopped);
@@ -983,8 +991,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 Duration.TotalSeconds,
                 isFinished: true);
         }
-        if (_currentSession != null)
-            _ = CloseSessionAsync();
+        if (_currentSession is { } sessionToClose)
+            _ = CloseSessionAsync(sessionToClose);
     }
 
     private void WireMediaPlayerEvents()
@@ -1049,8 +1057,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 Duration.TotalSeconds,
                 isFinished: true);
         }
-        if (_currentSession != null)
-            _ = CloseSessionAsync();
+        if (_currentSession is { } sessionToClose)
+            _ = CloseSessionAsync(sessionToClose);
     }
 
     private void OnMediaPlayerFailed(Windows.Media.Playback.MediaPlayer sender, Windows.Media.Playback.MediaPlayerFailedEventArgs args)
@@ -1150,45 +1158,49 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
             _logger.LogDebug($"[Playback] Local progress save failed: {ex.Message}");
         }
 
-        // Sync to server via session if available
-        if (_currentSession != null && _apiService.IsAuthenticated)
+        // Serialize periodic/pause/close pushes. ABS adds timeListened to the session,
+        // so overlapping requests carrying the same delta must never be sent twice.
+        await _sessionSyncLock.WaitAsync();
+        try
         {
-            try
+            var session = _currentSession;
+            if (session != null && _apiService.IsAuthenticated)
             {
-                // The Audiobookshelf API defines timeListened as "the time listened since the
-                // last session sync" and the server ADDS it to the session total. Sending the
-                // running total (the old behaviour) made every sync add the whole session
-                // again, which is why daily listening stats exploded into hundreds of hours.
-                var delta = Math.Clamp(_pendingListenSeconds, 0, 120);
-                _lastSyncTickTime = DateTime.UtcNow;
-
+                double delta;
+                lock (_listenStateLock) delta = Math.Clamp(_pendingListenSeconds, 0, 120);
                 var sent = await _apiService.SyncSessionProgressAsync(
-                    _currentSession.Id, currentTime, duration, Math.Round(delta, 1));
+                    session.Id, currentTime, duration, Math.Round(delta, 1));
 
                 if (sent)
                 {
-                    _pendingListenSeconds = Math.Max(0, _pendingListenSeconds - delta);
+                    lock (_listenStateLock)
+                        _pendingListenSeconds = Math.Max(0, _pendingListenSeconds - delta);
                     _accumulatedListenTime += delta;
+                    _lastSyncTickTime = DateTime.UtcNow;
                 }
                 else
                 {
-                    // Keep it for the next attempt; the cap above stops it from growing forever.
-                    _logger.LogDebug("[Playback] Session sync rejected — keeping listening time for the next tick");
+                    // Keep the listening delta for retry, and report the failed server status.
+                    _logger.LogWarning($"[Playback] Session sync failed for {session.Id}; keeping +{delta:F1}s for retry");
                 }
 
-                _logger.LogDebug($"[Playback] Session sync: {currentTime:F1}s, +{delta:F0}s " +
-                                 $"(session total {_accumulatedListenTime:F0}s)");
+                _logger.LogDebug($"[Playback] Session sync: {currentTime:F1}s, +{(sent ? delta : 0):F1}s " +
+                                 $"(session total {_accumulatedListenTime:F1}s, accepted={sent})");
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogDebug($"[Playback] Session sync failed: {ex.Message}");
+                // Fallback: use SyncService throttled progress reporting.
+                await _syncService.ReportPlaybackPositionAsync(
+                    _currentAudioBook.Id, currentTime, duration);
             }
         }
-        else
+        catch (Exception ex)
         {
-            // Fallback: use SyncService throttled progress reporting
-            await _syncService.ReportPlaybackPositionAsync(
-                _currentAudioBook.Id, currentTime, duration);
+            _logger.LogWarning($"[Playback] Session sync threw {ex.GetType().Name}; pending listening time retained");
+        }
+        finally
+        {
+            _sessionSyncLock.Release();
         }
 
         // On-device listening history runs for online and offline playback alike.
@@ -1202,23 +1214,26 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     /// </summary>
     private void TrackListeningTime()
     {
-        var now = DateTime.UtcNow;
-
-        if (_state != PlaybackState.Playing)
+        lock (_listenStateLock)
         {
+            var now = DateTime.UtcNow;
+            if (_state != PlaybackState.Playing)
+            {
+                _lastListenTick = now;
+                return;
+            }
+
+            var elapsed = (now - _lastListenTick).TotalSeconds;
             _lastListenTick = now;
-            return;
-        }
 
-        var elapsed = (now - _lastListenTick).TotalSeconds;
-        _lastListenTick = now;
-
-        // Guard against a stalled tick or a clock jump being credited as listening.
-        if (elapsed is > 0 and < 5)
-        {
-            var credited = elapsed * Math.Max(0.5, _playbackSpeed);
-            _pendingListenSeconds += credited;
-            _unsavedListeningSeconds += credited;
+            // ABS timeListened is wall-clock listening time, not media-time advanced.
+            // Playback at 2x still means one real second listened for each second elapsed.
+            // Guard against a stalled tick or a clock jump being credited as listening.
+            if (elapsed is > 0 and < 5)
+            {
+                _pendingListenSeconds += elapsed;
+                _unsavedListeningSeconds += elapsed;
+            }
         }
     }
 
@@ -1228,10 +1243,14 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
     /// </summary>
     private void FlushListeningHistory()
     {
-        var seconds = _unsavedListeningSeconds;
-        if (seconds < 5) return;
+        double seconds;
+        lock (_listenStateLock)
+        {
+            seconds = _unsavedListeningSeconds;
+            if (seconds < 5) return;
+            _unsavedListeningSeconds = 0;
+        }
 
-        _unsavedListeningSeconds = 0;
         var dateKey = DateTime.Now.ToString("yyyy-MM-dd");
         _ = _database.AddListeningSecondsAsync(dateKey, Math.Round(seconds, 1));
     }
@@ -1627,8 +1646,8 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
                 _currentAudioBook.Id, total, total, isFinished: true);
         }
 
-        if (_currentSession != null)
-            await CloseSessionAsync();
+        if (_currentSession is { } sessionToClose)
+            await CloseSessionAsync(sessionToClose);
     }
 
     /// <summary>
@@ -1902,34 +1921,56 @@ public class AudioPlaybackService : IAudioPlaybackService, IDisposable
         return _trackManager.GetWithinTrackOffset(_currentTrackIndex, _trackDurations, overallPosition);
     }
 
-    private async Task CloseSessionAsync()
+    private async Task CloseSessionAsync(PlaybackSessionInfo session)
     {
-        if (_currentSession == null) return;
+        await _sessionSyncLock.WaitAsync();
         try
         {
-            // Flush the last partial interval first: a session's listening time is the sum of
-            // the deltas it already received, so whatever is pending would otherwise be lost.
-            var pending = Math.Clamp(_pendingListenSeconds, 0, 120);
-            if (pending >= 1 && _apiService.IsAuthenticated)
+            // A track-ended callback and StopAsync can both request closure. Once one
+            // has closed this exact session, the later waiter must not send another sync.
+            if (!ReferenceEquals(_currentSession, session)) return;
+
+            // Flush the last partial interval after all earlier /sync calls have completed.
+            // This prevents an older in-flight position/delta from arriving after close.
+            double pending;
+            lock (_listenStateLock) pending = Math.Clamp(_pendingListenSeconds, 0, 120);
+            if (pending >= 0.1 && _apiService.IsAuthenticated)
             {
                 var currentTime = Position.TotalSeconds;
                 var duration = Duration.TotalSeconds;
-                if (await _apiService.SyncSessionProgressAsync(
-                        _currentSession.Id, currentTime, duration, Math.Round(pending, 1)))
+                var sent = await _apiService.SyncSessionProgressAsync(
+                    session.Id, currentTime, duration, Math.Round(pending, 1));
+                if (sent)
                 {
-                    _pendingListenSeconds = Math.Max(0, _pendingListenSeconds - pending);
+                    lock (_listenStateLock)
+                        _pendingListenSeconds = Math.Max(0, _pendingListenSeconds - pending);
                     _accumulatedListenTime += pending;
+                }
+                else
+                {
+                    _logger.LogWarning($"[Playback] Final session sync failed for {session.Id}; +{pending:F1}s was not counted");
                 }
             }
 
-            await _apiService.ClosePlaybackSessionAsync(_currentSession.Id);
-            _logger.Log($"[Playback] Session closed");
+            var closed = await _apiService.ClosePlaybackSessionAsync(session.Id);
+            if (!closed)
+            {
+                _logger.LogWarning($"[Playback] Session close not confirmed: {session.Id}; retaining session for retry");
+                return;
+            }
+
+            _logger.Log($"[Playback] Session closed: {session.Id}");
+            if (ReferenceEquals(_currentSession, session))
+                _currentSession = null;
         }
         catch (Exception ex)
         {
-            _logger.LogDebug($"[Playback] Session close failed: {ex.Message}");
+            _logger.LogWarning($"[Playback] Session close failed: {ex.GetType().Name}");
         }
-        _currentSession = null;
+        finally
+        {
+            _sessionSyncLock.Release();
+        }
     }
 
     // === SMTC (System Media Transport Controls) ===

@@ -84,6 +84,8 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
     {
         _authToken = null;
         _serverUrl = string.Empty;
+        _playbackSessionCache.Clear();
+        _playbackSessionFetches.Clear();
         _httpClient.DefaultRequestHeaders.Authorization = null;
 
         await InitializeFromSettingsAsync();
@@ -507,6 +509,11 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (PlaybackSessionInfo Info, DateTime FetchedAt)>
         _playbackSessionCache = new(StringComparer.Ordinal);
 
+    // A play endpoint creates a server-side session, not a reusable media descriptor.
+    // Serialize starts per item and consume each warmed session exactly once.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>
+        _playbackSessionStartLocks = new(StringComparer.Ordinal);
+
     public void WarmPlaybackSession(string itemId)
     {
         if (!IsAuthenticated || string.IsNullOrEmpty(itemId)) return;
@@ -521,15 +528,33 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
 
     public async Task<PlaybackSessionInfo?> StartPlaybackSessionAsync(string itemId)
     {
-        if (_playbackSessionCache.TryGetValue(itemId, out var cached) &&
-            DateTime.UtcNow - cached.FetchedAt < PlaybackSessionTtl)
+        var startLock = _playbackSessionStartLocks.GetOrAdd(itemId, _ => new SemaphoreSlim(1, 1));
+        await startLock.WaitAsync().ConfigureAwait(false);
+        try
         {
-            return cached.Info;
-        }
+            // /play creates a live server session. A warmed response is a one-shot
+            // reservation, never a reusable 10-minute session ID: the previous code
+            // replayed a session after ClosePlaybackSessionAsync had already removed it.
+            if (_playbackSessionCache.TryRemove(itemId, out var cached))
+            {
+                if (DateTime.UtcNow - cached.FetchedAt < PlaybackSessionTtl)
+                    return cached.Info;
 
-        return await _playbackSessionFetches
-            .GetOrAdd(itemId, id => FetchAndCachePlaybackSessionAsync(id))
-            .ConfigureAwait(false);
+                await ClosePlaybackSessionAsync(cached.Info.Id).ConfigureAwait(false);
+            }
+
+            var session = await _playbackSessionFetches
+                .GetOrAdd(itemId, id => FetchAndCachePlaybackSessionAsync(id))
+                .ConfigureAwait(false);
+            // FetchAndCache also populates the warm cache; consume that copy now so
+            // a second play request must obtain a fresh server session.
+            _playbackSessionCache.TryRemove(itemId, out _);
+            return session;
+        }
+        finally
+        {
+            startLock.Release();
+        }
     }
 
     private async Task<PlaybackSessionInfo?> FetchAndCachePlaybackSessionAsync(string itemId)
@@ -661,17 +686,38 @@ public class AudioBookshelfApiService : IAudioBookshelfApiService, IDisposable
         }
     }
 
-    public async Task ClosePlaybackSessionAsync(string sessionId)
+    public async Task<bool> ClosePlaybackSessionAsync(string sessionId)
     {
-        EnsureAuthenticated();
+        if (string.IsNullOrWhiteSpace(sessionId)) return true;
+
+        // Never let a closed play-session response be handed out again, even if close
+        // itself fails or playback is stopped while the next detail page is warming.
+        foreach (var entry in _playbackSessionCache)
+        {
+            if (string.Equals(entry.Value.Info.Id, sessionId, StringComparison.Ordinal))
+                _playbackSessionCache.TryRemove(entry.Key, out _);
+        }
+
+        if (!IsAuthenticated || string.IsNullOrWhiteSpace(_serverUrl))
+        {
+            LastError = "Playback session close skipped: not authenticated";
+            return false;
+        }
 
         try
         {
             var content = new StringContent("{}", Encoding.UTF8, "application/json");
-            await _httpClient.PostAsync($"{_serverUrl}/api/session/{sessionId}/close", content);
+            var response = await _httpClient.PostAsync($"{_serverUrl}/api/session/{sessionId}/close", content);
+            if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                return true; // 404 means the session was already removed (idempotent close).
+
+            LastError = $"Playback session close failed: HTTP {(int)response.StatusCode}";
+            return false;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            LastError = $"Playback session close failed: {ex.GetType().Name}";
+            return false;
         }
     }
 
